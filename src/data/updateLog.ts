@@ -9,6 +9,23 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.0.0',
+    date: '16 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: 'Menajerin Kendi Hayatı: 3D Spor Salonu, Ev, Şehir ve Tatil',
+    items: [
+      '🧑‍💼 Kişisel hayat sistemi: Enerji, Form, Keyif ve Ün statları + haftalık 4 boş zaman hakkı',
+      '🏋️ 3D Spor Salonu: üstünü değiştir, koşu bandı / bench press / kondisyon bisikleti seç, karakter antrenman yapıyor',
+      '🛋️ 3D Ev: kanepede oyun oyna (konsol + yanan TV) veya uzanıp dinlen (uyku animasyonu)',
+      '🌆 3D Şehir: parkta yürü, taraftarla buluş, akşam yemeği — trafik, lambalar ve manzara canlı',
+      '🏖️ 3D Tatil: sahil, palmiyeler, dalgalar ve güneş — kafa dinleme zamanı',
+      '🎤 3D Basın Toplantısı: mikrofonlar, kameralar ve flaşlar eşliğinde konuşma',
+      '💪 Hayatın oyuna etkisi: Form → maç kenarı bonusu ve oyuncu toparlanması, Keyif → takım morali ve pazarlık, Ün → sponsor geliri',
+      '🛍️ Kişisel eşyalar: spor salonu üyeliği, oyun konsolu, ev konforu ve araba',
+      'Yorgunken (enerji < 30) etkiler yarıya iner — dinlenmek de bir strateji',
+    ],
+  },
+  {
     version: '3.3.0',
     date: '16 Eyl 2026',
     tag: 'BÜYÜK',
@@ -131,4 +148,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '3.3.0';
+export const CURRENT_VERSION = '4.0.0';

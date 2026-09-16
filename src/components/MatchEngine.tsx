@@ -7,6 +7,7 @@ import { PenaltyShootout } from './PenaltyShootout';
 import { sfx } from '../utils/sound';
 import { skillInjuryReduction, skillTacticsBonus } from '../utils/progression';
 import { LivePitch } from './LivePitch';
+import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
 
 export interface MatchExtras {
@@ -127,6 +128,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     if (gameState.staff?.some(s => s.type === 'analyst')) { attackBonus += 3; defenseBonus += 3; }
 
     // Menajer yeteneği: Taktik Zekâsı
+    // Menajerin kendi formu (Hayat sekmesi): kondisyon ve keyif sahaya yansır
+    const lifeBonus = managerMatchBonus(gameState);
+    attackBonus += lifeBonus.attack;
+    defenseBonus += lifeBonus.defense;
+
     const tactSkill = gameState.skills?.tactics ?? 0;
     if (tactSkill > 0) {
       attackBonus += skillTacticsBonus(tactSkill);
@@ -710,6 +716,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               {weatherInfo.icon} {weatherInfo.label}
             </span>
             {extraTime && <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-900/60">UZATMA</span>}
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                managerMatchBonus(gameState).attack > 0.2 ? 'bg-emerald-900/60 text-emerald-200'
+                : managerMatchBonus(gameState).attack < -0.1 ? 'bg-red-900/60 text-red-200'
+                : 'bg-black/25 text-white/80'
+              }`}
+              title="Menajerin kendi formu (Hayat sekmesi) maç performansını etkiler"
+            >
+              🧑‍💼 {managerMatchBonus(gameState).label}
+            </span>
           </div>
           <div className="flex gap-1">
             {([1, 2, 4] as const).map(s => (

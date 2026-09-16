@@ -16,6 +16,7 @@ import { MerchTab } from './components/tabs/MerchTab';
 import { OfficeTab } from './components/tabs/OfficeTab';
 import { CareerTab } from './components/tabs/CareerTab';
 import { StadiumTab } from './components/tabs/StadiumTab';
+import { LifeTab } from './components/tabs/LifeTab';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -44,7 +45,7 @@ import { exportSaveToFile, importSaveFromFile, writeSlot, clearSlot } from './ut
 import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
-  | 'office' | 'career' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
+  | 'office' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
   | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
@@ -98,6 +99,8 @@ function App() {
     resetCareer,
     setGameStateExternal,
     spendSkillPoint,
+    doLifeActivity,
+    buyLifeItem,
     setStadiumDesign,
     buyStadiumCosmetic,
     buyCapacityPackage,
@@ -797,6 +800,7 @@ function App() {
   const expiringCount = [...gameState.team11, ...gameState.bench].filter(p => p.contract <= 1).length;
   const officeBadge = offersCount + messagesCount + expiringCount;
 
+  const lifeSlots = Math.max(0, 4 - (gameState.life?.actionsUsed ?? 4));
   const pendingPoints = gameState.skillPoints || 0;
   const activeMissions = (gameState.missions || []).filter(m => !m.completed).length;
   const careerBadge = pendingPoints + (activeMissions > 0 ? 1 : 0);
@@ -804,6 +808,7 @@ function App() {
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
     { id: 'career', label: 'Kariyer', icon: '🧠', badge: careerBadge },
+    { id: 'life', label: 'Hayat', icon: '🚶', badge: lifeSlots > 0 ? lifeSlots : 0 },
     { id: 'stadium', label: 'Stadyum', icon: '🏟️' },
     { id: 'squad', label: 'Kadro', icon: '⚽' },
     { id: 'transfer', label: 'Transfer', icon: '💰' },
@@ -1045,6 +1050,13 @@ function App() {
             )}
             {activeTab === 'career' && (
               <CareerTab gameState={gameState} onSpendSkillPoint={(id: SkillId) => spendSkillPoint(id)} />
+            )}
+            {activeTab === 'life' && (
+              <LifeTab
+                gameState={gameState}
+                onDoActivity={doLifeActivity}
+                onBuyItem={buyLifeItem}
+              />
             )}
             {activeTab === 'stadium' && (
               <StadiumTab

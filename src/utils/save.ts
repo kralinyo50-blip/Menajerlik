@@ -4,6 +4,7 @@ import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from
 import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
 import { defaultStadium } from '../data/stadium';
+import { defaultLife } from './life';
 
 export const SLOT_KEYS = [
   'ManagerPro2026_Save',       // Slot 1 (eski otomatik kayıt)
@@ -109,6 +110,14 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       ...(state.clubStats || {}),
     },
     shopBranches: state.shopBranches ?? [],
+    life: {
+      ...defaultLife(),
+      ...(state.life || {}),
+      stats: { ...defaultLife().stats, ...(state.life?.stats || {}) },
+      owned: state.life?.owned ?? [],
+      weekLog: state.life?.weekLog ?? {},
+      history: state.life?.history ?? [],
+    },
     stadium: {
       ...defaultStadium(),
       ...(state.stadium || {}),

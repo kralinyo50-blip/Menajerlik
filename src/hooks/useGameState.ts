@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
-  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer
+  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer, LifeActivityId
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
@@ -12,6 +12,10 @@ import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
 import { generateFixture, calculateAttendance, awayIncome } from '../utils/fixture';
 import { playerValue, playerWage, marketRefreshCost } from '../utils/pricing';
 import { defaultStadium } from '../data/stadium';
+import {
+  defaultLife, computeOutcome, lifeWeeklyReset, managerRecoveryBonus, fameIncomeMultiplier
+} from '../utils/life';
+import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
   stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan
 } from '../utils/stadium';
@@ -271,7 +275,8 @@ export const useGameState = () => {
       lastDailyReward: null,
       loanList: [],
       outgoingLoans: [],
-      stadium: defaultStadium()
+      stadium: defaultStadium(),
+      life: defaultLife()
     };
 
     // Transfer pazarı: generic oyuncular + bilindik yıldızlar
@@ -1157,7 +1162,8 @@ export const useGameState = () => {
       /* — Sponsor — */
       if (newState.activeSponsor) {
         const sponsorMediaBonus = 1 + skillSponsorBonus(prev.skills?.media ?? 0);
-        newState.budget += Math.floor(newState.activeSponsor.income * sponsorMediaBonus);
+        // Menajerin ünü sponsor gelirini artırır
+        newState.budget += Math.floor(newState.activeSponsor.income * sponsorMediaBonus * fameIncomeMultiplier(newState));
         newState.activeSponsor = { ...newState.activeSponsor, weeksLeft: newState.activeSponsor.weeksLeft - 1 };
         if (newState.activeSponsor.weeksLeft <= 0) {
           newState.news = [`${newState.activeSponsor.name} sponsorluğu sona erdi.`, ...newState.news.slice(0, 4)];
@@ -1304,6 +1310,34 @@ export const useGameState = () => {
 
       /* — Hafta ilerle — */
       if (!isCup) newState.week++;
+
+      /* — Menajerin haftalık hayat döngüsü — */
+      newState.life = lifeWeeklyReset(newState.life ?? defaultLife(), newState.week);
+      {
+        const life = newState.life;
+        // Menajer formu oyuncuların toparlanmasını hızlandırır
+        const recovery = managerRecoveryBonus(newState);
+        if (recovery > 0) {
+          const boost = (p: Player) => ({ ...p, energy: Math.min(100, p.energy + recovery) });
+          newState.team11 = newState.team11.map(boost);
+          newState.bench = newState.bench.map(boost);
+        }
+        // Mutlu menajer = mutlu soyunma odası; bitkin menajer takımı da yorar
+        if (life.stats.fun >= 75 || life.stats.fitness >= 75) {
+          const lift = (p: Player) => ({ ...p, morale: Math.min(100, p.morale + 1) });
+          newState.team11 = newState.team11.map(lift);
+          newState.bench = newState.bench.map(lift);
+        } else if (life.stats.energy < 20) {
+          const drain = (p: Player) => ({ ...p, morale: Math.max(0, p.morale - 1) });
+          newState.team11 = newState.team11.map(drain);
+          newState.bench = newState.bench.map(drain);
+        }
+        // Enerji haftalık olarak kendiliğinden biraz dolar
+        newState.life = {
+          ...newState.life,
+          stats: { ...life.stats, energy: Math.min(100, life.stats.energy + 12) }
+        };
+      }
 
       /* — Başarımlar — */
       const unlock = (id: string) => {
@@ -1815,6 +1849,72 @@ export const useGameState = () => {
     });
   }, []);
 
+  /* ══════════════ MENAJER HAYATI ══════════════ */
+
+  /** Aktiviteyi uygular: statlar, XP, masraf, haftalık hak ve geçmiş güncellenir */
+  const doLifeActivity = useCallback((activityId: LifeActivityId, variantId: string) => {
+    if (!gameState) return null;
+    const outcome = computeOutcome(gameState, activityId, variantId);
+    if (gameState.budget < outcome.cost) return null;
+
+    const xpGain = grantXp(
+      { managerXp: gameState.managerXp || 0, managerLevel: gameState.managerLevel || 1, skillPoints: gameState.skillPoints || 0 },
+      outcome.xp
+    );
+    const activity = LIFE_ACTIVITIES_LOOKUP[activityId];
+
+    setGameState(prev => {
+      if (!prev) return null;
+      const life = prev.life ?? defaultLife();
+      return {
+        ...prev,
+        budget: prev.budget - outcome.cost,
+        managerXp: xpGain.managerXp,
+        managerLevel: xpGain.managerLevel,
+        skillPoints: xpGain.skillPoints,
+        life: {
+          ...life,
+          stats: outcome.stats,
+          actionsUsed: life.actionsUsed + (activity?.slots ?? 1),
+          weekLog: { ...(life.weekLog || {}), [activityId]: (life.weekLog?.[activityId] ?? 0) + 1 },
+          history: [
+            {
+              week: prev.week,
+              season: prev.season,
+              activityId,
+              label: activity ? `${activity.icon} ${activity.label}` : activityId,
+              summary: outcome.summary,
+            },
+            ...(life.history || []),
+          ].slice(0, 40),
+        },
+      };
+    });
+
+    return { summary: outcome.summary, xp: outcome.xp, cost: outcome.cost, fatigued: outcome.fatigued };
+  }, [gameState]);
+
+  /** Kişisel eşya satın al (spor salonu üyeliği, konsol, araba, ev konforu) */
+  const buyLifeItem = useCallback((itemId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const item = LIFE_ITEMS.find(i => i.id === itemId);
+      if (!item) return prev;
+      const life = prev.life ?? defaultLife();
+      if (life.owned.includes(itemId)) return prev;
+      if (prev.budget < item.price) return prev;
+      return {
+        ...prev,
+        budget: prev.budget - item.price,
+        life: { ...life, owned: [...life.owned, itemId] },
+        news: [
+          `${item.icon} ${item.label} satın alındı! ($${item.price.toLocaleString()}) — ${item.perk}. Hayat sekmesinden kullanabilirsin.`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
   const spendSkillPoint = useCallback((skillId: SkillId) => {
     setGameState(prev => {
       if (!prev || (prev.skillPoints || 0) <= 0) return prev;
@@ -2021,6 +2121,8 @@ export const useGameState = () => {
     claimDailyReward,
     dismissDailyReward,
     autoPickBestEleven,
+    doLifeActivity,
+    buyLifeItem,
     setStadiumDesign,
     buyStadiumCosmetic,
     buyCapacityPackage,

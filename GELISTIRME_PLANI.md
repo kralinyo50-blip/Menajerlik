@@ -1,7 +1,7 @@
 # Manager Pro 2026 — Geliştirme Planı ve Oyun Analizi
 
-> Tarih: 16 Eylül 2026 • Sürüm: **3.3.0 (3D Stadyum Stüdyosu)**
-> v3.0 Kariyer → v3.1 ilerleme katmanı → v3.2 kiralama & yıldız oyuncular → v3.3 **3D stadyum özelleştirme & kapasite yönetimi**
+> Tarih: 16 Eylül 2026 • Sürüm: **4.0.0 (Menajerin Kendi Hayatı)**
+> v3.0 Kariyer → v3.1 ilerleme → v3.2 kiralama & yıldızlar → v3.3 3D stadyum → v4.0 **3D menajer hayatı (spor, ev, şehir, tatil, basın)**
 
 Bu doküman; mevcut oyunun **tespitini (audit)**, kapatılan eksikleri ve sıradaki
 geliştirme adımlarını tek yerde toplar. Amaç: oyunu "simülasyon"dan **gerçek bir
@@ -154,6 +154,27 @@ DLS tarzı "stadyumunu gör, tasarla, büyüt" deneyimi. Teknoloji: **three.js**
 
 ---
 
+## 2e. v4.0.0 — Menajerin Kendi Hayatı (3D Yaşam Simülasyonu)
+
+Menajer artık sadece kulübü yönetmiyor, kendi hayatını da yaşıyor. Her aktivite **kendi 3D sahnesinde**, kendi animasyonuyla oynanıyor.
+
+| Sistem | Detay |
+|---|---|
+| **Statlar** | ⚡ Enerji, 💪 Form, 😄 Keyif, ⭐ Ün (0-100). Form limiti spor salonu üyeliğiyle 60 → 100, keyif limiti ev konforuyla artar |
+| **Boş zaman** | Haftada **4 hak**; tatile gitmek 2 hak yer. Her aktivitenin haftalık üst limiti var (spor 2, oyun 3, dinlenme 3…) |
+| **3D Spor Salonu** | Ayna duvar, koşu bandı, bench press, bisiklet, ağırlık rafı, duvar TV'si, 2 NPC sporcu. Varyantlar: koşu (bacak salınımı), ağırlık (bar iter, bar karakterle hareket eder), bisiklet (pedal + teker dönüşü) |
+| **3D Ev** | Kanepe, sehpa, lambader, bitki, pencere manzarası, posterler. Oyun modunda TV'de maç yayını yanıp söner + konsol LED'i; dinlenme modunda ışık kısılır ve 💤 sprite'ı yükselir |
+| **3D Şehir** | Asfalt + kaldırım + park, 12 bina silüeti, 9 ağaç, sokak lambaları, banklar ve **yol boyunca hareket eden arabalar**; karakter kaldırımda yürüyüş döngüsüyle ilerler |
+| **3D Tatil (sahil)** | Deniz, kum, dalga köpüğü, palmiyeler (yapraklar salınır), şezlong + şemsiye, güneş; karakter sahilde yürür |
+| **3D Basın Toplantısı** | Kulüp logolu arka fon, kürsü, 3 mikrofon, tripod kameralar (**flaşlar patlar**), 3 gazeteci NPC'si, sahne spotları |
+| **Oyuna etkisi** | Form → maçta hücum/savunma bonusu (0…+1.6) ve haftalık oyuncu toparlanması (+0…4 enerji); Keyif ≥75 → takım morali +1/hafta; Enerji <20 → moral −1/hafta; Ün → sponsor geliri ×1.00-1.30 ve pazarlık +%0-20 |
+| **Yorgunluk** | Enerji 30'un altındaysa pozitif etkiler **yarıya iner** → dinlenmeyi planlamak strateji haline gelir |
+| **Eşyalar** | 🎟️ Spor salonu üyeliği ($300K), 🎮 Konsol ($150K), 🛋️ Ev konforu ($700K), 🚗 Araba ($1.6M) — aktivite kilitlerini açar ve verimi artırır |
+
+**Neden önemli:** Menajerlik oyunlarında "sen" yoktur; bu katman oyuncuya kendi karakterini verir. Aktivite → stat → saha performansı döngüsü, hem rol yapma hem de optimize etme motivasyonu üretir.
+
+---
+
 ## 3. Sıradaki Adımlar — Önceliklendirilmiş Yol Haritası
 
 ### 🔥 Yüksek Etki / Orta Emek (sıradaki "olmazsa olmaz" adayları)
@@ -195,12 +216,14 @@ DLS tarzı "stadyumunu gör, tasarla, büyüt" deneyimi. Teknoloji: **three.js**
 
 ## 4. Teknik Notlar
 
+- **v4.0 yeni dosyalar**: `src/components/life/character.ts` (animasyonlu low-poly menajer rigi + poz kütüphanesi), `src/components/life/scenes.ts` (4 sahne: spor salonu, ev, şehir/sahil, basın stüdyosu), `src/components/three/useOrbitThree.ts` (ortak WebGL + orbit altyapısı), `src/components/LifeScene3D.tsx`, `src/components/LifeActivityModal.tsx` (üstünü değiştir → varyant seç → 3D aktivite → sonuç), `src/components/tabs/LifeTab.tsx`, `src/data/life.ts`, `src/utils/life.ts`.
 - **v3.3 yeni dosyalar**: `src/components/stadium/scene.ts` (prosedürel 3D model), `src/components/Stadium3D.tsx` (WebGL görüntüleyici + orbit kontrol), `src/components/tabs/StadiumTab.tsx` (tasarım/kapasite/bilet/mağaza panelleri), `src/data/stadium.ts` (kozmetik kataloğu), `src/utils/stadium.ts` (kapasite & gelir matematiği).
 - **v3.2 yeni dosyalar**: `src/data/stars.ts` (74 bilindik futbolcu), `src/utils/pricing.ts` (piyasa ekonomisi), `src/utils/loan.ts` (kiralama motoru).
 - **v3.1 yeni dosyalar**: `src/utils/missions.ts`, `src/utils/progression.ts`, `src/components/tabs/CareerTab.tsx`, `src/components/LivePitch.tsx`, `src/components/DailyRewardModal.tsx`.
 - **v3.0 yeni dosyalar**: `src/utils/fixture.ts`, `src/utils/lineup.ts`, `src/utils/sound.ts`, `src/utils/save.ts`, `src/utils/contract.ts`, `src/components/PreMatchScreen.tsx`, `src/components/GameOverScreen.tsx`, `src/components/PenaltyShootout.tsx`, `src/components/tabs/OfficeTab.tsx`.
 - **Genişletilen tipler**: `GameState` içine `captainId`, `setPieceTakers`, `trainingFocus`, `leagueScorers`, `transferOffers`, `weather`, `soundOn`, `boardWarnings`, `careerOver`, `boardMessages`; `FixtureEntry` (isHome/week) ve `MatchReport`/`PlayerRating` eklendi.
 - **Kayıt uyumluluğu**: Eski (2.x) kayıtlar `migrateState()` ile otomatik yeni şemaya taşınır (haftaların iç/dış sahası, kaptan, hava durumu vb. otomatik atanır).
+- **Doğrulama (v4.0 ek)**: 15 aktivite varyantının tümü için 3D sahne kurulumu + animasyon testi, stat/limit/yorgunluk matematiği, haftalık sıfırlama, eşya kilitleri ve oyuna etkiler senaryo testiyle doğrulandı; sahneler offline rasterizer ile görsel olarak denetlendi.
 - **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı. Fiyat eğrisi, yıldız havuzu, kiralama, migrasyon testleri + **3D model testi**: 32 konfigürasyon (çatı × tribün × bayrak) hatasız üretildi, tribünlerin sahaya taşmadığı ve zeminin altına sarkmadığı sınır kutusu analiziyle doğrulandı, tüm seyirci/gelir simülasyonları ve 28 ekran render testi geçti.
 
 İyi şanslar, şampiyon! ⚽🏆

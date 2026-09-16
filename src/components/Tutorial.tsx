@@ -37,6 +37,12 @@ const STEPS = [
     tip: 'İpucu: Yönetim güveni sıfıra inerse kovulursun — sonuçlara dikkat!'
   },
   {
+    icon: '🚶',
+    title: 'Menajerin Kendi Hayatı',
+    text: 'Hayat sekmesinde kendi hayatını yönetirsin: 3D spor salonunda antrenman yap, evde oyun oyna veya dinlen, şehri gez, tatile git, basın toplantısına çık. Haftada 4 boş zaman hakkın var.',
+    tip: 'Formun maç kenarındaki gücünü, keyfin takım moralini, ününün sponsor gelirini artırır. Bitkin kalırsan etkiler yarıya iner!'
+  },
+  {
     icon: '🏟️',
     title: '3D Stadyum Stüdyosu',
     text: 'Stadyum sekmesinde stadyumunu 3D görürsün: koltuk rengini, çatıyı, tribün tipini ve çim desenini değiştir; kapasiteyi +10.000 koltuğa kadar büyüt. Bilet fiyatını ayarlayarak gelirini maksimize et.',

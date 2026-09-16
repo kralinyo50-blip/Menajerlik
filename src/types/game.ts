@@ -35,6 +35,43 @@ export interface StadiumState {
   cosmetics: string[];
 }
 
+/* ══════════ MENAJERİN KENDİ HAYATI (v4.0) ══════════ */
+export type LifeActivityId = 'gym' | 'games' | 'rest' | 'goOut' | 'vacation' | 'press';
+export type LifeSceneId = 'gym' | 'home' | 'city' | 'studio';
+
+export interface LifeStats {
+  /** Haftalık enerji (0-100) — düşerse her şey zorlaşır */
+  energy: number;
+  /** Form/sağlık (0-100) — maç kenarındaki performansı ve oyuncu toparlanmasını artırır */
+  fitness: number;
+  /** Keyif/moral (0-100) — takım morali ve transfer pazarlığına yansır */
+  fun: number;
+  /** Ün (0-100) — sponsor geliri, pazarlık gücü ve taraftar ilişkisi */
+  fame: number;
+}
+
+export interface LifeLogEntry {
+  week: number;
+  season: number;
+  activityId: LifeActivityId;
+  label: string;
+  summary: string;
+}
+
+export interface ManagerLife {
+  stats: LifeStats;
+  /** Bu hafta kullanılan aktivite hakkı */
+  actionsUsed: number;
+  /** Bu hafta yapılan aktivitelerin sayacı (aktivite başına limit) */
+  weekLog: Record<string, number>;
+  /** Haftalık sıfırlama takibi */
+  lastActionWeek: number;
+  /** Satın alınan kişisel eşyalar: gymMember | console | homeUpgrade | car */
+  owned: string[];
+  /** Son aktivite kayıtları */
+  history: LifeLogEntry[];
+}
+
 /** Bilindik oyuncu sınıflandırması */
 export type StarTier = 'world' | 'star' | 'turkish' | 'wonderkid';
 
@@ -397,6 +434,8 @@ export interface GameState {
   outgoingLoans: OutgoingLoan[];
   // ── v3.3: Stadyum Stüdyosu (3D) ──
   stadium: StadiumState;
+  // ── v4.0: Menajerin kendi hayatı ──
+  life: ManagerLife;
 }
 
 export interface ShopBranchData {

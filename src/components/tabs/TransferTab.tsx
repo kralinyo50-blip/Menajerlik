@@ -3,6 +3,7 @@ import { GameState, LoanTarget, Player } from '../../types/game';
 import { ROLE_NAMES } from '../../data/constants';
 import { TIER_INFO, StarTier } from '../../data/stars';
 import { formatMoney, marketRefreshCost } from '../../utils/pricing';
+import { fameNegotiationBonus } from '../../utils/life';
 
 interface TransferTabProps {
   gameState: GameState;
@@ -50,7 +51,9 @@ export const TransferTab: React.FC<TransferTabProps> = ({
     setNegotiationState('negotiating');
     setNegotiationAttempts(prev => prev + 1);
 
-    const baseChance = 0.5 - (negotiationAttempts * 0.15) + (gameState.scoutLvl * 0.05) + (gameState.skills?.negotiation ?? 0) * 0.04;
+    const baseChance = 0.5 - (negotiationAttempts * 0.15) + (gameState.scoutLvl * 0.05)
+      + (gameState.skills?.negotiation ?? 0) * 0.04
+      + fameNegotiationBonus(gameState);
     const success = Math.random() < baseChance;
 
     setTimeout(() => {
@@ -105,7 +108,7 @@ export const TransferTab: React.FC<TransferTabProps> = ({
         <div>
           <h2 className="text-2xl font-bold text-white">Transfer Pazarı</h2>
           <p className="text-slate-400 text-sm">
-            Scout Seviyesi: {gameState.scoutLvl} • Pazarlık: %{Math.round(50 + gameState.scoutLvl * 5 + (gameState.skills?.negotiation ?? 0) * 4)}+
+            Scout Seviyesi: {gameState.scoutLvl} • Pazarlık: %{Math.round(50 + gameState.scoutLvl * 5 + (gameState.skills?.negotiation ?? 0) * 4 + fameNegotiationBonus(gameState) * 100)}+
             {loanCount > 0 && <span className="text-cyan-300"> • {loanCount} kiralık oyuncun var</span>}
           </p>
         </div>
