@@ -196,7 +196,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 0.9,
     injuryMult: 0.5,
     incomeMult: 1.3,
-    startingBudget: 2000000
+    startingBudget: 3500000
   },
   normal: {
     label: 'Normal',
@@ -206,7 +206,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1,
     injuryMult: 1,
     incomeMult: 1,
-    startingBudget: 1500000
+    startingBudget: 2500000
   },
   hard: {
     label: 'Zor',
@@ -216,7 +216,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1.1,
     injuryMult: 1.3,
     incomeMult: 0.85,
-    startingBudget: 1000000
+    startingBudget: 1500000
   },
   legend: {
     label: 'Efsane',
@@ -226,6 +226,6 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1.2,
     injuryMult: 1.5,
     incomeMult: 0.7,
-    startingBudget: 750000
+    startingBudget: 1000000
   }
 };

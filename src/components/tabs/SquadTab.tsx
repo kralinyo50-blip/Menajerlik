@@ -3,6 +3,10 @@ import { Player, GameState } from '../../types/game';
 import { ROLE_NAMES } from '../../data/constants';
 import { playerStatusBadge, isUnavailable } from '../../utils/lineup';
 import { renewalCost, renewalWage } from '../../utils/contract';
+import { TIER_INFO } from '../../data/stars';
+import { formatMoney } from '../../utils/pricing';
+import { generateLoanOutOffers } from '../../utils/loan';
+import { LoanOutOffer } from '../../types/game';
 
 interface SquadTabProps {
   gameState: GameState;
@@ -12,14 +16,19 @@ interface SquadTabProps {
   onSetCaptain: (playerId: number | null) => void;
   onRenewContract: (playerId: number, years: number) => void;
   onAutoPick?: () => void;
+  onSendOnLoan: (offer: LoanOutOffer) => void;
+  onExerciseLoanOption: (playerId: number) => void;
+  onReturnLoanEarly: (playerId: number) => void;
 }
 
 export const SquadTab: React.FC<SquadTabProps> = ({
-  gameState, onSwapPlayers, onSellPlayer, onSetCaptain, onRenewContract, onAutoPick
+  gameState, onSwapPlayers, onSellPlayer, onSetCaptain, onRenewContract, onAutoPick,
+  onSendOnLoan, onExerciseLoanOption, onReturnLoanEarly
 }) => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [draggedPlayer, setDraggedPlayer] = useState<{ id: number; isBench: boolean } | null>(null);
   const [renewYears, setRenewYears] = useState(2);
+  const [loanOffers, setLoanOffers] = useState<LoanOutOffer[] | null>(null);
 
   const getEnergyColor = (energy: number) => {
     if (energy >= 70) return 'bg-emerald-500';
@@ -173,8 +182,10 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-white text-sm truncate flex items-center gap-1">
                       {player.name}
+                      {player.starTier && <span className="text-[10px]" title={TIER_INFO[player.starTier].label}>{TIER_INFO[player.starTier].icon}</span>}
                       {gameState.captainId === player.id && <span className="text-[10px]">🎽</span>}
                       {player.wantsOut && <span className="text-[10px]" title="Kulüpten ayrılmak istiyor">😠</span>}
+                      {player.loanFrom && <span className="text-[9px] bg-cyan-500/30 text-cyan-200 px-1 rounded" title={`${player.loanFrom} kulübünden kiralık`}>KİRALIK</span>}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <span className="text-emerald-400">{ROLE_NAMES[player.role]}</span>
@@ -220,7 +231,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelectedPlayer(null)} className="text-slate-400 hover:text-white text-2xl">×</button>
+              <button onClick={() => { setSelectedPlayer(null); setLoanOffers(null); }} className="text-slate-400 hover:text-white text-2xl">×</button>
             </div>
 
             {playerStatusBadge(selectedPlayer) && (
@@ -258,17 +269,92 @@ export const SquadTab: React.FC<SquadTabProps> = ({
             <div className="flex items-center justify-between bg-amber-500/20 p-3 rounded-xl mb-4">
               <div>
                 <div className="text-xs text-amber-300">Piyasa Değeri</div>
-                <div className="text-base font-bold text-amber-400">${selectedPlayer.value.toLocaleString()}</div>
+                <div className="text-base font-bold text-amber-400">{formatMoney(selectedPlayer.value)}</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-amber-300">Maaş / Sözleşme</div>
                 <div className="text-base font-bold text-amber-400">
-                  ${selectedPlayer.wage.toLocaleString()}/h • {selectedPlayer.contract} yıl
+                  {formatMoney(selectedPlayer.wage)}/h • {selectedPlayer.contract} yıl
                 </div>
               </div>
             </div>
 
+            {/* Kiralık bilgisi */}
+            {selectedPlayer.loanFrom && (
+              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-3 mb-4">
+                <div className="text-cyan-300 font-bold text-sm mb-1">
+                  🔄 {selectedPlayer.loanFrom} kulübünden kiralık
+                </div>
+                <div className="text-[11px] text-slate-300 mb-2">
+                  Sezon {selectedPlayer.loanUntilSeason} sonuna kadar bizde • Maaş payımız: {formatMoney(selectedPlayer.wage)}/hafta
+                  {selectedPlayer.loanOptionPrice ? ` • Opsiyon: ${formatMoney(selectedPlayer.loanOptionPrice)}` : ' • Satın alma opsiyonu yok'}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {!!selectedPlayer.loanOptionPrice && (
+                    <button
+                      disabled={gameState.budget < selectedPlayer.loanOptionPrice}
+                      onClick={() => { onExerciseLoanOption(selectedPlayer.id); setSelectedPlayer(null); }}
+                      className={`px-3 py-2 rounded-lg text-xs font-bold ${
+                        gameState.budget >= selectedPlayer.loanOptionPrice
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      ✅ Satın Alma Opsiyonunu Kullan
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { onReturnLoanEarly(selectedPlayer.id); setSelectedPlayer(null); }}
+                    className="px-3 py-2 rounded-lg text-xs bg-slate-600 hover:bg-slate-500 text-white"
+                  >
+                    ↩️ Kiralıktan Çıkar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Kiralığa gönder */}
+            {!selectedPlayer.loanFrom && (
+              <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+                <div className="text-xs text-amber-300 font-bold mb-2">📤 Kiralığa Gönder (gelişim + gelir)</div>
+                {!loanOffers ? (
+                  <button
+                    onClick={() => setLoanOffers(generateLoanOutOffers(selectedPlayer, gameState))}
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-sm"
+                  >
+                    Kulüp tekliflerini gör
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    {loanOffers.map(offer => (
+                      <div key={offer.id} className="bg-slate-800/60 rounded-lg p-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-white font-medium">{offer.toLogo} {offer.toClub}</span>
+                          <span className="text-amber-300 font-bold">{formatMoney(offer.fee)}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Maaşın %{Math.round(offer.wageCoverage * 100)}'ini karşılar • {offer.note}
+                        </div>
+                        <button
+                          onClick={() => {
+                            onSendOnLoan(offer);
+                            setLoanOffers(null);
+                            setSelectedPlayer(null);
+                          }}
+                          className="w-full mt-1.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded"
+                        >
+                          🔄 Bu kulübe kirala
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={() => setLoanOffers(null)} className="w-full text-[11px] text-slate-400">← Geri</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Sözleşme yenileme */}
+            {!selectedPlayer.loanFrom && (
             <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-sky-300 font-bold">📝 Sözleşme Yenile</span>
@@ -299,6 +385,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                 🤝 {renewYears} Yıl Uzat
               </button>
             </div>
+            )}
 
             <button
               onClick={() => { onSetCaptain(selectedPlayer.id); setSelectedPlayer(null); }}
@@ -314,14 +401,14 @@ export const SquadTab: React.FC<SquadTabProps> = ({
             <button
               onClick={() => {
                 const isBench = gameState.bench.some(p => p.id === selectedPlayer.id);
-                if (confirm(`${selectedPlayer.name} oyuncusunu $${Math.floor(selectedPlayer.value * 0.8).toLocaleString()} karşılığında satmak istiyor musunuz?`)) {
+                if (confirm(`${selectedPlayer.name} oyuncusunu ${formatMoney(Math.floor(selectedPlayer.value * 0.8))} karşılığında satmak istiyor musunuz?`)) {
                   onSellPlayer(selectedPlayer.id, isBench);
                   setSelectedPlayer(null);
                 }
               }}
               className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all"
             >
-              💰 Oyuncuyu Sat (${Math.floor(selectedPlayer.value * 0.8).toLocaleString()})
+              💰 Oyuncuyu Sat ({formatMoney(Math.floor(selectedPlayer.value * 0.8))})
             </button>
           </div>
         </div>

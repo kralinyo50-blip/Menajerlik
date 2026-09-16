@@ -34,6 +34,8 @@ import {
 import { Difficulty, FixtureEntry, Player, Sponsor, TrainingFocus, SkillId } from './types/game';
 import { BOT_NAMES_BY_LEVEL, FORMATIONS } from './data/constants';
 import { calculateAttendance, generateFixture } from './utils/fixture';
+import { assignKeyPlayers, applyLoanGrowth, generateLoanList } from './utils/loan';
+import { playerValue } from './utils/pricing';
 import { createSeasonMissions, createWeeklyMissions } from './utils/missions';
 import { exportSaveToFile, importSaveFromFile, writeSlot, clearSlot } from './utils/save';
 import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
@@ -93,6 +95,12 @@ function App() {
     resetCareer,
     setGameStateExternal,
     spendSkillPoint,
+    refreshLoanList,
+    takeLoan,
+    exerciseLoanOption,
+    returnLoanEarly,
+    sendOnLoan,
+    recallLoan,
     claimDailyReward,
     dismissDailyReward,
     autoPickBestEleven
@@ -475,7 +483,7 @@ function App() {
         age: aged,
         contract: Math.max(0, p.contract - 1),
         ovr,
-        value: Math.floor(ovr * 15000 * (aged < 23 ? 1.3 : aged > 30 ? 0.7 : 1)),
+        value: playerValue(ovr, aged, { tier: p.starTier, potential: p.potential }),
         goals: 0,
         assists: 0,
         matchesPlayed: 0,
@@ -498,8 +506,10 @@ function App() {
       ovr: Math.min(p.potential, p.ovr + (Math.random() < 0.6 ? 1 : 0))
     }));
 
-    // Sözleşmesi bitenler ayrılır
+    // Sözleşmesi bitenler ayrılır (kiralık oyuncular bu kuraldan muaf)
+    const loanInIds = new Set([...gameState.team11, ...gameState.bench].filter(p => p.loanFrom).map(p => p.id));
     const keepOrLeave = (p: Player): boolean => {
+      if (loanInIds.has(p.id)) return true;
       if (p.contract > 0) return true;
       // %25 ihtimalle düşük maaşla 1 yıl uzatır
       if (Math.random() < 0.25) return true;
@@ -509,6 +519,26 @@ function App() {
 
     let team11 = agedTeam.filter(keepOrLeave);
     let bench = agedBench.filter(keepOrLeave);
+
+    // ── Kiralıklar ──
+    // 1) Bizden kiralığa gidenler gelişmiş olarak döner
+    const returning: Player[] = [];
+    (gameState.outgoingLoans || []).forEach(loan => {
+      const weeks = Math.max(1, 18 - loan.startWeek);
+      const back = applyLoanGrowth(loan.player, weeks);
+      returning.push({ ...back, t: undefined, l: undefined });
+      newsItems.push(`↩️ ${loan.playerName} kiralamadan döndü (${loan.toClub}): ${loan.playerOvr} → ${back.ovr} OVR`);
+    });
+
+    // 2) Bizim kiraladığımız oyuncular kulüplerine döner (satın alma opsiyonu kullanılmadıysa)
+    const releasedNames = [...team11, ...bench].filter(p => p.loanFrom).map(p => p.name);
+    team11 = team11.filter(p => !p.loanFrom);
+    bench = bench.filter(p => !p.loanFrom);
+    if (releasedNames.length > 0) {
+      newsItems.push(`🔄 Kiralık oyuncular kulüplerine döndü: ${releasedNames.join(', ')}`);
+    }
+    bench = [...bench, ...returning];
+
 
     // Eksik kadroyu akademi ve altyapıdan tamamla
     const fillFromAcademy = () => {
@@ -556,7 +586,8 @@ function App() {
       ovr: baseOvr + Math.floor(Math.random() * 12) + (promoted ? 3 : 0),
       isUser: false
     }))];
-    const bots = league.filter(t => !t.isUser);
+    const leagueWithStars = assignKeyPlayers(league);
+    const bots = leagueWithStars.filter(t => !t.isUser);
     const nextFixture = generateFixture(userTeam, bots);
 
     const cupTeams = [...bots].sort(() => Math.random() - 0.5).slice(0, 4);
@@ -567,7 +598,7 @@ function App() {
       { round: 'Final', opponent: cupTeams[3], played: false }
     ];
 
-    const seasonPrize = champion ? 500000 : userPosition <= 3 ? 250000 : userPosition <= 5 ? 100000 : 50000;
+    const seasonPrize = champion ? 3000000 : userPosition <= 3 ? 1500000 : userPosition <= 5 ? 700000 : 300000;
 
     const topScorer = [...gameState.team11, ...gameState.bench].sort((a, b) => b.goals - a.goals)[0];
 
@@ -608,7 +639,7 @@ function App() {
       week: 1,
       season: (gameState.season || 1) + 1,
       matchHistory: [],
-      league,
+      league: leagueWithStars,
       fixture: nextFixture,
       cupMatches,
       cupEliminated: false,
@@ -621,6 +652,7 @@ function App() {
       seasonObjective: nextObjective,
       leagueScorers: [],
       transferOffers: [],
+      outgoingLoans: [],
       boardWarnings: 0,
       careerOver,
       careerOverReason: careerOver ? 'Sezon sonu değerlendirmesinde yönetim kurulu sözleşmeni yenilemedi.' : null,
@@ -630,6 +662,11 @@ function App() {
         ...gameState.news.slice(0, 3)
       ]
     });
+
+    // Yeni sezon kiralık listesi
+    setTimeout(() => {
+      updateGameState({ loanList: generateLoanList({ ...provisional, outgoingLoans: [] } as typeof gameState, 5) });
+    }, 50);
 
     setSeasonSummary(summary);
     setTimeout(() => saveGame(0), 800);
@@ -989,6 +1026,9 @@ function App() {
                 onSetSetPieceTaker={setSetPieceTaker}
                 onSetTrainingFocus={(f: TrainingFocus) => setTrainingFocus(f)}
                 onDismissBoardMessage={dismissBoardMessage}
+                onExerciseLoanOption={exerciseLoanOption}
+                onReturnLoanEarly={returnLoanEarly}
+                onRecallLoan={recallLoan}
               />
             )}
             {activeTab === 'career' && (
@@ -1003,10 +1043,19 @@ function App() {
                 onSetCaptain={setCaptain}
                 onRenewContract={renewContract}
                 onAutoPick={autoPickBestEleven}
+                onSendOnLoan={sendOnLoan}
+                onExerciseLoanOption={exerciseLoanOption}
+                onReturnLoanEarly={returnLoanEarly}
               />
             )}
             {activeTab === 'transfer' && (
-              <TransferTab gameState={gameState} onBuyPlayer={buyPlayer} onRefreshMarket={refreshMarket} />
+              <TransferTab
+                gameState={gameState}
+                onBuyPlayer={buyPlayer}
+                onRefreshMarket={refreshMarket}
+                onRefreshLoanList={refreshLoanList}
+                onTakeLoan={takeLoan}
+              />
             )}
             {activeTab === 'tactics' && (
               <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} />

@@ -119,7 +119,7 @@ export const SHOP_TYPES: ShopTypeInfo[] = [
     name: 'Mini Mağaza',
     description: 'Küçük bir köşe dükkanı. Formalar ve atkılar satılır.',
     image: '/images/shop-small.png',
-    baseCost: 150000,
+    baseCost: 400000,
     incomeMultiplier: 1,
     emoji: '🏪'
   },
@@ -128,7 +128,7 @@ export const SHOP_TYPES: ShopTypeInfo[] = [
     name: 'Standart Mağaza',
     description: 'AVM içi mağaza. Geniş ürün yelpazesi.',
     image: '/images/shop-medium.png',
-    baseCost: 400000,
+    baseCost: 1000000,
     incomeMultiplier: 2.5,
     emoji: '🏬'
   },
@@ -137,7 +137,7 @@ export const SHOP_TYPES: ShopTypeInfo[] = [
     name: 'Mega Store',
     description: 'Çok katlı büyük mağaza. Premium ürünler.',
     image: '/images/shop-large.png',
-    baseCost: 900000,
+    baseCost: 2400000,
     incomeMultiplier: 5,
     emoji: '🏢'
   },
@@ -146,7 +146,7 @@ export const SHOP_TYPES: ShopTypeInfo[] = [
     name: 'Flagship Mağaza',
     description: 'Amiral gemisi! VIP bölüm, özel tasarım.',
     image: '/images/shop-premium.png',
-    baseCost: 2000000,
+    baseCost: 5500000,
     incomeMultiplier: 12,
     emoji: '👑'
   }

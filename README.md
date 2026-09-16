@@ -1,4 +1,4 @@
-# Manager Pro 2026 — Ultimate Edition (v3.1 Kariyer İlerlemesi)
+# Manager Pro 2026 — Ultimate Edition (v3.2 Kiralama & Yıldız Oyuncular)
 
 Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar — artık **kariyer sistemi, hava durumu, kart/ceza, sözleşmeler ve penaltı atışları** ile.
 
@@ -42,6 +42,13 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - **Devre arası takım konuşması** — öv / fırça at / sakin taktik
 - **Kupa'da uzatma ve interaktif penaltı atışları**
 - Oyun içi mini-oyunlar: penaltı, frikik, kaleci kurtarışı, otobüs, sabotaj, basın, sprint, taraftar
+
+### Kiralama & Yıldız Oyuncular (v3.2)
+- **🔄 Kiralama sistemi** — kiralık liste (peşin bedel, maaş payı, satın alma opsiyonu), sezon sonu dönüş, erken iade ve geri çağırma
+- **📤 Oyuncularını kiralığa gönder** — kulüp teklifleri arasından seç, maaşın bir kısmı dışarıdan karşılanır, oyuncu OVR gelişimiyle döner
+- **🌍 74 bilindik futbolcu** — dünya yıldızları (Mbappé, Haaland, Yamal…), milli yıldızlar (Arda Güler, Kenan Yıldız, Hakan Çalhanoğlu…) ve genç yıldız adayları
+- **⭐ Rakip kulüp yıldızları** — her takımın bir yıldızı var; maç öncesi raporda ve sahada karşına çıkar
+- **💰 Yeni piyasa ekonomisi** — 80 OVR ≈ $6.7M, 90 OVR ≈ $18M, 95 OVR ≈ $29M; yaş ve yıldız sınıfı çarpanlarıyla
 
 ### İlerleme & Bağlılık (v3.1)
 - **🎯 Görev sistemi** — haftalık (5 haftada yenilenen), sezonluk ve kariyer görevleri; nakit + XP + jeton + yetenek puanı

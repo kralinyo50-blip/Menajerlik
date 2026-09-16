@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
-  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId
+  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
@@ -9,25 +9,27 @@ import {
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
 import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
-import { generateFixture, calculateAttendance, ticketPrice, awayIncome, } from '../utils/fixture';
+import { generateFixture, calculateAttendance, ticketPrice, awayIncome } from '../utils/fixture';
+import { playerValue, playerWage, marketRefreshCost } from '../utils/pricing';
+import {
+  assignKeyPlayers, buildGenericMarketPlayers, buildMarketStars, generateLoanList,
+  applyLoanGrowth
+} from '../utils/loan';
 import { readSlot, writeSlot, randomWeather } from '../utils/save';
 import { fixLineup } from '../utils/lineup';
 import { renewalCost, renewalWage } from '../utils/contract';
 import { createCareerMissions, createSeasonMissions, createWeeklyMissions, evaluateMissions, refreshWeeklyIfNeeded } from '../utils/missions';
 import {
   SKILLS, emptySkillTree, grantXp, skillBuyDiscount, skillFatigueReduction, skillInjuryReduction, skillMoraleBonus,
-  skillRecoveryBonus, skillScoutBonus, skillSellBonus, skillSponsorBonus, skillYouthBonus
+  skillRecoveryBonus, skillSellBonus, skillSponsorBonus, skillYouthBonus
 } from '../utils/progression';
 
 const generatePlayerName = () => {
   return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
 };
 
-const calculatePlayerValue = (ovr: number, age: number) => {
-  const baseValue = ovr * 15000;
-  const ageMultiplier = age < 23 ? 1.3 : age > 30 ? 0.7 : 1;
-  return Math.floor(baseValue * ageMultiplier);
-};
+const calculatePlayerValue = (ovr: number, age: number, potential?: number) =>
+  playerValue(ovr, age, { potential });
 
 const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number): Player => {
   const ovr = minOvr + Math.floor(Math.random() * Math.max(1, maxOvr - minOvr));
@@ -45,8 +47,8 @@ const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number
     injuryWeeks: 0,
     age,
     potential: Math.min(99, ovr + Math.floor(Math.random() * 15)),
-    value: calculatePlayerValue(ovr, age),
-    wage: Math.floor(ovr * 500),
+    value: calculatePlayerValue(ovr, age, Math.min(99, ovr + Math.floor(Math.random() * 15))),
+    wage: playerWage(ovr),
     contract: 1 + Math.floor(Math.random() * 4),
     yellowCards: 0,
     redCard: false,
@@ -149,15 +151,10 @@ export const useGameState = () => {
       });
     });
 
-    const bots = league.filter(t => !t.isUser);
+    // Rakip kulüplere bilindik yıldız oyuncuları ata
+    const leagueWithStars = assignKeyPlayers(league);
+    const bots = leagueWithStars.filter(t => !t.isUser);
     const fixture = generateFixture(userTeam, bots);
-
-    const marketList: Player[] = [];
-    const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
-    for (let i = 0; i < 8; i++) {
-      const role = posPool[Math.floor(Math.random() * posPool.length)];
-      marketList.push(generatePlayer(role, baseOvr, baseOvr + 15, 5000 + i));
-    }
 
     const cupTeams = shuffleArray([...bots]).slice(0, 4);
     const cupMatches: CupMatch[] = [
@@ -174,9 +171,9 @@ export const useGameState = () => {
       teamLogo,
       team11,
       bench,
-      league,
+      league: leagueWithStars,
       fixture,
-      marketList,
+      marketList: [],
       week: 1,
       season: 1,
       budget: diffCfg.startingBudget,
@@ -254,8 +251,20 @@ export const useGameState = () => {
       missions: [],
       lastPlayedDate: '',
       loginStreak: 0,
-      lastDailyReward: null
+      lastDailyReward: null,
+      loanList: [],
+      outgoingLoans: []
     };
+
+    // Transfer pazarı: generic oyuncular + bilindik yıldızlar
+    initialState.marketList = [
+      ...buildGenericMarketPlayers(initialState, 6),
+      ...buildMarketStars(initialState)
+    ];
+
+    // Kiralık listesi
+    initialState.loanList = generateLoanList(initialState, 5);
+    initialState.outgoingLoans = [];
 
     // Görevler: kariyer (kalıcı) + sezon + haftalık
     initialState.missions = [
@@ -357,7 +366,7 @@ export const useGameState = () => {
       const price = Math.max(10000, Math.floor(rawPrice * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0))));
       if (prev.budget < price) return prev;
 
-      const newWage = Math.max(player.wage, Math.floor(player.ovr * 550));
+      const newWage = Math.max(player.wage, playerWage(player.ovr, player.starTier));
       let result: GameState = {
         ...prev,
         bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: 3, suspension: 0 }],
@@ -547,59 +556,220 @@ export const useGameState = () => {
   const refreshMarket = useCallback(() => {
     setGameState(prev => {
       if (!prev) return null;
-      const refreshCost = Math.max(120000, 200000 - (prev.skills?.scouting ?? 0) * 16000);
-      if (prev.budget < refreshCost) return prev;
 
-      const baseOvr = 50 + (5 - prev.leagueLevel) * 10 + (prev.scoutLvl * 3) + skillScoutBonus(prev.skills?.scouting ?? 0);
-      const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
-      const newMarket: Player[] = [];
+      const cost = marketRefreshCost(prev.skills?.scouting ?? 0, prev.scoutLvl || 1);
+      if (prev.budget < cost) return prev;
 
-      const normalCount = 6 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < normalCount; i++) {
-        const role = posPool[Math.floor(Math.random() * posPool.length)];
-        newMarket.push(generatePlayer(role, baseOvr, baseOvr + 15 + prev.scoutLvl * 2, Date.now() + i));
-      }
-
-      if (Math.random() < 0.15) {
-        const starRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const starOvr = 88 + Math.floor(Math.random() * 8);
-        const starPlayer = generatePlayer(starRole, starOvr, starOvr + 5, Date.now() + 100);
-        starPlayer.potential = Math.min(99, starOvr + Math.floor(Math.random() * 10) + 5);
-        starPlayer.value = starPlayer.ovr * 50000;
-        starPlayer.wage = starPlayer.ovr * 2000;
-        starPlayer.name = '⭐ ' + starPlayer.name;
-        newMarket.push(starPlayer);
-      }
-
-      if (Math.random() < 0.03) {
-        const legendRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const legendOvr = 96 + Math.floor(Math.random() * 4);
-        const legendPlayer = generatePlayer(legendRole, legendOvr, legendOvr, Date.now() + 200);
-        legendPlayer.potential = Math.min(99, legendOvr + Math.floor(Math.random() * 5));
-        legendPlayer.value = legendPlayer.ovr * 150000;
-        legendPlayer.wage = legendPlayer.ovr * 5000;
-        legendPlayer.name = '👑 ' + legendPlayer.name;
-        legendPlayer.age = 28 + Math.floor(Math.random() * 5);
-        newMarket.push(legendPlayer);
-      }
-
-      if (Math.random() < 0.25) {
-        const youthRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const youthOvr = 65 + Math.floor(Math.random() * 10);
-        const youthPlayer = generatePlayer(youthRole, youthOvr, youthOvr, Date.now() + 300);
-        youthPlayer.age = 16 + Math.floor(Math.random() * 3);
-        youthPlayer.potential = 85 + Math.floor(Math.random() * 15);
-        youthPlayer.value = youthPlayer.potential * 15000;
-        youthPlayer.wage = youthPlayer.ovr * 300;
-        youthPlayer.name = '🌟 ' + youthPlayer.name;
-        newMarket.push(youthPlayer);
-      }
+      const exclude = [...prev.team11, ...prev.bench].map(p => p.name.replace(/^[^\w]+\s/, ''));
+      const newMarket = [
+        // Scout ağı yeteneği pazar kalitesini yükseltir
+        ...buildGenericMarketPlayers({ ...prev, scoutLvl: (prev.scoutLvl || 1) + (prev.skills?.scouting ?? 0) }, 5 + Math.floor(Math.random() * 3)),
+        ...buildMarketStars(prev, exclude)
+      ];
 
       return {
         ...prev,
         marketList: newMarket,
-        budget: prev.budget - refreshCost,
-        news: ['📋 Transfer listesi güncellendi. Scout ücreti: $200,000', ...prev.news.slice(0, 4)]
+        budget: prev.budget - cost,
+        news: [`📋 Transfer listesi güncellendi ($${cost.toLocaleString()}). ${newMarket.length} oyuncu izleniyor.`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  /* ══════════════ KİRALAMA ══════════════ */
+  const refreshLoanList = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const cost = Math.max(50000, marketRefreshCost(prev.skills?.scouting ?? 0, prev.scoutLvl || 1) / 3 | 0);
+      if (prev.budget < cost) return prev;
+      return {
+        ...prev,
+        loanList: generateLoanList(prev, 5),
+        budget: prev.budget - cost,
+        news: [`🔄 Kiralık listesi yenilendi ($${cost.toLocaleString()}).`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  /** Kiralık oyuncu kadroya katılır (maaşın bir kısmını kulübümüz öder) */
+  const takeLoan = useCallback((targetId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const target = (prev.loanList || []).find(t => t.id === targetId);
+      if (!target) return prev;
+      if (prev.budget < target.loanFee) return prev;
+
+      const baseName = target.player.name.replace(/^[^\w]+\s/, '');
+      if ([...prev.team11, ...prev.bench].some(p => p.name.replace(/^[^\w]+\s/, '') === baseName)) return prev;
+
+      const loaned: Player = {
+        ...target.player,
+        id: Date.now(),
+        wage: Math.max(1000, Math.round(target.player.wage * target.wageShare)),
+        loanBaseWage: target.player.wage,
+        loanFrom: target.fromClub,
+        loanFromLogo: target.fromLogo,
+        loanUntilSeason: target.untilSeason,
+        loanOptionPrice: target.optionToBuy,
+        contract: 0
+      };
+
+      return {
+        ...prev,
+        bench: [...prev.bench, loaned],
+        loanList: prev.loanList.filter(t => t.id !== targetId),
+        budget: prev.budget - target.loanFee,
+        news: [
+          `🔄 ${loaned.name}, ${target.fromClub} kulübünden kiralandı! Bedel: $${target.loanFee.toLocaleString()} • Maaş payımız: %${Math.round(target.wageShare * 100)}${target.optionToBuy ? ` • Satın alma opsiyonu: $${target.optionToBuy.toLocaleString()}` : ''}`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Kiralık oyuncunun satın alma opsiyonunu kullan */
+  const exerciseLoanOption = useCallback((playerId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const inTeam = prev.team11.find(p => p.id === playerId);
+      const inBench = prev.bench.find(p => p.id === playerId);
+      const player = inTeam || inBench;
+      if (!player || !player.loanOptionPrice) return prev;
+      if (prev.budget < player.loanOptionPrice) return prev;
+
+      const convert = (p: Player): Player => {
+        if (p.id !== playerId) return p;
+        const { loanFrom, loanFromLogo, loanUntilSeason, loanOptionPrice, loanBaseWage, ...rest } = p;
+        void loanFrom; void loanFromLogo; void loanUntilSeason; void loanOptionPrice;
+        return {
+          ...rest,
+          wage: loanBaseWage ?? p.wage,
+          loanBaseWage: undefined,
+          contract: 3,
+          morale: Math.min(100, p.morale + 12),
+          value: playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential })
+        };
+      };
+
+      return {
+        ...prev,
+        team11: prev.team11.map(convert),
+        bench: prev.bench.map(convert),
+        budget: prev.budget - player.loanOptionPrice,
+        clubStats: { ...prev.clubStats, transfers: (prev.clubStats.transfers || 0) + 1 },
+        news: [
+          `✅ ${player.name} için satın alma opsiyonu kullanıldı! $${player.loanOptionPrice.toLocaleString()} ödendi — oyuncu artık bizim!`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Kiralık oyuncuyu erken iade et (kadro yer açar) */
+  const returnLoanEarly = useCallback((playerId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const inTeam = prev.team11.find(p => p.id === playerId);
+      const inBench = prev.bench.find(p => p.id === playerId);
+      const player = inTeam || inBench;
+      if (!player || !player.loanFrom) return prev;
+
+      const penalty = Math.round((player.loanBaseWage ?? 0) * 2);
+      let team11 = prev.team11;
+      let bench = prev.bench.filter(p => p.id !== playerId);
+
+      if (inTeam) {
+        const sub = bench.find(p => !p.injured && !(p.suspension ?? 0));
+        if (sub) {
+          team11 = prev.team11.map(p => (p.id === playerId ? { ...sub, t: p.t, l: p.l, role: p.role } : p));
+          bench = bench.filter(p => p.id !== sub.id);
+        } else {
+          team11 = prev.team11.filter(p => p.id !== playerId);
+        }
+      }
+
+      return {
+        ...prev,
+        team11,
+        bench,
+        budget: prev.budget - penalty,
+        news: [`↩️ ${player.name} kiralık sözleşmesi feshedildi (${player.loanFrom}). Cezai işlem: $${penalty.toLocaleString()}`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  /** Oyuncuyu kiralığa gönder (kulüp teklifi kabul edilir) */
+  const sendOnLoan = useCallback((offer: LoanOutOffer) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const inTeam = prev.team11.find(p => p.id === offer.playerId);
+      const inBench = prev.bench.find(p => p.id === offer.playerId);
+      const player = inTeam || inBench;
+      if (!player) return prev;
+
+      let team11 = prev.team11;
+      let bench = prev.bench.filter(p => p.id !== offer.playerId);
+
+      if (inTeam) {
+        const sub = bench.find(p => !p.injured && !(p.suspension ?? 0));
+        if (!sub) return prev; // yedek yoksa gönderemeyiz
+        team11 = prev.team11.map(p => (p.id === player.id ? { ...sub, t: p.t, l: p.l, role: p.role } : p));
+        bench = bench.filter(p => p.id !== sub.id);
+      }
+
+      const loan = {
+        id: Date.now(),
+        player: { ...player, t: undefined, l: undefined },
+        playerId: player.id,
+        playerName: player.name,
+        playerOvr: player.ovr,
+        playerRole: player.role,
+        playerAge: player.age,
+        toClub: offer.toClub,
+        toLogo: offer.toLogo,
+        fee: offer.fee,
+        wageCoverage: offer.wageCoverage,
+        baseWage: player.wage,
+        startWeek: prev.week,
+        season: prev.season,
+        growth: 0,
+        untilSeason: prev.season
+      };
+
+      return {
+        ...prev,
+        team11,
+        bench,
+        budget: prev.budget + offer.fee,
+        outgoingLoans: [...(prev.outgoingLoans || []), loan],
+        news: [
+          `📤 ${player.name}, ${offer.toClub} kulübüne kiralandı! Bedel: $${offer.fee.toLocaleString()} • Maaşın %${Math.round(offer.wageCoverage * 100)}'ini onlar ödüyor.`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Kiralıktaki oyuncuyu geri çağır (bedelin %30'u iade edilir) */
+  const recallLoan = useCallback((loanId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const loan = (prev.outgoingLoans || []).find(l => l.id === loanId);
+      if (!loan) return prev;
+
+      const weeks = Math.max(1, prev.week - loan.startWeek);
+      const returned = applyLoanGrowth(loan.player, weeks);
+      const refund = Math.round(loan.fee * 0.3);
+
+      return {
+        ...prev,
+        bench: [...prev.bench, { ...returned, t: undefined, l: undefined }],
+        outgoingLoans: prev.outgoingLoans.filter(l => l.id !== loanId),
+        budget: prev.budget - refund,
+        news: [
+          `↩️ ${loan.playerName} kiralamadan geri çağrıldı (${loan.toClub}). Gelişim: ${loan.player.ovr} → ${returned.ovr} OVR • İade: $${refund.toLocaleString()}`,
+          ...prev.news.slice(0, 4)
+        ]
       };
     });
   }, []);
@@ -762,8 +932,8 @@ export const useGameState = () => {
       newState.league.sort((a, b) => b.p - a.p || (b.gf - b.ga) - (a.gf - a.ga));
 
       /* — Gelir: bilet + yayın + prim — */
-      const baseIncome = newState.stadiumLvl * 90000;
-      const winBonus = userWon ? 240000 : userScore === oppScore ? 70000 : 20000;
+      const baseIncome = newState.stadiumLvl * 200000;
+      const winBonus = userWon ? 450000 : userScore === oppScore ? 150000 : 50000;
       let matchIncome: number;
       if (isHome) {
         const ticketRevenue = Math.floor(attendance * ticketPrice(newState.stadiumLvl) * 0.7);
@@ -1144,6 +1314,38 @@ export const useGameState = () => {
       if (newState.boardConfidence <= 0) {
         newState.careerOver = true;
         newState.careerOverReason = 'Yönetim kurulu güvenini kaybetti ve sözleşmen feshedildi.';
+      }
+
+      /* — Kiralık sözleşmeleri — */
+      const loanReminders: string[] = [];
+      const activeLoans = [...newState.team11, ...newState.bench].filter(p => p.loanFrom);
+      activeLoans.forEach(p => {
+        if (p.loanOptionPrice && newState.week >= 15) {
+          loanReminders.push(`⏳ ${p.name} satın alma opsiyonu ($${p.loanOptionPrice.toLocaleString()}) sezon sonuna kadar geçerli — Ofis → Kiralıklar`);
+        }
+      });
+      // Süresi geçen kiralıklar geri döner
+      const expiredLoanIds = activeLoans
+        .filter(p => (p.loanUntilSeason ?? newState.season) < newState.season)
+        .map(p => p.id);
+      if (expiredLoanIds.length > 0) {
+        const strip = (p: Player): Player => {
+          if (!expiredLoanIds.includes(p.id)) return p;
+          const { loanFrom, loanFromLogo, loanUntilSeason, loanOptionPrice, loanBaseWage, ...rest } = p;
+          void loanFrom; void loanFromLogo; void loanUntilSeason; void loanOptionPrice; void loanBaseWage;
+          return rest as Player;
+        };
+        newState.team11 = newState.team11.filter(p => !expiredLoanIds.includes(p.id)).map(strip);
+        newState.bench = newState.bench.filter(p => !expiredLoanIds.includes(p.id)).map(strip);
+        newState.news = [`🔄 Kiralık sözleşmeleri sona erdi, oyuncular kulüplerine döndü.`, ...newState.news.slice(0, 4)];
+      }
+      // Kiralıktaki oyuncular gelişiyor
+      newState.outgoingLoans = (newState.outgoingLoans || []).map(l => ({
+        ...l,
+        growth: Math.round(Math.max(0, newState.week - l.startWeek) / 6)
+      }));
+      if (loanReminders.length > 0) {
+        newState.boardMessages = [...loanReminders, ...newState.boardMessages.slice(0, 5)];
       }
 
       /* — Görevler, XP ve yetenek etkileri — */
@@ -1655,7 +1857,13 @@ export const useGameState = () => {
     spendSkillPoint,
     claimDailyReward,
     dismissDailyReward,
-    autoPickBestEleven
+    autoPickBestEleven,
+    refreshLoanList,
+    takeLoan,
+    exerciseLoanOption,
+    returnLoanEarly,
+    sendOnLoan,
+    recallLoan
   };
 };
 

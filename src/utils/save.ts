@@ -1,7 +1,8 @@
-import { GameState, FixtureEntry, Weather } from '../types/game';
+import { GameState, FixtureEntry, Player, Weather } from '../types/game';
 import { INITIAL_ACHIEVEMENTS } from '../data/achievements';
 import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from './missions';
 import { emptySkillTree } from './progression';
+import { playerValue, playerWage } from './pricing';
 
 export const SLOT_KEYS = [
   'ManagerPro2026_Save',       // Slot 1 (eski otomatik kayıt)
@@ -90,14 +91,41 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     lastPlayedDate: state.lastPlayedDate ?? '',
     loginStreak: state.loginStreak ?? 0,
     lastDailyReward: state.lastDailyReward ?? null,
-    team11: (state.team11 || []).map(p => ({ ...p, suspension: p.suspension ?? 0 })),
-    bench: (state.bench || []).map(p => ({ ...p, suspension: p.suspension ?? 0 })),
+    loanList: state.loanList ?? [],
+    outgoingLoans: state.outgoingLoans ?? [],
+    team11: (state.team11 || []).map(p => ({
+      ...p,
+      suspension: p.suspension ?? 0,
+      value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
+    })),
+    bench: (state.bench || []).map(p => ({
+      ...p,
+      suspension: p.suspension ?? 0,
+      value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
+    })),
     clubStats: {
       ...DEFAULT_CLUB_STATS,
       ...(state.clubStats || {}),
     },
     shopBranches: state.shopBranches ?? [],
   };
+
+  // Eski (2.x/3.0/3.1) kayıtların oyuncu değer ve maaşları yeni piyasa ekonomisine çekilir.
+  // Kiralık oyuncuların maaş payı korunur.
+  const sample = result.team11?.[0];
+  const needsRepricing = !!sample && sample.value < playerValue(sample.ovr, sample.age, { potential: sample.potential }) * 0.5;
+
+  if (needsRepricing) {
+    const reprice = (p: Player): Player => ({
+      ...p,
+      value: playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }),
+      wage: p.loanFrom ? Math.round(playerWage(p.ovr, p.starTier) * 0.6) : playerWage(p.ovr, p.starTier),
+    });
+    result.team11 = result.team11.map(reprice);
+    result.bench = result.bench.map(reprice);
+    result.marketList = (result.marketList || []).map(reprice);
+    result.academyPlayers = (result.academyPlayers || []).map(reprice);
+  }
 
   // Görevler yoksa (eski kayıt) oluştur
   if (!result.missions || result.missions.length === 0) {

@@ -9,6 +9,21 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '3.2.0',
+    date: '16 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: 'Kiralama, Yıldız Futbolcular ve Yeni Piyasa Ekonomisi',
+    items: [
+      '🔄 Kiralama sistemi: kiralık liste, peşin bedel, maaş payı, sezon sonu dönüş, satın alma opsiyonu',
+      '📤 Oyuncularını kiralığa gönderebilirsin: kulüp teklifleri, maaş katkısı ve OVR gelişimi ile geri dönüş',
+      '🌍 74 bilindik futbolcu: dünya yıldızları, üst düzey yıldızlar, milli yıldızlar ve genç yıldız adayları',
+      '⭐ Rakip kulüplerin yıldız oyuncuları var — maç öncesi raporda görürsün, sahada karşına çıkar',
+      '💰 Yeni piyasa ekonomisi: 80 OVR ≈ $6.7M, 90 OVR ≈ $18M, 95 OVR ≈ $29M (yaş ve yıldız sınıfı çarpanlı)',
+      'Gelir dengesi yenilendi: maç gelirleri, sezon ödülleri ve tesis fiyatları yeni ekonomiye ölçeklendi',
+      'Kiralık gelen/giden oyuncular Ofis sekmesinden takip edilir ve yönetilir',
+    ],
+  },
+  {
     version: '3.1.0',
     date: '16 Eyl 2026',
     tag: 'BÜYÜK',
@@ -99,4 +114,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '3.1.0';
+export const CURRENT_VERSION = '3.2.0';

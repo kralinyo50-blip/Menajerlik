@@ -1,7 +1,7 @@
 # Manager Pro 2026 — Geliştirme Planı ve Oyun Analizi
 
-> Tarih: 16 Eylül 2026 • Sürüm: **3.1.0 (Kariyer İlerlemesi)**
-> v3.0: Kariyer Sistemi (maç deneyimi + yönetim) → v3.1: **oyuncuyu oyunda tutan ilerleme katmanı**
+> Tarih: 16 Eylül 2026 • Sürüm: **3.2.0 (Kiralama & Yıldız Oyuncular)**
+> v3.0 Kariyer Sistemi → v3.1 ilerleme katmanı → v3.2 **kiralama, bilindik futbolcular ve yeni piyasa ekonomisi**
 
 Bu doküman; mevcut oyunun **tespitini (audit)**, kapatılan eksikleri ve sıradaki
 geliştirme adımlarını tek yerde toplar. Amaç: oyunu "simülasyon"dan **gerçek bir
@@ -97,12 +97,51 @@ Metrikler: galibiyet, gol, clean sheet, seyirci, mini oyun, maçın adamı, tran
 
 ---
 
+## 2c. v3.2.0 — Kiralama, Yıldız Oyuncular ve Piyasa Ekonomisi
+
+### 🔄 Kiralama Sistemi
+| Özellik | Detay |
+|---|---|
+| **Kiralık alma** | Peşin kiralama bedeli (değerin %6-12'si), maaşın %35-100'ünü karşı kulüp öder, sezon sonuna kadar süre |
+| **Satın alma opsiyonu** | Değerin ~1.15-1.45 katı; sezon içinde Ofis ekranından tek tıkla kalıcı transfer |
+| **Kiralığa gönderme** | Yedek/genç oyuncular için kulüp teklifleri (peşin bedel + maaş katkısı %40-100) |
+| **Gelişim** | Kiralıkta geçen süre başına OVR artışı (her ~6 haftada +1), moral ve form bonusu ile dönüş |
+| **Yönetim** | Sezon sonu otomatik dönüş, erken iade (ceza), geri çağırma (bedelin %30'u iade), hafta 15'te opsiyon hatırlatması |
+| **Kayıt uyumu** | Kiralık oyuncuların maaş payı, sözleşme ve opsiyon bilgileri kayıtta korunur |
+
+**Neden önemli:** Kiralama, düşük bütçeli kulüplerin yıldız oyuncuya erişmesini sağlar — klasik menajerlik oyunlarının en sevilen mekaniği ve "büyük kulüpte oynamayan yıldızı parlatmak" hikâyesini kurar.
+
+### 🌍 Bilindik Futbolcular (74 oyuncu)
+| Sınıf | Adet | Örnekler | Değer çarpanı |
+|---|---|---|---|
+| 🌍 Dünya Yıldızı | 24 | Mbappé, Haaland, Vinícius Jr, Yamal, Bellingham, Messi, Salah | ×1.7 |
+| ⭐ Üst Düzey Yıldız | 19 | Saka, Foden, Van Dijk, Courtois, Theo Hernández, Lewandowski | ×1.45 |
+| 🇹🇷 Milli Yıldız | 21 | Arda Güler, Kenan Yıldız, Hakan Çalhanoğlu, Ferdi Kadıoğlu, Semih Kılıçsoy | ×1.25 |
+| ✨ Genç Yıldız Adayı | 10 | Estêvão, Endrick, Cubarsí, Zaïre-Emery, João Neves, Can Uzun | ×1.5 |
+
+Yıldızlar üç yerde karşına çıkar: **transfer pazarı** (scout listesi), **kiralık listesi** (büyük kulüpte yedek kalanlar) ve **rakip kulüp yıldızı** olarak sahada (maç öncesi raporunda gösterilir, takım gücünü yükseltir).
+
+### 💰 Yeni Piyasa Ekonomisi
+| OVR | Eski değer | Yeni değer | Maaş/hafta |
+|---|---|---|---|
+| 60 | $0.9M | $0.9M | $30K |
+| 70 | $1.05M | **$2.5M** | $35K |
+| 80 | $1.2M | **$6.7M** | $40K |
+| 85 | $1.28M | **$11M** | $53K |
+| 90 | $1.35M | **$18M** | $65K |
+| 95 | $1.43M | **$29M** | $78K |
+
+- Formül: `15000 × OVR × 1.09^(OVR-60) × yaş × yıldız sınıfı × potansiyel`
+- Yaş etkisi: 18 yaş ×1.4, 26 yaş ×1.0, 34 yaş ×0.45, 38 yaş ×0.28
+- **Denge ayarı:** maç geliri (stadyum × $200K), galibiyet primi ($450K), sezon ödülleri ($0.3M-$3M), tesis ve mağaza fiyatları ile başlangıç bütçesi yeni ekonomiye ölçeklendi. Artık gerçek bir "büyük transfer" 2-3 sezonluk birikim gerektiriyor; satışlar ve kiralama en hızlı büyüme yolu.
+
+---
+
 ## 3. Sıradaki Adımlar — Önceliklendirilmiş Yol Haritası
 
 ### 🔥 Yüksek Etki / Orta Emek (sıradaki "olmazsa olmaz" adayları)
 0. **Başarımlar → Koleksiyon kitabı**: başarım kartları, rozet galerisi ve "yakında" görünümü (tamamlanmış ilerleme hissi).
 0b. **Transfer müzakeresi diyalogu**: teklifini yükselt/geri çek, rakip kulübün sabrı, oyuncuyu ikna konuşması.
-1. **Kiralama (loan) sistemi** — Gençleri kiraya ver, gelişim + maaş payı; rakipten kiralık oyuncu al.
 2. **Oyuncu özellikleri (traits)** — "Frikik ustası", "Lider", "Cam adam", "Kart manyağı": maç motoruna kişisel çarpanlar.
 3. **Seyirci/bilet yönetimi** — Bilet fiyatı belirleme, kampanya, kombine satışı; fan memnuniyeti-fiyat dengesi.
 4. **Scout ağı** — Ülke/lig seçerek oyuncu arama, scout raporu doğruluğu (belirsiz potansiyel aralığı: 78-88 gibi).
@@ -139,10 +178,11 @@ Metrikler: galibiyet, gol, clean sheet, seyirci, mini oyun, maçın adamı, tran
 
 ## 4. Teknik Notlar
 
+- **v3.2 yeni dosyalar**: `src/data/stars.ts` (74 bilindik futbolcu), `src/utils/pricing.ts` (piyasa ekonomisi), `src/utils/loan.ts` (kiralama motoru).
 - **v3.1 yeni dosyalar**: `src/utils/missions.ts`, `src/utils/progression.ts`, `src/components/tabs/CareerTab.tsx`, `src/components/LivePitch.tsx`, `src/components/DailyRewardModal.tsx`.
 - **v3.0 yeni dosyalar**: `src/utils/fixture.ts`, `src/utils/lineup.ts`, `src/utils/sound.ts`, `src/utils/save.ts`, `src/utils/contract.ts`, `src/components/PreMatchScreen.tsx`, `src/components/GameOverScreen.tsx`, `src/components/PenaltyShootout.tsx`, `src/components/tabs/OfficeTab.tsx`.
 - **Genişletilen tipler**: `GameState` içine `captainId`, `setPieceTakers`, `trainingFocus`, `leagueScorers`, `transferOffers`, `weather`, `soundOn`, `boardWarnings`, `careerOver`, `boardMessages`; `FixtureEntry` (isHome/week) ve `MatchReport`/`PlayerRating` eklendi.
 - **Kayıt uyumluluğu**: Eski (2.x) kayıtlar `migrateState()` ile otomatik yeni şemaya taşınır (haftaların iç/dış sahası, kaptan, hava durumu vb. otomatik atanır).
-- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı; fikstür üretimi, seyirci/gelir hesabı, kayıt migrasyonu, görev/XP dengesi (30 maç → seviye 5) ve 20 ekranın tamamı render testinden geçirildi.
+- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı. Fiyat eğrisi, yıldız havuzu, kiralık listesi/teklifleri, kiralık gelişimi, rakip yıldız ataması (200 denemede tekrar yok), eski kayıt migrasyonu (1.2M → 7.9M otomatik yeniden fiyatlama) ve 24 ekran render testinden geçirildi.
 
 İyi şanslar, şampiyon! ⚽🏆

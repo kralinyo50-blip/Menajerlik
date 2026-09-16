@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { GameState, Player, TrainingFocus } from '../../types/game';
 import { ROLE_NAMES, TRAINING_FOCUS_INFO, WEATHER_INFO } from '../../data/constants';
+import { TIER_INFO } from '../../data/stars';
+import { formatMoney } from '../../utils/pricing';
 import { renewalCost, renewalWage, contractRisk } from '../../utils/contract';
 
 interface OfficeTabProps {
@@ -12,6 +14,9 @@ interface OfficeTabProps {
   onSetSetPieceTaker: (kind: 'penalty' | 'freekick' | 'corner', playerId: number | null) => void;
   onSetTrainingFocus: (focus: TrainingFocus) => void;
   onDismissBoardMessage: (index: number) => void;
+  onExerciseLoanOption: (playerId: number) => void;
+  onReturnLoanEarly: (playerId: number) => void;
+  onRecallLoan: (loanId: number) => void;
 }
 
 const Section: React.FC<{ title: string; icon: string; children: React.ReactNode; accent?: string }> = ({
@@ -27,7 +32,8 @@ const Section: React.FC<{ title: string; icon: string; children: React.ReactNode
 
 export const OfficeTab: React.FC<OfficeTabProps> = ({
   gameState, onAcceptOffer, onRejectOffer, onRenewContract,
-  onSetCaptain, onSetSetPieceTaker, onSetTrainingFocus, onDismissBoardMessage
+  onSetCaptain, onSetSetPieceTaker, onSetTrainingFocus, onDismissBoardMessage,
+  onExerciseLoanOption, onReturnLoanEarly, onRecallLoan
 }) => {
   const [renewYears, setRenewYears] = useState(2);
 
@@ -212,6 +218,94 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
             </div>
           )}
         </Section>
+
+        {/* Kiralık oyuncular */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Section title={`Kiralık Gelenler (${allPlayers.filter(p => p.loanFrom).length})`} icon="🔄" accent="text-cyan-400">
+            {allPlayers.filter(p => p.loanFrom).length === 0 ? (
+              <p className="text-xs text-slate-400">Kiralık oyuncun yok. Transfer → Kiralık sekmesinden fırsatları incele.</p>
+            ) : (
+              <div className="space-y-2">
+                {allPlayers.filter(p => p.loanFrom).map(p => (
+                  <div key={p.id} className="bg-slate-700/40 rounded-xl p-3">
+                    <div className="text-white font-bold text-sm">
+                      {p.name.replace(/^[^\w]+\s/, '')}
+                      <span className="text-slate-400 text-xs ml-2">
+                        {ROLE_NAMES[p.role]} • OVR {p.ovr}
+                        {p.starTier && <span className="ml-1">{TIER_INFO[p.starTier].icon}</span>}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-cyan-200">
+                      {p.loanFromLogo} {p.loanFrom} • Sezon {p.loanUntilSeason} sonuna kadar kiralık
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Maaş payımız: {formatMoney(p.wage)}/hafta
+                      {p.loanBaseWage ? ` (gerçek maaş ${formatMoney(p.loanBaseWage)})` : ''}
+                    </div>
+                    <div className="flex gap-2 mt-2 flex-wrap">
+                      {!!p.loanOptionPrice && (
+                        <button
+                          disabled={gameState.budget < p.loanOptionPrice}
+                          onClick={() => onExerciseLoanOption(p.id)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                            gameState.budget >= p.loanOptionPrice
+                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                              : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          ✅ Opsiyonu Kullan ({formatMoney(p.loanOptionPrice)})
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onReturnLoanEarly(p.id)}
+                        className="px-3 py-1.5 rounded-lg text-[11px] bg-slate-600 hover:bg-slate-500 text-white"
+                      >
+                        ↩️ Erken İade
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title={`Kiralık Gidenler (${(gameState.outgoingLoans || []).length})`} icon="📤" accent="text-amber-400">
+            {(gameState.outgoingLoans || []).length === 0 ? (
+              <p className="text-xs text-slate-400">
+                Genç oyuncularını kiralığa göndererek gelişmelerini sağlayabilirsin (Kadro → oyuncu kartı).
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {(gameState.outgoingLoans || []).map(loan => {
+                  const weeks = Math.max(0, gameState.week - loan.startWeek);
+                  const projected = loan.player.ovr + Math.max(0, Math.round(weeks / 6));
+                  return (
+                    <div key={loan.id} className="bg-slate-700/40 rounded-xl p-3">
+                      <div className="text-white font-bold text-sm">
+                        {loan.playerName}
+                        <span className="text-slate-400 text-xs ml-2">{ROLE_NAMES[loan.playerRole]} • {loan.playerAge} yaş</span>
+                      </div>
+                      <div className="text-[11px] text-amber-200">{loan.toLogo} {loan.toClub}</div>
+                      <div className="text-[11px] text-slate-300">
+                        Gelişim: {loan.playerOvr} → <span className="text-emerald-400 font-bold">{projected}</span> OVR (tahmini)
+                        • Maaşın %{Math.round(loan.wageCoverage * 100)}'ini onlar ödüyor
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[11px] text-slate-400">{weeks} haftadır kiralık</span>
+                        <button
+                          onClick={() => onRecallLoan(loan.id)}
+                          className="px-3 py-1.5 rounded-lg text-[11px] bg-slate-600 hover:bg-slate-500 text-white"
+                        >
+                          ↩️ Geri Çağır
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+        </div>
 
         {/* Roles */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

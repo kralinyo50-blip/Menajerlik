@@ -1,6 +1,7 @@
 import React from 'react';
 import { GameState, Team, Weather } from '../types/game';
 import { WEATHER_INFO, ROLE_NAMES } from '../data/constants';
+import { TIER_INFO } from '../data/stars';
 import { lineupWarnings } from '../utils/lineup';
 import { sfx } from '../utils/sound';
 
@@ -127,6 +128,17 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
                 <div className="text-white font-bold">{opponent.p}</div>
               </div>
             </div>
+            {opponent.keyPlayer && (
+              <div className="mt-2 bg-red-500/10 border border-red-500/30 rounded-lg px-2.5 py-2 flex items-center justify-between">
+                <div className="text-[11px] text-red-200">
+                  <b>{TIER_INFO[opponent.keyPlayer.tier].icon} Yıldız oyuncu:</b> {opponent.keyPlayer.name}
+                  <span className="text-slate-400"> ({ROLE_NAMES[opponent.keyPlayer.role]} • OVR {opponent.keyPlayer.ovr})</span>
+                </div>
+                <span className="text-[10px] bg-red-600/40 text-red-100 px-1.5 py-0.5 rounded">
+                  {TIER_INFO[opponent.keyPlayer.tier].label}
+                </span>
+              </div>
+            )}
             {form.length > 0 && (
               <div className="flex items-center gap-1 mt-2">
                 <span className="text-[11px] text-slate-400">Formumuz:</span>

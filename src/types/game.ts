@@ -2,6 +2,9 @@
 
 export type Weather = 'sunny' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'wind' | 'fog';
 
+/** Bilindik oyuncu sınıflandırması */
+export type StarTier = 'world' | 'star' | 'turkish' | 'wonderkid';
+
 export interface Player {
   id: number;
   name: string;
@@ -28,6 +31,19 @@ export interface Player {
   form?: number; // 1-10 form rating
   /** Kulüpten ayrılma talebi (moral çok düşükse) */
   wantsOut?: boolean;
+  /** Bilindik yıldız sınıfı (varsa değer ve maaş çarpanı alır) */
+  starTier?: StarTier;
+  /** Kiralık geldiyse hangi kulüpten */
+  loanFrom?: string;
+  loanFromLogo?: string;
+  /** Kiralamanın biteceği sezon */
+  loanUntilSeason?: number;
+  /** Satın alma opsiyonu fiyatı */
+  loanOptionPrice?: number;
+  /** Kiralık oyuncunun gerçek maaşı (kulübün ödediği pay hariç) */
+  loanBaseWage?: number;
+  /** Kiralık giden oyuncunun birikmiş gelişimi */
+  loanGrowth?: number;
 }
 
 export type PlayerRole = 'KL' | 'STP' | 'SB' | 'OS' | 'FW';
@@ -46,6 +62,8 @@ export interface Team {
   ga: number; // goals against
   ovr: number;
   isUser: boolean;
+  /** Rakip kulübün bilindik yıldız oyuncusu (varsa) */
+  keyPlayer?: { name: string; role: PlayerRole; ovr: number; tier: StarTier };
 }
 
 /** Fikstür satırı: rakip + iç saha mı? */
@@ -127,6 +145,58 @@ export interface LeagueScorer {
   logo: string;
   goals: number;
   assists: number;
+}
+
+/* ══════════ KİRALAMA SİSTEMİ ══════════ */
+export interface LoanTarget {
+  id: number;
+  player: Player;
+  fromClub: string;
+  fromLogo: string;
+  /** Peşin kiralama bedeli */
+  loanFee: number;
+  /** Karşı kulübün maaştan aldığı pay (0-1) */
+  wageShare: number;
+  /** Kiralama bitiş sezonu */
+  untilSeason: number;
+  /** Satın alma opsiyonu (yoksa 0) */
+  optionToBuy: number;
+  note: string;
+}
+
+export interface OutgoingLoan {
+  id: number;
+  /** Oyuncunun kiralık giderken alınan tam kopyası (geri dönüşte kullanılır) */
+  player: Player;
+  playerId: number;
+  playerName: string;
+  playerOvr: number;
+  playerRole: PlayerRole;
+  playerAge: number;
+  toClub: string;
+  toLogo: string;
+  /** Alınan peşin kiralama bedeli */
+  fee: number;
+  /** Karşı kulübün maaştan karşıladığı pay (0-1) */
+  wageCoverage: number;
+  baseWage: number;
+  startWeek: number;
+  season: number;
+  /** Hafta başına biriken gelişim */
+  growth: number;
+  /** Geri dönüş haftası/sezonu */
+  untilSeason: number;
+}
+
+/** Kiralığa gönderme teklifi (kulüplerden gelen) */
+export interface LoanOutOffer {
+  id: number;
+  playerId: number;
+  toClub: string;
+  toLogo: string;
+  fee: number;
+  wageCoverage: number;
+  note: string;
 }
 
 /** Rakip kulüpten gelen transfer teklifi */
@@ -289,6 +359,9 @@ export interface GameState {
   loginStreak: number;
   /** Son gün gösterilen günlük ödül (modal için) */
   lastDailyReward?: { day: number; budget: number; tokens: number } | null;
+  // ── v3.2: Kiralama Sistemi ──
+  loanList: LoanTarget[];
+  outgoingLoans: OutgoingLoan[];
 }
 
 export interface ShopBranchData {

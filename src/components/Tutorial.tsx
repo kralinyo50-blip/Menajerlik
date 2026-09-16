@@ -37,10 +37,16 @@ const STEPS = [
     tip: 'İpucu: Yönetim güveni sıfıra inerse kovulursun — sonuçlara dikkat!'
   },
   {
+    icon: '🔄',
+    title: 'Kiralama ve Yıldızlar',
+    text: 'Bütçen yetmiyorsa Transfer → Kiralık sekmesinden yıldızları kiralayabilirsin (düşük bedel + maaş payı, sezon sonu opsiyonla kalıcı yapabilirsin). Gençlerini kiralığa göndererek gelişmelerini sağla. Rakiplerin Mbappé, Arda Güler gibi yıldızları sahada karşına çıkar!',
+    tip: 'İpucu: 80 OVR bir oyuncu artık ~$6.7M — yıldızlar ciddi yatırım ister.'
+  },
+  {
     icon: '💰',
     title: 'Transfer & Bütçe',
     text: 'Transfer pazarından oyuncu al, pazarlık yap. Her 5 haftada bir maaşlar ödenir — bütçeyi dikkatli yönet!',
-    tip: 'İpucu: Scout seviyesi pazarlık ve market kalitesini artırır.'
+    tip: 'İpucu: Pazarlık yap, scout ağını güçlendir; sözleşmesi biten oyuncuları yenile.'
   },
   {
     icon: '🏟️',
