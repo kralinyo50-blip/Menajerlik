@@ -1,19 +1,22 @@
 {
   "name": "manager-pro-2026",
   "private": true,
-  "version": "2.1.0",
+  "version": "4.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "start": "vite --host 0.0.0.0 --port 5173"
+    "start": "vite --host 0.0.0.0 --port 5173",
+    "preview:3d": "esbuild tools/render-3d-preview.tsx --bundle --format=esm --platform=node --jsx=automatic --outfile=.tmp-preview.mjs --log-level=error --external:react --external:react-dom && node .tmp-preview.mjs && rm -f .tmp-preview.mjs"
   },
   "dependencies": {
+    "@types/three": "^0.186.0",
     "clsx": "2.1.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "tailwind-merge": "3.4.0"
+    "tailwind-merge": "3.4.0",
+    "three": "^0.186.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.17",

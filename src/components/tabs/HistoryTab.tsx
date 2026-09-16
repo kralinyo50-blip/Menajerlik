@@ -88,6 +88,9 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
                       <div className="w-16 text-center">
                         <span className="text-slate-400 text-sm">Hafta</span>
                         <div className="font-bold text-white">{match.week}</div>
+                        <span className={`text-[9px] font-black px-1 rounded ${match.isHome ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                          {match.isHome ? 'EV' : 'DEP'}
+                        </span>
                       </div>
                       <div className="flex-1 flex items-center justify-center gap-4">
                         <div className="text-right flex-1">
@@ -104,10 +107,13 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
                           <span className="ml-2 font-medium text-white">{match.opponent}</span>
                         </div>
                       </div>
-                      <div className="w-12 text-center">
+                      <div className="w-20 text-center">
                         <span className={`${resultColor} w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white mx-auto`}>
                           {resultText}
                         </span>
+                        <div className="text-[9px] text-slate-400 mt-1">
+                          {match.attendance ? `${(match.attendance / 1000).toFixed(1)}K` : ''}
+                        </div>
                       </div>
                     </div>
                   );

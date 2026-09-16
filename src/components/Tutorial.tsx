@@ -25,10 +25,40 @@ const STEPS = [
     tip: 'İpucu: Enerjisi düşük oyuncuları yedekten değiştir.'
   },
   {
+    icon: '🌦️',
+    title: 'Hava, Kart ve Sakatlık',
+    text: 'Her maçta hava durumu farklı: yağmur/kar gol oranını ve sakatlık riskini değiştirir. Sarı kartlar birikir (3 sarı = 1 maç ceza), kırmızı yiyen oyuncu sahada kalmaz!',
+    tip: 'İpucu: Maç öncesi taktik odasında cezalı/sakat oyuncular otomatik düzeltilir.'
+  },
+  {
+    icon: '🏢',
+    title: 'Ofisini Yönet',
+    text: 'Ofis sekmesinden rakip kulüplerin transfer tekliflerini değerlendir, sözleşmeleri yenile, kaptanı ve duran top görevlilerini seç, antrenman odağını belirle.',
+    tip: 'İpucu: Yönetim güveni sıfıra inerse kovulursun — sonuçlara dikkat!'
+  },
+  {
+    icon: '🚶',
+    title: 'Menajerin Kendi Hayatı',
+    text: 'Hayat sekmesinde kendi hayatını yönetirsin: 3D spor salonunda antrenman yap, evde oyun oyna veya dinlen, şehri gez, tatile git, basın toplantısına çık. Haftada 4 boş zaman hakkın var.',
+    tip: 'Formun maç kenarındaki gücünü, keyfin takım moralini, ününün sponsor gelirini artırır. Bitkin kalırsan etkiler yarıya iner!'
+  },
+  {
+    icon: '🏟️',
+    title: '3D Stadyum Stüdyosu',
+    text: 'Stadyum sekmesinde stadyumunu 3D görürsün: koltuk rengini, çatıyı, tribün tipini ve çim desenini değiştir; kapasiteyi +10.000 koltuğa kadar büyüt. Bilet fiyatını ayarlayarak gelirini maksimize et.',
+    tip: 'İpucu: Tribünde büfe harcaması da gelir getirir — ucuz bilet stadyumu doldurur, pahalı bilet birim geliri artırır.'
+  },
+  {
+    icon: '🔄',
+    title: 'Kiralama ve Yıldızlar',
+    text: 'Bütçen yetmiyorsa Transfer → Kiralık sekmesinden yıldızları kiralayabilirsin (düşük bedel + maaş payı, sezon sonu opsiyonla kalıcı yapabilirsin). Gençlerini kiralığa göndererek gelişmelerini sağla. Rakiplerin Mbappé, Arda Güler gibi yıldızları sahada karşına çıkar!',
+    tip: 'İpucu: 80 OVR bir oyuncu artık ~$6.7M — yıldızlar ciddi yatırım ister.'
+  },
+  {
     icon: '💰',
     title: 'Transfer & Bütçe',
     text: 'Transfer pazarından oyuncu al, pazarlık yap. Her 5 haftada bir maaşlar ödenir — bütçeyi dikkatli yönet!',
-    tip: 'İpucu: Scout seviyesi pazarlık ve market kalitesini artırır.'
+    tip: 'İpucu: Pazarlık yap, scout ağını güçlendir; sözleşmesi biten oyuncuları yenile.'
   },
   {
     icon: '🏟️',

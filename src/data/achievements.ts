@@ -144,6 +144,46 @@ export const INITIAL_ACHIEVEMENTS: Achievement[] = [
     icon: '🎯',
     unlocked: false,
     reward: 80000
+  },
+  {
+    id: 'big_win',
+    title: 'Dağıttık!',
+    description: 'Bir maçı 5+ gol farkla kazan',
+    icon: '💥',
+    unlocked: false,
+    reward: 60000
+  },
+  {
+    id: 'penalty_hero',
+    title: 'Penaltı Kahramanı',
+    description: 'Kupa maçını penaltılarla kazan',
+    icon: '🧤',
+    unlocked: false,
+    reward: 90000
+  },
+  {
+    id: 'full_house',
+    title: 'Tam Kapasite',
+    description: 'Bir maçta 30.000+ seyirci',
+    icon: '🎫',
+    unlocked: false,
+    reward: 70000
+  },
+  {
+    id: 'invincible',
+    title: 'Yenilmez Sezon',
+    description: '18 maçta hiç yenilme',
+    icon: '🛡️',
+    unlocked: false,
+    reward: 400000
+  },
+  {
+    id: 'double',
+    title: 'Çifte Kupa',
+    description: 'Aynı kariyerde hem lig hem kupa şampiyonluğu',
+    icon: '✨',
+    unlocked: false,
+    reward: 500000
   }
 ];
 
@@ -156,7 +196,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 0.9,
     injuryMult: 0.5,
     incomeMult: 1.3,
-    startingBudget: 2000000
+    startingBudget: 3500000
   },
   normal: {
     label: 'Normal',
@@ -166,7 +206,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1,
     injuryMult: 1,
     incomeMult: 1,
-    startingBudget: 1500000
+    startingBudget: 2500000
   },
   hard: {
     label: 'Zor',
@@ -176,7 +216,7 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1.1,
     injuryMult: 1.3,
     incomeMult: 0.85,
-    startingBudget: 1000000
+    startingBudget: 1500000
   },
   legend: {
     label: 'Efsane',
@@ -186,6 +226,6 @@ export const DIFFICULTY_CONFIG = {
     oppOvrMult: 1.2,
     injuryMult: 1.5,
     incomeMult: 0.7,
-    startingBudget: 750000
+    startingBudget: 1000000
   }
 };

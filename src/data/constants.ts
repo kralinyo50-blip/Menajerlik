@@ -139,6 +139,37 @@ export const ROLE_NAMES: Record<string, string> = {
   'FW': 'Forvet'
 };
 
+/** Hava durumu sistemi — maç dinamiğini etkiler */
+export const WEATHER_INFO: Record<
+  string,
+  { label: string; icon: string; goalMult: number; injuryMult: number; desc: string }
+> = {
+  sunny:  { label: 'Güneşli',   icon: '☀️', goalMult: 1.05, injuryMult: 1.0, desc: 'İdeal futbol havası, tempolu maç.' },
+  cloudy: { label: 'Parçalı Bulutlu', icon: '⛅', goalMult: 1.0, injuryMult: 1.0, desc: 'Dengeli koşullar.' },
+  rain:   { label: 'Yağmurlu',  icon: '🌧️', goalMult: 0.9,  injuryMult: 1.15, desc: 'Kaygan zemin: hatalı paslar, sürpriz goller.' },
+  storm:  { label: 'Fırtına',   icon: '⛈️', goalMult: 0.82, injuryMult: 1.3, desc: 'Şiddetli yağış, oyun zorlaşır.' },
+  snow:   { label: 'Karlı',     icon: '❄️', goalMult: 0.75, injuryMult: 1.4, desc: 'Zemin ağır, sakatlık riski yüksek.' },
+  wind:   { label: 'Rüzgârlı',  icon: '💨', goalMult: 0.85, injuryMult: 1.05, desc: 'Uzun toplar kontrol edilemiyor.' },
+  fog:    { label: 'Sisli',     icon: '🌫️', goalMult: 0.95, injuryMult: 1.1, desc: 'Görüş düşük: kaleci hataları artar.' },
+};
+
+export const TRAINING_FOCUS_INFO: Record<
+  string,
+  { label: string; icon: string; desc: string; attr: 'attack' | 'defense' | 'fitness' | 'youth' | 'balanced' }
+> = {
+  balanced: { label: 'Dengeli',   icon: '⚖️', desc: 'Her alana eşit yük. Sakatlık riski düşük.', attr: 'balanced' },
+  attack:   { label: 'Hücum',     icon: '⚡', desc: 'Forvet ve orta saha gelişimi hızlanır.', attr: 'attack' },
+  defense:  { label: 'Savunma',   icon: '🛡️', desc: 'Defans oyuncuları gelişir, gol yeme azalır.', attr: 'defense' },
+  fitness:  { label: 'Kondisyon', icon: '🏃', desc: 'Enerji daha çabuk dolar, sakatlık azalır.', attr: 'fitness' },
+  youth:    { label: 'Gençler',   icon: '🌱', desc: 'Akademi ve genç oyuncular hızlı gelişir.', attr: 'youth' },
+};
+
+export const HOME_ADVANTAGE = 3.5;
+export const AWAY_PENALTY = 2;
+
+/** Kulüpten ayrılma sınırı: moral bu değerin altına düşerse oyuncu gitmek ister */
+export const UNHAPPY_MORALE = 30;
+
 export const INITIAL_INVESTMENTS = [
   { id: 1, name: "Borsa (SP500)", price: 100000, type: "stock", owned: 0, lastChange: 0, icon: "📈" },
   { id: 2, name: "Dijital Altın", price: 50000, type: "gold", owned: 0, lastChange: 0, icon: "🥇" },

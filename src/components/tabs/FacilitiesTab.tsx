@@ -1,5 +1,6 @@
 import React from 'react';
 import { GameState, Staff } from '../../types/game';
+import { stadiumCapacity as contentStadiumCapacity } from '../../utils/stadium';
 
 interface FacilitiesTabProps {
   gameState: GameState;
@@ -7,6 +8,7 @@ interface FacilitiesTabProps {
   onHireStaff: (type: Staff['type'], cost: number) => void;
   onDiscoverYouth: () => void;
   onPromoteYouth: (playerId: number) => void;
+  onOpenStudio?: () => void;
 }
 
 export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({ 
@@ -14,7 +16,8 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
   onUpgradeFacility, 
   onHireStaff,
   onDiscoverYouth,
-  onPromoteYouth
+  onPromoteYouth,
+  onOpenStudio
 }) => {
   const facilities = [
     {
@@ -23,8 +26,8 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
       icon: '🏟️',
       level: gameState.stadiumLvl,
       desc: 'Daha fazla taraftar, daha fazla gelir',
-      benefit: `Kapasite: ${(gameState.stadiumLvl * 5000).toLocaleString()}`,
-      cost: 500000 * gameState.stadiumLvl,
+      benefit: `Kapasite: ${contentStadiumCapacity(gameState).toLocaleString()}`,
+      cost: 1200000 * gameState.stadiumLvl,
       color: 'from-blue-500 to-blue-600'
     },
     {
@@ -34,7 +37,7 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
       level: gameState.trainingLvl,
       desc: 'Tüm oyuncuların OVR değerini artırır',
       benefit: `+${gameState.trainingLvl} OVR bonus`,
-      cost: 450000 * gameState.trainingLvl,
+      cost: 1000000 * gameState.trainingLvl,
       color: 'from-emerald-500 to-emerald-600'
     },
     {
@@ -44,16 +47,16 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
       level: gameState.academyLevel,
       desc: 'Daha yetenekli genç oyuncular keşfet',
       benefit: `Kalite bonusu: +${gameState.academyLevel * 5}`,
-      cost: 200000 * gameState.academyLevel,
+      cost: 500000 * gameState.academyLevel,
       color: 'from-purple-500 to-purple-600'
     }
   ];
 
   const staffOptions = [
-    { type: 'coach' as const, name: 'Antrenör', icon: '👨‍🏫', cost: 100000, desc: 'Tüm oyunculara +1 OVR' },
-    { type: 'scout' as const, name: 'Scout', icon: '🔍', cost: 80000, desc: 'Transfer pazarında daha iyi oyuncular' },
-    { type: 'physio' as const, name: 'Fizyoterapist', icon: '🩺', cost: 120000, desc: 'Hızlı enerji yenileme & sakatlık önleme' },
-    { type: 'analyst' as const, name: 'Analist', icon: '📊', cost: 90000, desc: 'Maç içi taktik avantajları' }
+    { type: 'coach' as const, name: 'Antrenör', icon: '👨‍🏫', cost: 250000, desc: 'Tüm oyunculara +1 OVR' },
+    { type: 'scout' as const, name: 'Scout', icon: '🔍', cost: 200000, desc: 'Transfer pazarında daha iyi oyuncular' },
+    { type: 'physio' as const, name: 'Fizyoterapist', icon: '🩺', cost: 300000, desc: 'Hızlı enerji yenileme & sakatlık önleme' },
+    { type: 'analyst' as const, name: 'Analist', icon: '📊', cost: 220000, desc: 'Maç içi taktik avantajları' }
   ];
 
   const hasStaff = (type: Staff['type']) => gameState.staff.some(s => s.type === type);
@@ -101,6 +104,14 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
                 >
                   Yükselt - ${facility.cost.toLocaleString()}
                 </button>
+                {facility.id === 'stadium' && onOpenStudio && (
+                  <button
+                    onClick={onOpenStudio}
+                    className="w-full mt-2 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white transition-all"
+                  >
+                    🎨 3D Stadyum Stüdyosu — Renk, Çatı, Kapasite
+                  </button>
+                )}
               </div>
             ))}
           </div>
