@@ -22,23 +22,47 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-8">
+        {/* Season header */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-2xl font-bold text-white">Kulüp İstatistikleri</h2>
+            <p className="text-slate-400 text-sm">Sezon {gameState.season || 1} • Lig {gameState.leagueLevel}</p>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <span className="bg-slate-700/50 px-3 py-1.5 rounded-lg text-slate-300">
+              🏅 {(gameState.achievements || []).filter(a => a.unlocked).length}/{(gameState.achievements || []).length} başarım
+            </span>
+            <span className="bg-slate-700/50 px-3 py-1.5 rounded-lg text-slate-300">
+              🎮 {gameState.clubStats.minigamesWon || 0} mini oyun
+            </span>
+          </div>
+        </div>
+
         {/* Stats Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/20 rounded-2xl p-4 border border-emerald-500/30 text-center">
-            <div className="text-4xl font-black text-emerald-400">{gameState.clubStats.totalWins}</div>
-            <div className="text-sm text-emerald-300">Galibiyet</div>
+            <div className="text-3xl font-black text-emerald-400">{gameState.clubStats.totalWins}</div>
+            <div className="text-xs text-emerald-300">Galibiyet</div>
           </div>
           <div className="bg-gradient-to-br from-slate-500/20 to-slate-600/20 rounded-2xl p-4 border border-slate-500/30 text-center">
-            <div className="text-4xl font-black text-slate-400">{gameState.clubStats.totalDraws}</div>
-            <div className="text-sm text-slate-300">Beraberlik</div>
+            <div className="text-3xl font-black text-slate-400">{gameState.clubStats.totalDraws}</div>
+            <div className="text-xs text-slate-300">Beraberlik</div>
           </div>
           <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 rounded-2xl p-4 border border-red-500/30 text-center">
-            <div className="text-4xl font-black text-red-400">{gameState.clubStats.totalLosses}</div>
-            <div className="text-sm text-red-300">Mağlubiyet</div>
+            <div className="text-3xl font-black text-red-400">{gameState.clubStats.totalLosses}</div>
+            <div className="text-xs text-red-300">Mağlubiyet</div>
           </div>
           <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 rounded-2xl p-4 border border-amber-500/30 text-center">
-            <div className="text-4xl font-black text-amber-400">{gameState.clubStats.totalGoals}</div>
-            <div className="text-sm text-amber-300">Toplam Gol</div>
+            <div className="text-3xl font-black text-amber-400">{gameState.clubStats.totalGoals}</div>
+            <div className="text-xs text-amber-300">Toplam Gol</div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-4 border border-blue-500/30 text-center">
+            <div className="text-3xl font-black text-blue-400">{gameState.clubStats.cleanSheets || 0}</div>
+            <div className="text-xs text-blue-300">Clean Sheet</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl p-4 border border-purple-500/30 text-center">
+            <div className="text-3xl font-black text-purple-400">{gameState.managerRep}</div>
+            <div className="text-xs text-purple-300">İtibar</div>
           </div>
         </div>
 

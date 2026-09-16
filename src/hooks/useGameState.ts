@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react';
-import { GameState, Player, Team, Tactics, Staff, CupMatch } from '../types/game';
+import { GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty } from '../types/game';
 import { 
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS, 
   INITIAL_INVESTMENTS 
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
+import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
 
 const generatePlayerName = () => {
   return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
@@ -34,7 +35,11 @@ const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number
     potential: Math.min(99, ovr + Math.floor(Math.random() * 15)),
     value: calculatePlayerValue(ovr, age),
     wage: Math.floor(ovr * 500),
-    contract: 1 + Math.floor(Math.random() * 4)
+    contract: 1 + Math.floor(Math.random() * 4),
+    yellowCards: 0,
+    redCard: false,
+    matchesPlayed: 0,
+    form: 5 + Math.floor(Math.random() * 4)
   };
 };
 
@@ -51,9 +56,10 @@ export const useGameState = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading] = useState(false);
 
-  const initializeGame = useCallback((teamName: string, teamLogo: string) => {
+  const initializeGame = useCallback((teamName: string, teamLogo: string, difficulty: Difficulty = 'normal') => {
     const leagueLevel = 4;
-    const baseOvr = 50 + (5 - leagueLevel) * 10;
+    const diffCfg = DIFFICULTY_CONFIG[difficulty];
+    const baseOvr = Math.floor((50 + (5 - leagueLevel) * 10) * diffCfg.oppOvrMult);
     
     // Generate initial squad with formation positions
     const formation = FORMATIONS['4-3-3'];
@@ -121,7 +127,8 @@ export const useGameState = () => {
       fixture,
       marketList,
       week: 1,
-      budget: 1500000,
+      season: 1,
+      budget: diffCfg.startingBudget,
       stadiumLvl: 1,
       trainingLvl: 1,
       healthLvl: 1,
@@ -139,7 +146,10 @@ export const useGameState = () => {
         totalDraws: 0,
         totalLosses: 0,
         cupWins: 0,
-        leagueTitles: 0
+        leagueTitles: 0,
+        cleanSheets: 0,
+        penaltiesScored: 0,
+        minigamesWon: 0
       },
       tactics: {
         formation: '4-3-3',
@@ -152,8 +162,16 @@ export const useGameState = () => {
       cupEliminated: false,
       seasonObjective: 'İlk 5\'e gir',
       managerRep: 50,
-      news: ['Yeni sezon heyecanla bekleniyor!', 'Transfer dönemi açıldı.'],
-      shopBranches: []
+      news: ['Yeni sezon heyecanla bekleniyor!', 'Transfer dönemi açıldı.', 'Mini oyun jetonların hazır!'],
+      shopBranches: [],
+      difficulty,
+      achievements: INITIAL_ACHIEVEMENTS.map(a => ({ ...a })),
+      tutorialDone: false,
+      minigameTokens: difficulty === 'easy' ? 3 : difficulty === 'legend' ? 1 : 2,
+      lastSpinWeek: 0,
+      fanHappiness: 60,
+      teamChemistry: 55,
+      boardConfidence: 50
     };
 
     setGameState(initialState);
@@ -261,13 +279,30 @@ export const useGameState = () => {
       const price = finalPrice ?? player.value;
       if (prev.budget < price) return prev;
 
-      return {
+      let result: GameState = {
         ...prev,
         bench: [...prev.bench, { ...player, id: Date.now(), value: price }],
         marketList: prev.marketList.filter(p => p.id !== player.id),
         budget: prev.budget - price,
         news: [`${player.name} $${price.toLocaleString()} karşılığında transfer edildi!`, ...prev.news.slice(0, 4)]
       };
+
+      const tryUnlock = (id: string) => {
+        const a = result.achievements?.find(x => x.id === id);
+        if (a && !a.unlocked) {
+          result = {
+            ...result,
+            budget: result.budget + (a.reward || 0),
+            achievements: result.achievements.map(x =>
+              x.id === id ? { ...x, unlocked: true, unlockedWeek: result.week } : x
+            ),
+            news: [`🏅 Başarım: ${a.title}!`, ...result.news.slice(0, 4)]
+          };
+        }
+      };
+      tryUnlock('first_transfer');
+      if (price >= 1000000) tryUnlock('big_spend');
+      return result;
     });
   }, []);
 
@@ -282,7 +317,33 @@ export const useGameState = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setGameState(parsed);
+        // Migrate older saves
+        const migrated: GameState = {
+          ...parsed,
+          season: parsed.season ?? 1,
+          difficulty: parsed.difficulty ?? 'normal',
+          achievements: parsed.achievements ?? INITIAL_ACHIEVEMENTS.map(a => ({ ...a })),
+          tutorialDone: parsed.tutorialDone ?? true,
+          minigameTokens: parsed.minigameTokens ?? 2,
+          lastSpinWeek: parsed.lastSpinWeek ?? 0,
+          fanHappiness: parsed.fanHappiness ?? 60,
+          teamChemistry: parsed.teamChemistry ?? 55,
+          boardConfidence: parsed.boardConfidence ?? 50,
+          clubStats: {
+            totalGoals: 0,
+            totalWins: 0,
+            totalDraws: 0,
+            totalLosses: 0,
+            cupWins: 0,
+            leagueTitles: 0,
+            cleanSheets: 0,
+            penaltiesScored: 0,
+            minigamesWon: 0,
+            ...(parsed.clubStats || {})
+          },
+          shopBranches: parsed.shopBranches ?? []
+        };
+        setGameState(migrated);
         return true;
       } catch {
         return false;
@@ -397,7 +458,17 @@ export const useGameState = () => {
     setGameState(prev => {
       if (!prev) return null;
 
-      const newState = { ...prev };
+      const newState = {
+        ...prev,
+        league: prev.league.map(t => ({ ...t })),
+        clubStats: { ...prev.clubStats },
+        achievements: (prev.achievements || []).map(a => ({ ...a })),
+        matchHistory: [...prev.matchHistory],
+        news: [...prev.news],
+        investments: prev.investments.map(i => ({ ...i })),
+        team11: prev.team11.map(p => ({ ...p })),
+        bench: prev.bench.map(p => ({ ...p })),
+      };
       
       // Update user team stats
       const userTeam = newState.league.find(t => t.isUser)!;
@@ -413,15 +484,31 @@ export const useGameState = () => {
         userTeam.p += 3;
         newState.clubStats.totalWins++;
         newState.managerRep = Math.min(100, newState.managerRep + 3);
+        newState.minigameTokens = (newState.minigameTokens || 0) + 1;
+        newState.fanHappiness = Math.min(100, (newState.fanHappiness || 60) + 5);
+        newState.boardConfidence = Math.min(100, (newState.boardConfidence || 50) + 3);
+        newState.teamChemistry = Math.min(100, (newState.teamChemistry || 55) + 2);
       } else if (userScore === oppScore) {
         userTeam.b++;
         userTeam.p += 1;
         newState.clubStats.totalDraws++;
+        newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 1);
       } else {
         userTeam.m++;
         newState.clubStats.totalLosses++;
         newState.managerRep = Math.max(0, newState.managerRep - 2);
+        newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 5);
+        newState.boardConfidence = Math.max(0, (newState.boardConfidence || 50) - 4);
+        newState.teamChemistry = Math.max(0, (newState.teamChemistry || 55) - 2);
       }
+
+      // Clean sheet
+      if (oppScore === 0) {
+        newState.clubStats.cleanSheets = (newState.clubStats.cleanSheets || 0) + 1;
+      }
+
+      // Difficulty income multiplier
+      const diffMult = DIFFICULTY_CONFIG[newState.difficulty || 'normal']?.incomeMult || 1;
 
       // Update opponent stats
       const oppTeam = newState.league.find(t => t.name === opponent.name);
@@ -459,7 +546,7 @@ export const useGameState = () => {
       // Calculate match income
       const baseIncome = newState.stadiumLvl * 100000;
       const winBonus = userScore > oppScore ? 250000 : userScore === oppScore ? 75000 : 25000;
-      const income = baseIncome + winBonus;
+      const income = Math.floor((baseIncome + winBonus) * (diffMult || 1));
       newState.budget += income;
 
       // MAAŞ ÖDEMESİ + MAĞAZA GELİRİ - HER 5 MAÇTA BİR
@@ -630,6 +717,36 @@ export const useGameState = () => {
         newState.week++;
       }
 
+      // Auto achievement unlocks
+      const unlock = (id: string) => {
+        const a = newState.achievements?.find(x => x.id === id);
+        if (a && !a.unlocked) {
+          a.unlocked = true;
+          a.unlockedWeek = newState.week;
+          newState.budget += a.reward || 0;
+          newState.news = [`🏅 Başarım: ${a.title}! +$${(a.reward || 0).toLocaleString()}`, ...newState.news.slice(0, 4)];
+        }
+      };
+      if (userScore > oppScore) unlock('first_win');
+      if (userScore >= 3) unlock('hat_trick');
+      if (oppScore === 0) unlock('clean_sheet');
+      if (newState.budget >= 5000000) unlock('millionaire');
+      if ((newState.shopBranches?.length || 0) >= 3) unlock('shop_king');
+      if (newState.stadiumLvl >= 3 && newState.trainingLvl >= 3 && newState.academyLevel >= 3) unlock('facility_max');
+      // Undefeated streak
+      const recent = newState.matchHistory.slice(-5);
+      if (recent.length >= 5 && recent.every(m => m.homeScore > m.awayScore)) unlock('undefeated');
+      // Top scorer
+      const allP = [...newState.team11, ...newState.bench];
+      if (allP.some(p => p.goals >= 15)) unlock('top_scorer');
+
+      // Form update
+      newState.team11 = newState.team11.map(p => ({
+        ...p,
+        form: Math.max(1, Math.min(10, (p.form || 5) + (userScore > oppScore ? 1 : userScore < oppScore ? -1 : 0))),
+        matchesPlayed: (p.matchesPlayed || 0) + 1
+      }));
+
       return newState;
     });
   }, []);
@@ -728,12 +845,24 @@ export const useGameState = () => {
       const player = prev.academyPlayers.find(p => p.id === playerId);
       if (!player) return prev;
 
-      return {
+      let result: GameState = {
         ...prev,
         bench: [...prev.bench, player],
         academyPlayers: prev.academyPlayers.filter(p => p.id !== playerId),
         news: [`${player.name} A takıma yükseldi!`, ...prev.news.slice(0, 4)]
       };
+      const a = result.achievements?.find(x => x.id === 'youth_star');
+      if (a && !a.unlocked) {
+        result = {
+          ...result,
+          budget: result.budget + (a.reward || 0),
+          achievements: result.achievements.map(x =>
+            x.id === 'youth_star' ? { ...x, unlocked: true, unlockedWeek: result.week } : x
+          ),
+          news: [`🏅 Başarım: ${a.title}!`, ...result.news.slice(0, 4)]
+        };
+      }
+      return result;
     });
   }, []);
 
@@ -826,12 +955,112 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
         openedWeek: prev.week
       };
 
-      return {
+      let result: GameState = {
         ...prev,
-        shopBranches: [...prev.shopBranches, newBranch],
+        shopBranches: [...(prev.shopBranches || []), newBranch],
         budget: prev.budget - cost,
         news: [`🏪 ${city.name}/${district} şubesinde ${shopType === 'flagship' ? 'Flagship' : shopType === 'large' ? 'Mega' : shopType === 'medium' ? 'Standart' : 'Mini'} mağaza açıldı!`, ...prev.news.slice(0, 4)]
       };
+      if ((result.shopBranches?.length || 0) >= 3) {
+        const a = result.achievements?.find(x => x.id === 'shop_king');
+        if (a && !a.unlocked) {
+          result = {
+            ...result,
+            budget: result.budget + (a.reward || 0),
+            achievements: result.achievements.map(x =>
+              x.id === 'shop_king' ? { ...x, unlocked: true, unlockedWeek: result.week } : x
+            ),
+            news: [`🏅 Başarım: ${a.title}!`, ...result.news.slice(0, 4)]
+          };
+        }
+      }
+      return result;
+    });
+  }, []);
+
+
+  const unlockAchievement = useCallback((id: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const ach = prev.achievements?.find(a => a.id === id);
+      if (!ach || ach.unlocked) return prev;
+      const reward = ach.reward || 0;
+      return {
+        ...prev,
+        budget: prev.budget + reward,
+        achievements: prev.achievements.map(a =>
+          a.id === id ? { ...a, unlocked: true, unlockedWeek: prev.week } : a
+        ),
+        news: [`🏅 Başarım açıldı: ${ach.title}! +$${reward.toLocaleString()}`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  const completeTutorial = useCallback(() => {
+    setGameState(prev => prev ? { ...prev, tutorialDone: true } : null);
+  }, []);
+
+  const applyMinigameReward = useCallback((reward: {
+    budget?: number;
+    morale?: number;
+    energy?: number;
+    tokens?: number;
+    penaltiesScored?: number;
+    minigamesWon?: number;
+    news?: string;
+    lastSpinWeek?: number;
+  }) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      let next: GameState = {
+        ...prev,
+        budget: prev.budget + (reward.budget || 0),
+        minigameTokens: Math.max(0, prev.minigameTokens + (reward.tokens || 0)),
+        lastSpinWeek: reward.lastSpinWeek ?? prev.lastSpinWeek,
+        clubStats: {
+          ...prev.clubStats,
+          penaltiesScored: (prev.clubStats.penaltiesScored || 0) + (reward.penaltiesScored || 0),
+          minigamesWon: (prev.clubStats.minigamesWon || 0) + (reward.minigamesWon || 0)
+        }
+      };
+      if (reward.morale) {
+        next.team11 = next.team11.map(p => ({ ...p, morale: Math.min(100, p.morale + reward.morale!) }));
+        next.bench = next.bench.map(p => ({ ...p, morale: Math.min(100, p.morale + reward.morale!) }));
+      }
+      if (reward.energy) {
+        next.team11 = next.team11.map(p => ({ ...p, energy: Math.min(100, p.energy + reward.energy!) }));
+        next.bench = next.bench.map(p => ({ ...p, energy: Math.min(100, p.energy + reward.energy!) }));
+      }
+      if (reward.news) {
+        next.news = [reward.news, ...next.news.slice(0, 4)];
+      }
+      // Achievement checks
+      if ((next.clubStats.minigamesWon || 0) >= 10) {
+        const a = next.achievements.find(x => x.id === 'minigame_master');
+        if (a && !a.unlocked) {
+          next = {
+            ...next,
+            budget: next.budget + (a.reward || 0),
+            achievements: next.achievements.map(x =>
+              x.id === 'minigame_master' ? { ...x, unlocked: true, unlockedWeek: next.week } : x
+            ),
+            news: [`🏅 Başarım: Mini Oyun Ustası!`, ...next.news.slice(0, 4)]
+          };
+        }
+      }
+      if ((next.clubStats.penaltiesScored || 0) >= 5) {
+        const a = next.achievements.find(x => x.id === 'penalty_king');
+        if (a && !a.unlocked) {
+          next = {
+            ...next,
+            budget: next.budget + (a.reward || 0),
+            achievements: next.achievements.map(x =>
+              x.id === 'penalty_king' ? { ...x, unlocked: true, unlockedWeek: next.week } : x
+            )
+          };
+        }
+      }
+      return next;
     });
   }, []);
 
@@ -857,6 +1086,9 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
     buyInvestment,
     sellInvestment,
     trainPlayer,
-    openShopBranch
+    openShopBranch,
+    unlockAchievement,
+    completeTutorial,
+    applyMinigameReward
   };
 };

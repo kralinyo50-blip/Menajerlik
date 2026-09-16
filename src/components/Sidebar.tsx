@@ -7,9 +7,10 @@ interface SidebarProps {
   onPlayMatch: () => void;
   onSave: () => void;
   onSignSponsor: (sponsor: Sponsor) => void;
+  onOpenAchievements?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ gameState, onPlayMatch, onSave, onSignSponsor }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ gameState, onPlayMatch, onSave, onSignSponsor, onOpenAchievements }) => {
   const [showSponsorModal, setShowSponsorModal] = React.useState(false);
   
   const avgOvr = gameState.team11.length > 0 
@@ -46,7 +47,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ gameState, onPlayMatch, onSave
         <div className="text-center mb-4 pb-4 border-b border-slate-700/50">
           <div className="text-5xl xl:text-6xl mb-2 drop-shadow-lg">{gameState.teamLogo}</div>
           <h2 className="text-lg xl:text-xl font-bold text-emerald-400 truncate">{gameState.teamName}</h2>
-          <div className="text-xs text-slate-400 mt-1">Lig Seviyesi: {gameState.leagueLevel}</div>
+          <div className="text-xs text-slate-400 mt-1">
+            Lig {gameState.leagueLevel} • Sezon {gameState.season || 1}
+            {gameState.difficulty && (
+              <span className="ml-1 text-amber-400/80">
+                • {gameState.difficulty === 'easy' ? '😊' : gameState.difficulty === 'hard' ? '😰' : gameState.difficulty === 'legend' ? '🔥' : '⚖️'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Budget */}
@@ -85,11 +93,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ gameState, onPlayMatch, onSave
           </div>
         </div>
 
-        {/* Stadium Info */}
-        <div className="bg-slate-700/30 rounded-lg p-2 mb-3">
+        {/* Stadium + Fan meters */}
+        <div className="bg-slate-700/30 rounded-lg p-2 mb-3 space-y-2">
           <div className="flex justify-between items-center text-sm">
             <span className="text-[10px] text-slate-400">🏟️ Stadyum</span>
             <span className="font-bold text-white text-xs">{(gameState.stadiumLvl * 5000).toLocaleString()}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1 text-[10px]">
+            <div className="text-center">
+              <div className="text-slate-500">Taraftar</div>
+              <div className={`font-bold ${(gameState.fanHappiness || 60) >= 60 ? 'text-emerald-400' : 'text-orange-400'}`}>
+                📣 {gameState.fanHappiness || 60}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-slate-500">Kimya</div>
+              <div className={`font-bold ${(gameState.teamChemistry || 55) >= 60 ? 'text-blue-400' : 'text-slate-300'}`}>
+                🤝 {gameState.teamChemistry || 55}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-slate-500">Yönetim</div>
+              <div className={`font-bold ${(gameState.boardConfidence || 50) >= 50 ? 'text-purple-400' : 'text-red-400'}`}>
+                👔 {gameState.boardConfidence || 50}
+              </div>
+            </div>
+          </div>
+          <div className="text-center text-[10px] text-cyan-300/80 bg-cyan-500/10 rounded py-1">
+            🎮 Mini oyunlar maç içinde & olaylarda
           </div>
         </div>
 
@@ -162,24 +193,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ gameState, onPlayMatch, onSave
           <button
             onClick={onPlayMatch}
             disabled={gameState.week > 18}
-            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:from-slate-600 disabled:to-slate-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300 disabled:shadow-none"
+            className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-slate-600 disabled:to-slate-700 text-white font-black rounded-xl shadow-lg shadow-emerald-500/40 transition-all duration-300 disabled:shadow-none animate-cta-ring tracking-wide"
           >
             ⚽ MAÇA ÇIK
+            {gameState.week <= 18 && (
+              <span className="block text-[10px] font-medium text-emerald-100/80 mt-0.5">
+                Oyun içi anlar seni bekliyor
+              </span>
+            )}
           </button>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setShowSponsorModal(true)}
               disabled={!!gameState.activeSponsor}
               className="py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-600 text-white font-medium rounded-lg transition-all text-xs"
             >
-              🤝 Sponsor
+              🤝
             </button>
             <button
               onClick={onSave}
               className="py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-all text-xs"
             >
-              💾 Kaydet
+              💾
+            </button>
+            <button
+              onClick={onOpenAchievements}
+              className="py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-lg transition-all text-xs"
+            >
+              🏅
             </button>
           </div>
         </div>
