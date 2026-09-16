@@ -1,5 +1,6 @@
 import React from 'react';
 import { GameState, Staff } from '../../types/game';
+import { stadiumCapacity as contentStadiumCapacity } from '../../utils/stadium';
 
 interface FacilitiesTabProps {
   gameState: GameState;
@@ -7,6 +8,7 @@ interface FacilitiesTabProps {
   onHireStaff: (type: Staff['type'], cost: number) => void;
   onDiscoverYouth: () => void;
   onPromoteYouth: (playerId: number) => void;
+  onOpenStudio?: () => void;
 }
 
 export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({ 
@@ -14,7 +16,8 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
   onUpgradeFacility, 
   onHireStaff,
   onDiscoverYouth,
-  onPromoteYouth
+  onPromoteYouth,
+  onOpenStudio
 }) => {
   const facilities = [
     {
@@ -23,7 +26,7 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
       icon: '🏟️',
       level: gameState.stadiumLvl,
       desc: 'Daha fazla taraftar, daha fazla gelir',
-      benefit: `Kapasite: ${(gameState.stadiumLvl * 5000).toLocaleString()}`,
+      benefit: `Kapasite: ${contentStadiumCapacity(gameState).toLocaleString()}`,
       cost: 1200000 * gameState.stadiumLvl,
       color: 'from-blue-500 to-blue-600'
     },
@@ -101,6 +104,14 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
                 >
                   Yükselt - ${facility.cost.toLocaleString()}
                 </button>
+                {facility.id === 'stadium' && onOpenStudio && (
+                  <button
+                    onClick={onOpenStudio}
+                    className="w-full mt-2 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white transition-all"
+                  >
+                    🎨 3D Stadyum Stüdyosu — Renk, Çatı, Kapasite
+                  </button>
+                )}
               </div>
             ))}
           </div>

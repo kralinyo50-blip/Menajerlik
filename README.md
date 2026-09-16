@@ -1,4 +1,4 @@
-# Manager Pro 2026 — Ultimate Edition (v3.2 Kiralama & Yıldız Oyuncular)
+# Manager Pro 2026 — Ultimate Edition (v3.3 3D Stadyum Stüdyosu)
 
 Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar — artık **kariyer sistemi, hava durumu, kart/ceza, sözleşmeler ve penaltı atışları** ile.
 
@@ -43,6 +43,14 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - **Kupa'da uzatma ve interaktif penaltı atışları**
 - Oyun içi mini-oyunlar: penaltı, frikik, kaleci kurtarışı, otobüs, sabotaj, basın, sprint, taraftar
 
+### 🏟️ 3D Stadyum Stüdyosu (v3.3)
+- **3D stadyum görüntüleyici** — sürükle-döndür, yakınlaştır, çift tıkla sıfırla; gece/gündüz ve sinematik kamera modları
+- **Özelleştirme** — koltuk rengi (ücretsiz palet + satın alınabilir özel renkler), aksan rengi, çatı tipi (saçak/tam/cam), tribün mimarisi (klasik/dik/çift katlı/kase), çim deseni, tribün bayrakları, çimde logo
+- **Kapasite büyütme** — +1.000 / +2.500 / +5.000 / +10.000 koltuk paketleri; tribün satırları 3D olarak gözle görülür şekilde büyür (90.000'e kadar)
+- **Bilet fiyat stratejisi** — ucuz/normal/pahalı/lüks; tribünde büfe harcaması ile gerçek talep eğrisi (en kârlı fiyat genelde ortada)
+- **Çatı ve hava** — çatı kötü havada seyirci kaybını azaltır; VIP loca bilet gelirini %12 artırır
+- **Maç öncesi stadyum turu** — iç saha maçlarından önce stadyumunu sinematik modda gez
+
 ### Kiralama & Yıldız Oyuncular (v3.2)
 - **🔄 Kiralama sistemi** — kiralık liste (peşin bedel, maaş payı, satın alma opsiyonu), sezon sonu dönüş, erken iade ve geri çağırma
 - **📤 Oyuncularını kiralığa gönder** — kulüp teklifleri arasından seç, maaşın bir kısmı dışarıdan karşılanır, oyuncu OVR gelişimiyle döner
@@ -73,7 +81,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ## Kontroller
 
 - Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
-- Üst sekmeler: Ofis, **Kariyer**, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
+- Üst sekmeler: Ofis, Kariyer, **Stadyum**, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
 - Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak), ⏭️ Atla
 - 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
 

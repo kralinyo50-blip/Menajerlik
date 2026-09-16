@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { GameState, Team, Weather } from '../types/game';
 import { WEATHER_INFO, ROLE_NAMES } from '../data/constants';
 import { TIER_INFO } from '../data/stars';
+import { Stadium3D } from './Stadium3D';
+import { stadiumCapacity } from '../utils/stadium';
 import { lineupWarnings } from '../utils/lineup';
 import { sfx } from '../utils/sound';
 
@@ -34,6 +36,7 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
   const oppPosition = sortedLeague.findIndex(t => t.name === opponent.name) + 1;
   const userPosition = sortedLeague.findIndex(t => t.isUser) + 1;
   const form = gameState.matchHistory.slice(-5).reverse();
+  const [showStadium, setShowStadium] = useState(false);
 
   const prediction = diff >= 6 ? { text: '🔥 Büyük favori biziz', color: 'text-emerald-400' }
     : diff >= 2 ? { text: '👍 Favori biziz', color: 'text-emerald-300' }
@@ -128,6 +131,29 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
                 <div className="text-white font-bold">{opponent.p}</div>
               </div>
             </div>
+            {isHome && gameState.stadium && (
+              <div className="mt-2">
+                <button
+                  onClick={() => setShowStadium(v => !v)}
+                  className="w-full py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white"
+                >
+                  🏟️ {showStadium ? 'Stadyum turunu kapat' : 'Stadyumunu 3D gör (maç öncesi tur)'}
+                </button>
+                {showStadium && (
+                  <div className="mt-2">
+                    <Stadium3D
+                      design={gameState.stadium.design}
+                      capacity={stadiumCapacity(gameState)}
+                      logo={gameState.teamLogo}
+                      sponsorText={gameState.activeSponsor ? `${gameState.activeSponsor.name.toUpperCase()} • ` : 'RESMİ SPONSOR • '}
+                      night={gameState.weather !== 'sunny'}
+                      cinematic
+                      height={220}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {opponent.keyPlayer && (
               <div className="mt-2 bg-red-500/10 border border-red-500/30 rounded-lg px-2.5 py-2 flex items-center justify-between">
                 <div className="text-[11px] text-red-200">

@@ -2,6 +2,39 @@
 
 export type Weather = 'sunny' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'wind' | 'fog';
 
+/* ══════════ STADYUM STÜDYOSU (3D) ══════════ */
+export type RoofStyle = 'none' | 'canopy' | 'full' | 'glass';
+export type StandStyle = 'classic' | 'stepped' | 'double' | 'bowl';
+export type PitchPattern = 'stripes' | 'rings' | 'plain';
+
+export interface StadiumDesign {
+  /** Koltuk rengi (tribün ana rengi) */
+  seatColor: string;
+  /** İkincil renk: çatı kenarı, bayraklar, LED panolar */
+  accentColor: string;
+  roof: RoofStyle;
+  stands: StandStyle;
+  pitchPattern: PitchPattern;
+  /** Tribün üstü bayraklar */
+  flags: boolean;
+  /** Çim ortasında kulüp logosu */
+  logoOnPitch: boolean;
+  /** Projektör direkleri */
+  floodlights: boolean;
+}
+
+export interface StadiumState {
+  design: StadiumDesign;
+  /** Satın alınan ek koltuklar */
+  capacityBonus: number;
+  /** Bilet fiyat çarpanı (0.75 ucuz … 1.6 lüks) */
+  ticketMultiplier: number;
+  /** VIP loca & premium koltuk */
+  vip: boolean;
+  /** Satın alınmış kozmetikler: 'roof:glass', 'stands:bowl', 'color:#f43f5e' … */
+  cosmetics: string[];
+}
+
 /** Bilindik oyuncu sınıflandırması */
 export type StarTier = 'world' | 'star' | 'turkish' | 'wonderkid';
 
@@ -362,6 +395,8 @@ export interface GameState {
   // ── v3.2: Kiralama Sistemi ──
   loanList: LoanTarget[];
   outgoingLoans: OutgoingLoan[];
+  // ── v3.3: Stadyum Stüdyosu (3D) ──
+  stadium: StadiumState;
 }
 
 export interface ShopBranchData {

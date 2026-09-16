@@ -9,8 +9,16 @@ import {
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
 import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
-import { generateFixture, calculateAttendance, ticketPrice, awayIncome } from '../utils/fixture';
+import { generateFixture, calculateAttendance, awayIncome } from '../utils/fixture';
 import { playerValue, playerWage, marketRefreshCost } from '../utils/pricing';
+import { defaultStadium } from '../data/stadium';
+import {
+  stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan
+} from '../utils/stadium';
+import { StadiumDesign as StadiumDesignType } from '../types/game';
+import {
+  CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS
+} from '../data/stadium';
 import {
   assignKeyPlayers, buildGenericMarketPlayers, buildMarketStars, generateLoanList,
   applyLoanGrowth
@@ -23,6 +31,15 @@ import {
   SKILLS, emptySkillTree, grantXp, skillBuyDiscount, skillFatigueReduction, skillInjuryReduction, skillMoraleBonus,
   skillRecoveryBonus, skillSellBonus, skillSponsorBonus, skillYouthBonus
 } from '../utils/progression';
+
+/** Renk ücretsiz paletlerden mi yoksa satın alınmış mı? */
+function isColorUnlocked(stadium: GameState['stadium'], hex: string): boolean {
+  if (!hex) return false;
+  const free = ['#1d4ed8', '#dc2626', '#059669', '#111827', '#f8fafc', '#f59e0b', '#facc15', '#38bdf8', '#f472b6', '#34d399'];
+  if (free.includes(hex.toLowerCase()) || free.includes(hex.toUpperCase())) return true;
+  const cosmetics = stadium?.cosmetics || [];
+  return cosmetics.some(id => id.startsWith('color:') && id.slice(6).toLowerCase() === hex.toLowerCase());
+}
 
 const generatePlayerName = () => {
   return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
@@ -253,7 +270,8 @@ export const useGameState = () => {
       loginStreak: 0,
       lastDailyReward: null,
       loanList: [],
-      outgoingLoans: []
+      outgoingLoans: [],
+      stadium: defaultStadium()
     };
 
     // Transfer pazarı: generic oyuncular + bilindik yıldızlar
@@ -936,11 +954,17 @@ export const useGameState = () => {
       const winBonus = userWon ? 450000 : userScore === oppScore ? 150000 : 50000;
       let matchIncome: number;
       if (isHome) {
-        const ticketRevenue = Math.floor(attendance * ticketPrice(newState.stadiumLvl) * 0.7);
-        matchIncome = baseIncome + ticketRevenue + winBonus;
+        const price = ticketPriceFor(newState.stadiumLvl, newState.stadium?.ticketMultiplier ?? 1);
+        const ticketRevenue = Math.floor(attendance * price * 0.7 * gateMultiplier(newState));
+        // Tribünde büfe/ürün harcaması: stadyumu doldurmak ekstra kazandırır
+        const catering = Math.floor(attendance * fanSpendingPerFan(newState));
+        matchIncome = baseIncome + ticketRevenue + catering + winBonus;
         newState.clubStats.totalAttendance = (newState.clubStats.totalAttendance || 0) + attendance;
+        // Tribün kozmetikleri taraftar morali kazandırır
+        const love = stadiumLoveBonus(newState);
+        if (love > 0) newState.fanHappiness = Math.min(100, newState.fanHappiness + love);
         // Seyirci memnuniyeti
-        const capacity = newState.stadiumLvl * 5000 + 2000;
+        const capacity = stadiumCapacity(newState);
         const fillRate = attendance / capacity;
         if (fillRate > 0.9) newState.fanHappiness = Math.min(100, newState.fanHappiness + 2);
         if (fillRate < 0.5) newState.fanHappiness = Math.max(0, newState.fanHappiness - 2);
@@ -951,7 +975,11 @@ export const useGameState = () => {
           fanHappiness: 60,
           opponentOvr: userTeam.ovr,
           isHome: true,
-          weather
+          weather,
+          // Rakibin stadyumu da kendi kozmetiklerinden etkilenir (basit simülasyon)
+          demandFactor: demandFactor(1),
+          weatherShield: weatherShield({ roof: 'canopy' } as StadiumDesignType, weather),
+          capacityBonus: 0
         });
         matchIncome = baseIncome + awayIncome(opponent.ovr, oppAttendance, newState.stadiumLvl) + winBonus;
       }
@@ -1652,6 +1680,141 @@ export const useGameState = () => {
   }, []);
 
   /* ══════════════ KARİYER: YETENEK, GÜNLÜK ÖDÜL, KADRO ══════════════ */
+  /* ══════════════ STADYUM STÜDYOSU ══════════════ */
+
+  /** Tasarım alanlarını (renk, çatı, tribün, çim, bayrak…) güncelle — kilit kontrolü ile */
+  const setStadiumDesign = useCallback((patch: Partial<GameState['stadium']['design']>) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const allowed = { ...patch };
+
+      // Kilitli kozmetik kontrolü
+      const roof = allowed.roof;
+      if (roof && roof !== 'none' && !isUnlocked(stadium, `roof:${roof}`)) delete allowed.roof;
+      const stands = allowed.stands;
+      if (stands && stands !== 'classic' && !isUnlocked(stadium, `stands:${stands}`)) delete allowed.stands;
+      const pattern = allowed.pitchPattern;
+      if (pattern && !isUnlocked(stadium, `pitch:${pattern}`)) delete allowed.pitchPattern;
+      if (allowed.flags === true && !isUnlocked(stadium, 'flags')) delete allowed.flags;
+      if (allowed.logoOnPitch === true && !isUnlocked(stadium, 'logoPitch')) delete allowed.logoOnPitch;
+      if (allowed.seatColor && !isColorUnlocked(stadium, allowed.seatColor)) delete allowed.seatColor;
+      if (allowed.accentColor && !isColorUnlocked(stadium, allowed.accentColor)) delete allowed.accentColor;
+
+      const design = { ...stadium.design, ...allowed };
+
+      return {
+        ...prev,
+        stadium: { ...stadium, design, vip: design && (prev.stadium?.vip ?? false) }
+      };
+    });
+  }, []);
+
+  /** Kozmetik satın al (çatı, tribün tipi, bayrak, VIP, özel renk…) */
+  const buyStadiumCosmetic = useCallback((cosmeticId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      if (isUnlocked(stadium, cosmeticId)) return prev;
+
+      const option = COSMETICS.find(c => c.id === cosmeticId);
+      const premiumColor = PREMIUM_COLORS.find(c => c.id === cosmeticId);
+      const price = option?.price ?? premiumColor?.price;
+      if (price === undefined) return prev;
+      if (prev.budget < price) return prev;
+
+      let design = { ...stadium.design };
+      let vip = stadium.vip;
+
+      if (option) {
+        if (option.field === 'roof') design.roof = option.value as GameState['stadium']['design']['roof'];
+        else if (option.field === 'stands') design.stands = option.value as GameState['stadium']['design']['stands'];
+        else if (option.field === 'pitchPattern') design.pitchPattern = option.value as GameState['stadium']['design']['pitchPattern'];
+        else if (option.field === 'flags') design.flags = true;
+        else if (option.field === 'logoOnPitch') design.logoOnPitch = true;
+        else if (option.field === 'floodlights') design.floodlights = true;
+        else if (option.field === 'vip') vip = true;
+      }
+      if (premiumColor) design.seatColor = premiumColor.hex;
+
+      const love = option?.field === 'vip' ? 4 : option?.field === 'flags' ? 3 : option?.field === 'logoOnPitch' ? 2 : 0;
+
+      return {
+        ...prev,
+        budget: prev.budget - price,
+        fanHappiness: Math.min(100, prev.fanHappiness + love),
+        stadium: {
+          ...stadium,
+          design,
+          vip,
+          cosmetics: [...(stadium.cosmetics || []), cosmeticId]
+        },
+        news: [
+          `${option?.icon ?? '🎨'} ${option?.label ?? premiumColor?.label} satın alındı! ($${price.toLocaleString()}) — Stadyum sekmesinden görünümü incele.`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Kapasite paketi satın al (ek koltuk) */
+  const buyCapacityPackage = useCallback((packageId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const pack = CAPACITY_PACKAGES.find(p => p.id === packageId);
+      if (!pack) return prev;
+      const current = stadiumCapacity(prev);
+      if (current >= MAX_CAPACITY) return prev;
+      if (prev.budget < pack.price) return prev;
+
+      const added = Math.min(pack.seats, MAX_CAPACITY - current);
+      return {
+        ...prev,
+        budget: prev.budget - pack.price,
+        stadium: { ...stadium, capacityBonus: stadium.capacityBonus + added },
+        news: [
+          `🏗️ Stadyuma ${added.toLocaleString()} koltuk eklendi! Yeni kapasite: ${(current + added).toLocaleString()}`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Bilet fiyat stratejisi */
+  const setTicketMultiplier = useCallback((multiplier: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const strategy = TICKET_STRATEGIES.find(t => t.multiplier === multiplier);
+      if (!strategy) return prev;
+      return {
+        ...prev,
+        stadium: { ...stadium, ticketMultiplier: multiplier },
+        news: [`🎟️ Bilet fiyatları "${strategy.label}" olarak ayarlandı ($${ticketPriceFor(prev.stadiumLvl, multiplier)}/bilet).`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  /** Stadyum seviyesini yükselt (tesis yükseltmesiyle aynı, kapasite +5.000) */
+  const upgradeStadiumLevel = useCallback((cost: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      if (prev.budget < cost) return prev;
+      if (stadiumCapacity(prev) >= MAX_CAPACITY) return prev;
+      return {
+        ...prev,
+        budget: prev.budget - cost,
+        stadiumLvl: prev.stadiumLvl + 1,
+        fanHappiness: Math.min(100, prev.fanHappiness + 5),
+        news: [
+          `🏟️ Stadyum seviye ${prev.stadiumLvl + 1} oldu! Kapasite: ${stadiumCapacity({ stadiumLvl: prev.stadiumLvl + 1, stadium: prev.stadium }).toLocaleString()}`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
   const spendSkillPoint = useCallback((skillId: SkillId) => {
     setGameState(prev => {
       if (!prev || (prev.skillPoints || 0) <= 0) return prev;
@@ -1858,6 +2021,11 @@ export const useGameState = () => {
     claimDailyReward,
     dismissDailyReward,
     autoPickBestEleven,
+    setStadiumDesign,
+    buyStadiumCosmetic,
+    buyCapacityPackage,
+    setTicketMultiplier,
+    upgradeStadiumLevel,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,

@@ -37,6 +37,12 @@ const STEPS = [
     tip: 'İpucu: Yönetim güveni sıfıra inerse kovulursun — sonuçlara dikkat!'
   },
   {
+    icon: '🏟️',
+    title: '3D Stadyum Stüdyosu',
+    text: 'Stadyum sekmesinde stadyumunu 3D görürsün: koltuk rengini, çatıyı, tribün tipini ve çim desenini değiştir; kapasiteyi +10.000 koltuğa kadar büyüt. Bilet fiyatını ayarlayarak gelirini maksimize et.',
+    tip: 'İpucu: Tribünde büfe harcaması da gelir getirir — ucuz bilet stadyumu doldurur, pahalı bilet birim geliri artırır.'
+  },
+  {
     icon: '🔄',
     title: 'Kiralama ve Yıldızlar',
     text: 'Bütçen yetmiyorsa Transfer → Kiralık sekmesinden yıldızları kiralayabilirsin (düşük bedel + maaş payı, sezon sonu opsiyonla kalıcı yapabilirsin). Gençlerini kiralığa göndererek gelişmelerini sağla. Rakiplerin Mbappé, Arda Güler gibi yıldızları sahada karşına çıkar!',

@@ -15,6 +15,7 @@ import { ShopTab } from './components/tabs/ShopTab';
 import { MerchTab } from './components/tabs/MerchTab';
 import { OfficeTab } from './components/tabs/OfficeTab';
 import { CareerTab } from './components/tabs/CareerTab';
+import { StadiumTab } from './components/tabs/StadiumTab';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -36,12 +37,14 @@ import { BOT_NAMES_BY_LEVEL, FORMATIONS } from './data/constants';
 import { calculateAttendance, generateFixture } from './utils/fixture';
 import { assignKeyPlayers, applyLoanGrowth, generateLoanList } from './utils/loan';
 import { playerValue } from './utils/pricing';
+import { demandFactor, weatherShield } from './utils/stadium';
+import { StadiumDesign } from './types/game';
 import { createSeasonMissions, createWeeklyMissions } from './utils/missions';
 import { exportSaveToFile, importSaveFromFile, writeSlot, clearSlot } from './utils/save';
 import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
-  | 'office' | 'career' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
+  | 'office' | 'career' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
   | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
@@ -95,6 +98,11 @@ function App() {
     resetCareer,
     setGameStateExternal,
     spendSkillPoint,
+    setStadiumDesign,
+    buyStadiumCosmetic,
+    buyCapacityPackage,
+    setTicketMultiplier,
+    upgradeStadiumLevel,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,
@@ -249,7 +257,10 @@ function App() {
           opponentOvr: opponent.ovr,
           isHome,
           weather: gameState.weather,
-          isCup: isCupMatch
+          isCup: isCupMatch,
+          capacityBonus: gameState.stadium?.capacityBonus ?? 0,
+          demandFactor: demandFactor(gameState.stadium?.ticketMultiplier ?? 1),
+          weatherShield: weatherShield(gameState.stadium?.design ?? ({} as StadiumDesign), gameState.weather)
         })
       : 0;
 
@@ -793,6 +804,7 @@ function App() {
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
     { id: 'career', label: 'Kariyer', icon: '🧠', badge: careerBadge },
+    { id: 'stadium', label: 'Stadyum', icon: '🏟️' },
     { id: 'squad', label: 'Kadro', icon: '⚽' },
     { id: 'transfer', label: 'Transfer', icon: '💰' },
     { id: 'tactics', label: 'Taktik', icon: '📋' },
@@ -1033,6 +1045,16 @@ function App() {
             )}
             {activeTab === 'career' && (
               <CareerTab gameState={gameState} onSpendSkillPoint={(id: SkillId) => spendSkillPoint(id)} />
+            )}
+            {activeTab === 'stadium' && (
+              <StadiumTab
+                gameState={gameState}
+                onSetDesign={setStadiumDesign}
+                onBuyCosmetic={buyStadiumCosmetic}
+                onBuyCapacity={buyCapacityPackage}
+                onSetTicketMultiplier={setTicketMultiplier}
+                onUpgradeStadiumLevel={upgradeStadiumLevel}
+              />
             )}
             {activeTab === 'squad' && (
               <SquadTab

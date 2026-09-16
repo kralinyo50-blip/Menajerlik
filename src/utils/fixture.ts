@@ -62,10 +62,16 @@ export function calculateAttendance(params: {
   isHome: boolean;
   weather: Weather;
   isCup?: boolean;
+  /** Stadyum stüdyosundan gelen ek kapasite (ek koltuklar) */
+  capacityBonus?: number;
+  /** Bilet fiyat stratejisinin talep etkisi (0.72 … 1.15) */
+  demandFactor?: number;
+  /** Çatı koruması (kötü havada kaybı azaltır: 1 … 0.96) */
+  weatherShield?: number;
 }): number {
   if (!params.isHome) return 0;
 
-  const capacity = params.stadiumLvl * 5000 + 2000;
+  const capacity = Math.min(90000, params.stadiumLvl * 5000 + 2000 + (params.capacityBonus ?? 0));
   const posFactor = Math.max(0.45, Math.min(1.05, 1.15 - params.leaguePosition * 0.06));
   const fanFactor = 0.55 + (params.fanHappiness / 100) * 0.55;
   // Güçlü rakip ilgi çeker
@@ -77,7 +83,10 @@ export function calculateAttendance(params: {
     params.weather === 'sunny' ? 1.05 : 1;
   const cupFactor = params.isCup ? 1.12 : 1;
 
-  const attendance = Math.floor(capacity * posFactor * fanFactor * rivalFactor * weatherFactor * cupFactor);
+  const attendance = Math.floor(
+    capacity * posFactor * fanFactor * rivalFactor * weatherFactor * cupFactor *
+    (params.demandFactor ?? 1) * (params.weatherShield ?? 1)
+  );
   return Math.max(500, Math.min(capacity, attendance));
 }
 

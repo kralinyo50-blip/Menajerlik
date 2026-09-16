@@ -1,7 +1,7 @@
 # Manager Pro 2026 — Geliştirme Planı ve Oyun Analizi
 
-> Tarih: 16 Eylül 2026 • Sürüm: **3.2.0 (Kiralama & Yıldız Oyuncular)**
-> v3.0 Kariyer Sistemi → v3.1 ilerleme katmanı → v3.2 **kiralama, bilindik futbolcular ve yeni piyasa ekonomisi**
+> Tarih: 16 Eylül 2026 • Sürüm: **3.3.0 (3D Stadyum Stüdyosu)**
+> v3.0 Kariyer → v3.1 ilerleme katmanı → v3.2 kiralama & yıldız oyuncular → v3.3 **3D stadyum özelleştirme & kapasite yönetimi**
 
 Bu doküman; mevcut oyunun **tespitini (audit)**, kapatılan eksikleri ve sıradaki
 geliştirme adımlarını tek yerde toplar. Amaç: oyunu "simülasyon"dan **gerçek bir
@@ -137,6 +137,23 @@ Yıldızlar üç yerde karşına çıkar: **transfer pazarı** (scout listesi), 
 
 ---
 
+## 2d. v3.3.0 — 3D Stadyum Stüdyosu
+
+DLS tarzı "stadyumunu gör, tasarla, büyüt" deneyimi. Teknoloji: **three.js** (prosedürel geometri — model dosyası yok, tamamı kodla üretiliyor).
+
+| Katman | Detay |
+|---|---|
+| **3D görüntüleyici** | Prosedürel stadyum: basamaklı tribün extrüzyonu, çatı taşıyıcıları, projektör kuleleri, LED reklam panoları (kayan yazı), bayraklar (dalgalanan), kaleler, kalabalık ve çim dokuları canvas'ta üretilir |
+| **Kamera** | Sürükle = döndür, tekerlek/pinch = yakınlaştır, çift tık = sıfırla, **sinematik mod** (otomatik yavaş tur), gece/gündüz |
+| **Özelleştirme** | Koltuk rengi (6 ücretsiz + 8 satın alınabilir), aksan rengi, 4 çatı tipi, 4 tribün mimarisi, 3 çim deseni, bayraklar, çimde logo, VIP loca |
+| **Kapasite** | Tabandan bağımsız ek koltuk paketleri (+1.000/+2.500/+5.000/+10.000) ve seviye yükseltmesi (+5.000). **Tribün satır sayısı kapasiteye göre değişir** → stadyum gözle görülür şekilde büyür (7.000 koltuk = 4 satır, 90.000 koltuk = 30 satır) |
+| **Ekonomi** | Bilet fiyat stratejisi (ucuz/normal/pahalı/lüks), tribünde büfe-ürün harcaması ($12-18/seyirci), VIP +%12, çatı kötü hava koruması, doluluk → taraftar morali döngüsü |
+| **Performans** | ~2.000-3.000 üçgen sahne, tek WebGL bağlamı, sekme değişince GPU kaynakları serbest bırakılır, WebGL yoksa zarif uyarı |
+
+**Denge tasarımı:** Ucuz bilet tribünü doldurur (büfe geliri + taraftar morali), pahalı bilet birim geliri artırır. Test simülasyonunda 17.000 kapasiteli stadyumda en kârlı bilet "Pahalı" ($865K) — yani ortada bir optimum var, tek doğru cevap yok.
+
+---
+
 ## 3. Sıradaki Adımlar — Önceliklendirilmiş Yol Haritası
 
 ### 🔥 Yüksek Etki / Orta Emek (sıradaki "olmazsa olmaz" adayları)
@@ -178,11 +195,12 @@ Yıldızlar üç yerde karşına çıkar: **transfer pazarı** (scout listesi), 
 
 ## 4. Teknik Notlar
 
+- **v3.3 yeni dosyalar**: `src/components/stadium/scene.ts` (prosedürel 3D model), `src/components/Stadium3D.tsx` (WebGL görüntüleyici + orbit kontrol), `src/components/tabs/StadiumTab.tsx` (tasarım/kapasite/bilet/mağaza panelleri), `src/data/stadium.ts` (kozmetik kataloğu), `src/utils/stadium.ts` (kapasite & gelir matematiği).
 - **v3.2 yeni dosyalar**: `src/data/stars.ts` (74 bilindik futbolcu), `src/utils/pricing.ts` (piyasa ekonomisi), `src/utils/loan.ts` (kiralama motoru).
 - **v3.1 yeni dosyalar**: `src/utils/missions.ts`, `src/utils/progression.ts`, `src/components/tabs/CareerTab.tsx`, `src/components/LivePitch.tsx`, `src/components/DailyRewardModal.tsx`.
 - **v3.0 yeni dosyalar**: `src/utils/fixture.ts`, `src/utils/lineup.ts`, `src/utils/sound.ts`, `src/utils/save.ts`, `src/utils/contract.ts`, `src/components/PreMatchScreen.tsx`, `src/components/GameOverScreen.tsx`, `src/components/PenaltyShootout.tsx`, `src/components/tabs/OfficeTab.tsx`.
 - **Genişletilen tipler**: `GameState` içine `captainId`, `setPieceTakers`, `trainingFocus`, `leagueScorers`, `transferOffers`, `weather`, `soundOn`, `boardWarnings`, `careerOver`, `boardMessages`; `FixtureEntry` (isHome/week) ve `MatchReport`/`PlayerRating` eklendi.
 - **Kayıt uyumluluğu**: Eski (2.x) kayıtlar `migrateState()` ile otomatik yeni şemaya taşınır (haftaların iç/dış sahası, kaptan, hava durumu vb. otomatik atanır).
-- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı. Fiyat eğrisi, yıldız havuzu, kiralık listesi/teklifleri, kiralık gelişimi, rakip yıldız ataması (200 denemede tekrar yok), eski kayıt migrasyonu (1.2M → 7.9M otomatik yeniden fiyatlama) ve 24 ekran render testinden geçirildi.
+- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı. Fiyat eğrisi, yıldız havuzu, kiralama, migrasyon testleri + **3D model testi**: 32 konfigürasyon (çatı × tribün × bayrak) hatasız üretildi, tribünlerin sahaya taşmadığı ve zeminin altına sarkmadığı sınır kutusu analiziyle doğrulandı, tüm seyirci/gelir simülasyonları ve 28 ekran render testi geçti.
 
 İyi şanslar, şampiyon! ⚽🏆

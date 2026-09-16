@@ -9,6 +9,23 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '3.3.0',
+    date: '16 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '3D Stadyum Stüdyosu: Stadyumunu Gör, Tasarla ve Büyüt',
+    items: [
+      '🏟️ Gerçek 3D stadyum: sürükleyerek döndür, tekerlekle yakınlaş, çift tıkla sıfırla (mobilde pinch)',
+      '🎨 Koltuk ve aksan renkleri: ücretsiz palet + satın alınabilir özel renkler (altın tribün, neon mavi…)',
+      '🏠 Çatı tipleri: saçak, tam çatı, cam çatı — kötü havada seyirci kaybını azaltır',
+      '🏗️ Tribün mimarisi: dik basamak, çift katlı, modern kase (köşeleri kapalı)',
+      '🌱 Çim deseni (şeritli/halkalı/düz), çimde kulüp logosu, tribün bayrakları',
+      '💡 Gece/gündüz modu + sinematik kamera turu; projektörler ve LED panolar canlı',
+      '📈 Kapasite büyütme: +1.000 / +2.500 / +5.000 / +10.000 koltuk paketleri (tribün satırları görsel olarak büyür)',
+      '🎟️ Bilet fiyat stratejisi (ucuz/normal/pahalı/lüks) + tribünde büfe harcaması ile gerçek talep eğrisi',
+      '🏟️ Maç öncesi ekranında "stadyum turu" 3D önizleme',
+    ],
+  },
+  {
     version: '3.2.0',
     date: '16 Eyl 2026',
     tag: 'BÜYÜK',
@@ -114,4 +131,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '3.2.0';
+export const CURRENT_VERSION = '3.3.0';

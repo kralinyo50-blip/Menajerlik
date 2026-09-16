@@ -3,6 +3,7 @@ import { INITIAL_ACHIEVEMENTS } from '../data/achievements';
 import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from './missions';
 import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
+import { defaultStadium } from '../data/stadium';
 
 export const SLOT_KEYS = [
   'ManagerPro2026_Save',       // Slot 1 (eski otomatik kayıt)
@@ -108,6 +109,12 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       ...(state.clubStats || {}),
     },
     shopBranches: state.shopBranches ?? [],
+    stadium: {
+      ...defaultStadium(),
+      ...(state.stadium || {}),
+      design: { ...defaultStadium().design, ...(state.stadium?.design || {}) },
+      cosmetics: state.stadium?.cosmetics ?? defaultStadium().cosmetics,
+    },
   };
 
   // Eski (2.x/3.0/3.1) kayıtların oyuncu değer ve maaşları yeni piyasa ekonomisine çekilir.
