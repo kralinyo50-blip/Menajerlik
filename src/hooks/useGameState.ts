@@ -1,11 +1,18 @@
 import { useState, useCallback } from 'react';
-import { GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty } from '../types/game';
-import { 
-  FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS, 
-  INITIAL_INVESTMENTS 
+import {
+  GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
+  LeagueScorer, MatchReport, TrainingFocus, PlayerRating
+} from '../types/game';
+import {
+  FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
+  INITIAL_INVESTMENTS, UNHAPPY_MORALE
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
 import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
+import { generateFixture, calculateAttendance, ticketPrice, awayIncome, } from '../utils/fixture';
+import { readSlot, writeSlot, randomWeather } from '../utils/save';
+import { fixLineup } from '../utils/lineup';
+import { renewalCost, renewalWage } from '../utils/contract';
 
 const generatePlayerName = () => {
   return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
@@ -18,7 +25,7 @@ const calculatePlayerValue = (ovr: number, age: number) => {
 };
 
 const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number): Player => {
-  const ovr = minOvr + Math.floor(Math.random() * (maxOvr - minOvr));
+  const ovr = minOvr + Math.floor(Math.random() * Math.max(1, maxOvr - minOvr));
   const age = 18 + Math.floor(Math.random() * 17);
   return {
     id,
@@ -38,6 +45,7 @@ const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number
     contract: 1 + Math.floor(Math.random() * 4),
     yellowCards: 0,
     redCard: false,
+    suspension: 0,
     matchesPlayed: 0,
     form: 5 + Math.floor(Math.random() * 4)
   };
@@ -52,16 +60,59 @@ const shuffleArray = <T>(array: T[]): T[] => {
   return newArray;
 };
 
+/** Poisson dağılımı ile gerçekçi gol sayısı */
+const poissonGoals = (lambda: number): number => {
+  const L = Math.exp(-Math.max(0.15, lambda));
+  let k = 0;
+  let p = 1;
+  do {
+    k++;
+    p *= Math.random();
+  } while (p > L && k < 12);
+  return k - 1;
+};
+
+/** Rakip kulüplerin gol krallığı listesini canlı tutar */
+const bumpScorers = (scorers: LeagueScorer[], club: string, logo: string, goals: number) => {
+  if (goals <= 0) return;
+  let clubScorers = scorers.filter(s => s.club === club);
+  if (clubScorers.length < 3) {
+    const fresh: LeagueScorer = { name: generatePlayerName(), club, logo, goals: 0, assists: 0 };
+    scorers.push(fresh);
+    clubScorers = [...clubScorers, fresh];
+  }
+  const pick = clubScorers[Math.floor(Math.random() * clubScorers.length)];
+  pick.goals += goals;
+  if (Math.random() < 0.5) {
+    const assister = clubScorers[Math.floor(Math.random() * clubScorers.length)];
+    if (assister !== pick) assister.assists += 1;
+  }
+};
+
+export interface MatchOutcomeOptions {
+  isCup?: boolean;
+  isHome?: boolean;
+  weather?: Weather;
+  attendance?: number;
+  motmPlayerId?: number | null;
+  cards?: { playerId: number; type: 'yellow' | 'red' }[];
+  injuries?: { playerId: number; weeks: number }[];
+  ratings?: PlayerRating[];
+  penaltyWinner?: 'user' | 'opponent';
+  report?: MatchReport;
+  teamTalkMorale?: number;
+}
+
 export const useGameState = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading] = useState(false);
 
+  /* ══════════════ KURULUM ══════════════ */
   const initializeGame = useCallback((teamName: string, teamLogo: string, difficulty: Difficulty = 'normal') => {
     const leagueLevel = 4;
     const diffCfg = DIFFICULTY_CONFIG[difficulty];
     const baseOvr = Math.floor((50 + (5 - leagueLevel) * 10) * diffCfg.oppOvrMult);
-    
-    // Generate initial squad with formation positions
+
     const formation = FORMATIONS['4-3-3'];
     const team11: Player[] = formation.map((pos, i) => {
       const player = generatePlayer(pos.r, 72, 80, i);
@@ -70,14 +121,9 @@ export const useGameState = () => {
       return player;
     });
 
-    // Generate bench
     const benchRoles = ['STP', 'SB', 'OS', 'OS', 'FW', 'FW', 'KL'];
-    const bench: Player[] = benchRoles.map((role, i) => 
-      generatePlayer(role, 68, 76, 100 + i)
-    );
+    const bench: Player[] = benchRoles.map((role, i) => generatePlayer(role, 68, 76, 100 + i));
 
-    // Create league
-    const botData = BOT_NAMES_BY_LEVEL[leagueLevel];
     const userTeam: Team = {
       name: teamName,
       logo: teamLogo,
@@ -86,6 +132,7 @@ export const useGameState = () => {
       isUser: true
     };
 
+    const botData = BOT_NAMES_BY_LEVEL[leagueLevel];
     const league: Team[] = [userTeam];
     botData.forEach(bot => {
       league.push({
@@ -97,11 +144,9 @@ export const useGameState = () => {
       });
     });
 
-    // Generate fixture (double round robin)
     const bots = league.filter(t => !t.isUser);
-    const fixture = shuffleArray([...bots, ...bots]);
+    const fixture = generateFixture(userTeam, bots);
 
-    // Generate market
     const marketList: Player[] = [];
     const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
     for (let i = 0; i < 8; i++) {
@@ -109,14 +154,15 @@ export const useGameState = () => {
       marketList.push(generatePlayer(role, baseOvr, baseOvr + 15, 5000 + i));
     }
 
-    // Generate cup matches
-    const cupTeams = shuffleArray([...bots]).slice(0, 7);
+    const cupTeams = shuffleArray([...bots]).slice(0, 4);
     const cupMatches: CupMatch[] = [
       { round: '1. Tur', opponent: cupTeams[0], played: false },
       { round: 'Çeyrek Final', opponent: cupTeams[1], played: false },
       { round: 'Yarı Final', opponent: cupTeams[2], played: false },
       { round: 'Final', opponent: cupTeams[3], played: false }
     ];
+
+    const captain = [...team11].sort((a, b) => b.ovr - a.ovr)[0];
 
     const initialState: GameState = {
       teamName,
@@ -149,7 +195,10 @@ export const useGameState = () => {
         leagueTitles: 0,
         cleanSheets: 0,
         penaltiesScored: 0,
-        minigamesWon: 0
+        minigamesWon: 0,
+        totalAttendance: 0,
+        motmAwards: 0,
+        redCards: 0
       },
       tactics: {
         formation: '4-3-3',
@@ -162,7 +211,11 @@ export const useGameState = () => {
       cupEliminated: false,
       seasonObjective: 'İlk 5\'e gir',
       managerRep: 50,
-      news: ['Yeni sezon heyecanla bekleniyor!', 'Transfer dönemi açıldı.', 'Mini oyun jetonların hazır!'],
+      news: [
+        'Yeni sezon heyecanla bekleniyor!',
+        'Transfer dönemi açıldı — Ofis sekmesinden teklifleri takip et.',
+        'Mini oyun jetonların hazır!'
+      ],
       shopBranches: [],
       difficulty,
       achievements: INITIAL_ACHIEVEMENTS.map(a => ({ ...a })),
@@ -171,7 +224,24 @@ export const useGameState = () => {
       lastSpinWeek: 0,
       fanHappiness: 60,
       teamChemistry: 55,
-      boardConfidence: 50
+      boardConfidence: 50,
+      captainId: captain?.id ?? null,
+      setPieceTakers: {
+        penalty: [...team11].sort((a, b) => b.ovr - a.ovr)[1]?.id ?? captain?.id ?? null,
+        freekick: captain?.id ?? null,
+        corner: [...team11].sort((a, b) => b.ovr - a.ovr)[2]?.id ?? null
+      },
+      trainingFocus: 'balanced',
+      leagueScorers: [],
+      transferOffers: [],
+      weather: randomWeather(),
+      soundOn: true,
+      boardWarnings: 0,
+      careerOver: false,
+      careerOverReason: null,
+      boardMessages: [
+        '👔 Yönetim: Sezon hedefimiz ilk 5. Başarılar dileriz.'
+      ]
     };
 
     setGameState(initialState);
@@ -181,28 +251,25 @@ export const useGameState = () => {
     setGameState(prev => prev ? { ...prev, ...updates } : null);
   }, []);
 
+  const setGameStateExternal = useCallback((state: GameState) => {
+    setGameState(state);
+  }, []);
+
+  /* ══════════════ OYUNCU İŞLEMLERİ ══════════════ */
   const updatePlayer = useCallback((playerId: number, updates: Partial<Player>, isBench: boolean = false) => {
     setGameState(prev => {
       if (!prev) return null;
-      
       if (isBench) {
-        const newBench = prev.bench.map(p => 
-          p.id === playerId ? { ...p, ...updates } : p
-        );
-        return { ...prev, bench: newBench };
-      } else {
-        const newTeam11 = prev.team11.map(p => 
-          p.id === playerId ? { ...p, ...updates } : p
-        );
-        return { ...prev, team11: newTeam11 };
+        return { ...prev, bench: prev.bench.map(p => (p.id === playerId ? { ...p, ...updates } : p)) };
       }
+      return { ...prev, team11: prev.team11.map(p => (p.id === playerId ? { ...p, ...updates } : p)) };
     });
   }, []);
 
   const swapPlayers = useCallback((playerId1: number, playerId2: number) => {
     setGameState(prev => {
       if (!prev) return null;
-      
+
       const player1InTeam = prev.team11.find(p => p.id === playerId1);
       const player2InTeam = prev.team11.find(p => p.id === playerId2);
       const player1InBench = prev.bench.find(p => p.id === playerId1);
@@ -212,22 +279,18 @@ export const useGameState = () => {
       let newBench = [...prev.bench];
 
       if (player1InTeam && player2InBench) {
-        // Swap between team and bench
         const pos = { t: player1InTeam.t, l: player1InTeam.l, role: player1InTeam.role };
-        newTeam11 = newTeam11.map(p => 
-          p.id === playerId1 ? { ...player2InBench, ...pos } : p
-        );
+        newTeam11 = newTeam11.map(p => (p.id === playerId1 ? { ...player2InBench, ...pos } : p));
         newBench = newBench.filter(p => p.id !== playerId2);
         const { t, l, ...playerWithoutPos } = player1InTeam;
+        void t; void l;
         newBench.push(playerWithoutPos as Player);
       } else if (player1InBench && player2InTeam) {
-        // Swap between bench and team
         const pos = { t: player2InTeam.t, l: player2InTeam.l, role: player2InTeam.role };
-        newTeam11 = newTeam11.map(p => 
-          p.id === playerId2 ? { ...player1InBench, ...pos } : p
-        );
+        newTeam11 = newTeam11.map(p => (p.id === playerId2 ? { ...player1InBench, ...pos } : p));
         newBench = newBench.filter(p => p.id !== playerId1);
         const { t, l, ...playerWithoutPos } = player2InTeam;
+        void t; void l;
         newBench.push(playerWithoutPos as Player);
       }
 
@@ -238,15 +301,12 @@ export const useGameState = () => {
   const sellPlayer = useCallback((playerId: number, isBench: boolean) => {
     setGameState(prev => {
       if (!prev) return null;
-      
-      const player = isBench 
-        ? prev.bench.find(p => p.id === playerId)
-        : prev.team11.find(p => p.id === playerId);
-      
+
+      const player = isBench ? prev.bench.find(p => p.id === playerId) : prev.team11.find(p => p.id === playerId);
       if (!player) return prev;
 
       const sellValue = Math.floor(player.value * 0.8);
-      
+
       if (isBench) {
         return {
           ...prev,
@@ -254,22 +314,19 @@ export const useGameState = () => {
           budget: prev.budget + sellValue,
           news: [`${player.name} $${sellValue.toLocaleString()} karşılığında satıldı.`, ...prev.news.slice(0, 4)]
         };
-      } else {
-        if (prev.bench.length === 0) return prev;
-        
-        const substitute = prev.bench[0];
-        const pos = { t: player.t, l: player.l, role: player.role };
-        
-        return {
-          ...prev,
-          team11: prev.team11.map(p => 
-            p.id === playerId ? { ...substitute, ...pos } : p
-          ),
-          bench: prev.bench.slice(1),
-          budget: prev.budget + sellValue,
-          news: [`${player.name} $${sellValue.toLocaleString()} karşılığında satıldı.`, ...prev.news.slice(0, 4)]
-        };
       }
+      if (prev.bench.length === 0) return prev;
+
+      const substitute = prev.bench[0];
+      const pos = { t: player.t, l: player.l, role: player.role };
+
+      return {
+        ...prev,
+        team11: prev.team11.map(p => (p.id === playerId ? { ...substitute, ...pos } : p)),
+        bench: prev.bench.slice(1),
+        budget: prev.budget + sellValue,
+        news: [`${player.name} $${sellValue.toLocaleString()} karşılığında satıldı.`, ...prev.news.slice(0, 4)]
+      };
     });
   }, []);
 
@@ -279,9 +336,10 @@ export const useGameState = () => {
       const price = finalPrice ?? player.value;
       if (prev.budget < price) return prev;
 
+      const newWage = Math.max(player.wage, Math.floor(player.ovr * 550));
       let result: GameState = {
         ...prev,
-        bench: [...prev.bench, { ...player, id: Date.now(), value: price }],
+        bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: 3, suspension: 0 }],
         marketList: prev.marketList.filter(p => p.id !== player.id),
         budget: prev.budget - price,
         news: [`${player.name} $${price.toLocaleString()} karşılığında transfer edildi!`, ...prev.news.slice(0, 4)]
@@ -306,115 +364,219 @@ export const useGameState = () => {
     });
   }, []);
 
-  const saveGame = useCallback(() => {
-    if (gameState) {
-      localStorage.setItem('ManagerPro2026_Save', JSON.stringify(gameState));
-    }
-  }, [gameState]);
+  /** Sözleşme yenileme — imza parası ödenir, maaş artar */
+  const renewContract = useCallback((playerId: number, years: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const inTeam = prev.team11.find(p => p.id === playerId);
+      const inBench = prev.bench.find(p => p.id === playerId);
+      const player = inTeam || inBench;
+      if (!player) return prev;
 
-  const loadGame = useCallback((): boolean => {
-    const saved = localStorage.getItem('ManagerPro2026_Save');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Migrate older saves
-        const migrated: GameState = {
-          ...parsed,
-          season: parsed.season ?? 1,
-          difficulty: parsed.difficulty ?? 'normal',
-          achievements: parsed.achievements ?? INITIAL_ACHIEVEMENTS.map(a => ({ ...a })),
-          tutorialDone: parsed.tutorialDone ?? true,
-          minigameTokens: parsed.minigameTokens ?? 2,
-          lastSpinWeek: parsed.lastSpinWeek ?? 0,
-          fanHappiness: parsed.fanHappiness ?? 60,
-          teamChemistry: parsed.teamChemistry ?? 55,
-          boardConfidence: parsed.boardConfidence ?? 50,
-          clubStats: {
-            totalGoals: 0,
-            totalWins: 0,
-            totalDraws: 0,
-            totalLosses: 0,
-            cupWins: 0,
-            leagueTitles: 0,
-            cleanSheets: 0,
-            penaltiesScored: 0,
-            minigamesWon: 0,
-            ...(parsed.clubStats || {})
-          },
-          shopBranches: parsed.shopBranches ?? []
-        };
-        setGameState(migrated);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    return false;
+      const signingBonus = renewalCost(player, years);
+      const newWage = renewalWage(player, years);
+      if (prev.budget < signingBonus) return prev;
+
+      const patch = (p: Player): Player =>
+        p.id === playerId
+          ? { ...p, contract: p.contract + years, wage: newWage, wantsOut: false, morale: Math.min(100, p.morale + 12) }
+          : p;
+
+      return {
+        ...prev,
+        team11: prev.team11.map(patch),
+        bench: prev.bench.map(patch),
+        budget: prev.budget - signingBonus,
+        teamChemistry: Math.min(100, (prev.teamChemistry || 55) + 1),
+        news: [
+          `📝 ${player.name} ile ${years} yıllık yeni sözleşme! İmza parası: $${signingBonus.toLocaleString()} • Yeni maaş: $${newWage.toLocaleString()}/hafta`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
   }, []);
 
+  const setCaptain = useCallback((playerId: number | null) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const player = [...prev.team11, ...prev.bench].find(p => p.id === playerId);
+      return {
+        ...prev,
+        captainId: playerId,
+        team11: prev.team11.map(p => ({
+          ...p,
+          morale: p.id === playerId ? Math.min(100, p.morale + 8) : p.morale
+        })),
+        teamChemistry: Math.min(100, (prev.teamChemistry || 55) + 2),
+        news: player
+          ? [`🎽 ${player.name} yeni takım kaptanı olarak açıklandı!`, ...prev.news.slice(0, 4)]
+          : [`Kaptanlık boş bırakıldı.`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  const setSetPieceTaker = useCallback((kind: 'penalty' | 'freekick' | 'corner', playerId: number | null) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const player = [...prev.team11, ...prev.bench].find(p => p.id === playerId);
+      const label = kind === 'penalty' ? 'Penaltı' : kind === 'freekick' ? 'Frikik' : 'Korner';
+      return {
+        ...prev,
+        setPieceTakers: { ...prev.setPieceTakers, [kind]: playerId },
+        news: player
+          ? [`🎯 ${label} görevi ${player.name} oyuncusuna verildi.`, ...prev.news.slice(0, 4)]
+          : prev.news
+      };
+    });
+  }, []);
+
+  const setTrainingFocus = useCallback((focus: TrainingFocus) => {
+    setGameState(prev => prev ? { ...prev, trainingFocus: focus } : null);
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    setGameState(prev => prev ? { ...prev, soundOn: !prev.soundOn } : null);
+  }, []);
+
+  const dismissBoardMessage = useCallback((index: number) => {
+    setGameState(prev => prev
+      ? { ...prev, boardMessages: prev.boardMessages.filter((_, i) => i !== index) }
+      : null);
+  }, []);
+
+  /* ══════════════ TRANSFER TEKLİFLERİ ══════════════ */
+  const acceptTransferOffer = useCallback((offerId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const offer = prev.transferOffers.find(o => o.id === offerId);
+      if (!offer) return prev;
+
+      const isBench = prev.bench.some(p => p.id === offer.playerId);
+      const inTeam = prev.team11.some(p => p.id === offer.playerId);
+      if (!isBench && !inTeam) {
+        return { ...prev, transferOffers: prev.transferOffers.filter(o => o.id !== offerId) };
+      }
+
+      let team11 = prev.team11;
+      let bench = prev.bench;
+
+      if (isBench) {
+        bench = prev.bench.filter(p => p.id !== offer.playerId);
+      } else if (prev.bench.length > 0) {
+        const sold = prev.team11.find(p => p.id === offer.playerId)!;
+        const sub = prev.bench.filter(p => !p.injured && !(p.suspension && p.suspension > 0))[0] || prev.bench[0];
+        team11 = prev.team11.map(p => (p.id === sold.id ? { ...sub, t: sold.t, l: sold.l, role: sold.role } : p));
+        bench = prev.bench.filter(p => p.id !== sub.id);
+      } else {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        team11,
+        bench,
+        budget: prev.budget + offer.amount,
+        transferOffers: prev.transferOffers.filter(o => o.id !== offerId),
+        captainId: prev.captainId === offer.playerId ? null : prev.captainId,
+        fanHappiness: Math.max(0, (prev.fanHappiness || 60) - 3),
+        news: [
+          `💸 ${offer.playerName}, ${offer.fromClub} kulübüne $${offer.amount.toLocaleString()} karşılığında satıldı!`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  const rejectTransferOffer = useCallback((offerId: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const offer = prev.transferOffers.find(o => o.id === offerId);
+      if (!offer) return prev;
+      const patch = (p: Player): Player =>
+        p.id === offer.playerId ? { ...p, morale: Math.max(0, p.morale - 5), wantsOut: p.morale <= UNHAPPY_MORALE } : p;
+      return {
+        ...prev,
+        team11: prev.team11.map(patch),
+        bench: prev.bench.map(patch),
+        transferOffers: prev.transferOffers.filter(o => o.id !== offerId),
+        news: [`❌ ${offer.fromClub} teklifi reddedildi (${offer.playerName}).`, ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
+  /* ══════════════ KAYIT / YÜKLEME ══════════════ */
+  const saveGame = useCallback((slot: number = 0) => {
+    if (gameState) writeSlot(slot, gameState);
+  }, [gameState]);
+
+  const loadGame = useCallback((slot: number = 0): boolean => {
+    const loaded = readSlot(slot);
+    if (!loaded) return false;
+    if (loaded.careerOver) loaded.careerOver = false; // kariyer ekranından devam edilmez
+    setGameState(loaded);
+    return true;
+  }, []);
+
+  const resetCareer = useCallback(() => {
+    setGameState(null);
+  }, []);
+
+  /* ══════════════ MARKET & TESİS ══════════════ */
   const refreshMarket = useCallback(() => {
     setGameState(prev => {
       if (!prev) return null;
-      
-      // Transfer listesi yenileme maliyeti: $200,000
       const refreshCost = 200000;
-      if (prev.budget < refreshCost) {
-        return prev; // Yeterli para yoksa değişiklik yapma
-      }
-      
+      if (prev.budget < refreshCost) return prev;
+
       const baseOvr = 50 + (5 - prev.leagueLevel) * 10 + (prev.scoutLvl * 3);
       const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
       const newMarket: Player[] = [];
-      
-      // Normal oyuncular (6-7 adet)
+
       const normalCount = 6 + Math.floor(Math.random() * 2);
       for (let i = 0; i < normalCount; i++) {
         const role = posPool[Math.floor(Math.random() * posPool.length)];
         newMarket.push(generatePlayer(role, baseOvr, baseOvr + 15 + prev.scoutLvl * 2, Date.now() + i));
       }
 
-      // Nadir yıldız oyuncu şansı (%15)
       if (Math.random() < 0.15) {
         const starRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const starOvr = 88 + Math.floor(Math.random() * 8); // 88-95 OVR
+        const starOvr = 88 + Math.floor(Math.random() * 8);
         const starPlayer = generatePlayer(starRole, starOvr, starOvr + 5, Date.now() + 100);
-        starPlayer.potential = Math.min(99, starOvr + Math.floor(Math.random() * 10) + 5); // Yüksek potansiyel
-        starPlayer.value = starPlayer.ovr * 50000; // Pahalı
+        starPlayer.potential = Math.min(99, starOvr + Math.floor(Math.random() * 10) + 5);
+        starPlayer.value = starPlayer.ovr * 50000;
         starPlayer.wage = starPlayer.ovr * 2000;
-        starPlayer.name = "⭐ " + starPlayer.name; // Yıldız işareti
+        starPlayer.name = '⭐ ' + starPlayer.name;
         newMarket.push(starPlayer);
       }
 
-      // Süper nadir efsane oyuncu şansı (%3)
       if (Math.random() < 0.03) {
         const legendRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const legendOvr = 96 + Math.floor(Math.random() * 4); // 96-99 OVR
+        const legendOvr = 96 + Math.floor(Math.random() * 4);
         const legendPlayer = generatePlayer(legendRole, legendOvr, legendOvr, Date.now() + 200);
         legendPlayer.potential = Math.min(99, legendOvr + Math.floor(Math.random() * 5));
-        legendPlayer.value = legendPlayer.ovr * 150000; // Çok pahalı
+        legendPlayer.value = legendPlayer.ovr * 150000;
         legendPlayer.wage = legendPlayer.ovr * 5000;
-        legendPlayer.name = "👑 " + legendPlayer.name; // Taç işareti
-        legendPlayer.age = 28 + Math.floor(Math.random() * 5); // Yaşlı ama efsane
+        legendPlayer.name = '👑 ' + legendPlayer.name;
+        legendPlayer.age = 28 + Math.floor(Math.random() * 5);
         newMarket.push(legendPlayer);
       }
 
-      // Genç yetenek şansı (%25) - düşük OVR ama yüksek potansiyel
       if (Math.random() < 0.25) {
         const youthRole = posPool[Math.floor(Math.random() * posPool.length)];
-        const youthOvr = 65 + Math.floor(Math.random() * 10); // 65-74 OVR
+        const youthOvr = 65 + Math.floor(Math.random() * 10);
         const youthPlayer = generatePlayer(youthRole, youthOvr, youthOvr, Date.now() + 300);
-        youthPlayer.age = 16 + Math.floor(Math.random() * 3); // 16-18 yaş
-        youthPlayer.potential = 85 + Math.floor(Math.random() * 15); // 85-99 potansiyel!
-        youthPlayer.value = youthPlayer.potential * 15000; // Potansiyele göre fiyat
+        youthPlayer.age = 16 + Math.floor(Math.random() * 3);
+        youthPlayer.potential = 85 + Math.floor(Math.random() * 15);
+        youthPlayer.value = youthPlayer.potential * 15000;
         youthPlayer.wage = youthPlayer.ovr * 300;
-        youthPlayer.name = "🌟 " + youthPlayer.name; // Genç yetenek işareti
+        youthPlayer.name = '🌟 ' + youthPlayer.name;
         newMarket.push(youthPlayer);
       }
 
-      return { 
-        ...prev, 
+      return {
+        ...prev,
         marketList: newMarket,
-        budget: prev.budget - 200000, // Scout ücreti düş
+        budget: prev.budget - refreshCost,
         news: ['📋 Transfer listesi güncellendi. Scout ücreti: $200,000', ...prev.news.slice(0, 4)]
       };
     });
@@ -423,7 +585,6 @@ export const useGameState = () => {
   const applyFormation = useCallback((formationName: string) => {
     setGameState(prev => {
       if (!prev) return null;
-      
       const formation = FORMATIONS[formationName];
       if (!formation) return prev;
 
@@ -434,31 +595,57 @@ export const useGameState = () => {
         role: (formation[i]?.r ?? player.role) as Player['role']
       }));
 
-      return {
-        ...prev,
-        team11: newTeam11,
-        tactics: { ...prev.tactics, formation: formationName }
-      };
+      return { ...prev, team11: newTeam11, tactics: { ...prev.tactics, formation: formationName } };
     });
   }, []);
 
   const updateTactics = useCallback((newTactics: Partial<Tactics>) => {
-    setGameState(prev => {
-      if (!prev) return null;
-      return { ...prev, tactics: { ...prev.tactics, ...newTactics } };
-    });
+    setGameState(prev => (prev ? { ...prev, tactics: { ...prev.tactics, ...newTactics } } : null));
   }, []);
 
+  /** Maç öncesi: cezalı/sakat oyuncuları yedeklerle değiştirip state'e uygular */
+  const applyFixedLineup = useCallback((): { out: string; in: string }[] => {
+    if (!gameState) return [];
+    const fix = fixLineup(gameState);
+    if (fix.changes.length > 0) {
+      setGameState(prev => prev ? {
+        ...prev,
+        team11: fix.team11,
+        bench: fix.bench,
+        news: [
+          `🔄 Otomatik kadro düzeltmesi: ${fix.changes.map(c => `${c.out} → ${c.in}`).join(', ')}`,
+          ...prev.news.slice(0, 4)
+        ]
+      } : null);
+    }
+    return fix.changes;
+  }, [gameState]);
+
+  /* ══════════════ MAÇ SONUCU ══════════════ */
   const processMatchResult = useCallback((
-    userScore: number, 
-    oppScore: number, 
+    userScore: number,
+    oppScore: number,
     opponent: Team,
-    isCup: boolean = false
+    options: MatchOutcomeOptions = {}
   ) => {
+    const {
+      isCup = false,
+      isHome = true,
+      weather = 'cloudy',
+      attendance = 0,
+      motmPlayerId = null,
+      cards = [],
+      injuries = [],
+      ratings = [],
+      penaltyWinner,
+      report,
+      teamTalkMorale = 0
+    } = options;
+
     setGameState(prev => {
       if (!prev) return null;
 
-      const newState = {
+      const newState: GameState = {
         ...prev,
         league: prev.league.map(t => ({ ...t })),
         clubStats: { ...prev.clubStats },
@@ -468,49 +655,56 @@ export const useGameState = () => {
         investments: prev.investments.map(i => ({ ...i })),
         team11: prev.team11.map(p => ({ ...p })),
         bench: prev.bench.map(p => ({ ...p })),
+        leagueScorers: prev.leagueScorers.map(s => ({ ...s })),
+        transferOffers: [...(prev.transferOffers || [])],
+        boardMessages: [...(prev.boardMessages || [])]
       };
-      
-      // Update user team stats
-      const userTeam = newState.league.find(t => t.isUser)!;
-      userTeam.o++;
-      userTeam.gf += userScore;
-      userTeam.ga += oppScore;
 
-      // Update club stats
+      /* — Skor tablosu — */
+      const userTeam = newState.league.find(t => t.isUser)!;
       newState.clubStats.totalGoals += userScore;
 
-      if (userScore > oppScore) {
-        userTeam.g++;
-        userTeam.p += 3;
+      // Kupa kazananı (beraberlikte penaltılar olabilir)
+      const userWon = userScore > oppScore || penaltyWinner === 'user';
+      const userLost = userScore < oppScore || penaltyWinner === 'opponent';
+
+      // Lig puanları yalnızca lig maçlarında işlenir (kupa haftası lig maçı sayılmaz)
+      if (!isCup) {
+        userTeam.o++;
+        userTeam.gf += userScore;
+        userTeam.ga += oppScore;
+      }
+
+      if (userWon) {
+        if (!isCup) { userTeam.g++; userTeam.p += 3; }
         newState.clubStats.totalWins++;
         newState.managerRep = Math.min(100, newState.managerRep + 3);
         newState.minigameTokens = (newState.minigameTokens || 0) + 1;
         newState.fanHappiness = Math.min(100, (newState.fanHappiness || 60) + 5);
         newState.boardConfidence = Math.min(100, (newState.boardConfidence || 50) + 3);
         newState.teamChemistry = Math.min(100, (newState.teamChemistry || 55) + 2);
-      } else if (userScore === oppScore) {
-        userTeam.b++;
-        userTeam.p += 1;
+      } else if (!userLost) {
+        if (!isCup) { userTeam.b++; userTeam.p += 1; }
         newState.clubStats.totalDraws++;
         newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 1);
       } else {
-        userTeam.m++;
+        if (!isCup) userTeam.m++;
         newState.clubStats.totalLosses++;
         newState.managerRep = Math.max(0, newState.managerRep - 2);
         newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 5);
-        newState.boardConfidence = Math.max(0, (newState.boardConfidence || 50) - 4);
+        newState.boardConfidence = Math.max(0, (newState.boardConfidence || 50) - (isHome ? 4 : 3));
         newState.teamChemistry = Math.max(0, (newState.teamChemistry || 55) - 2);
       }
 
-      // Clean sheet
-      if (oppScore === 0) {
-        newState.clubStats.cleanSheets = (newState.clubStats.cleanSheets || 0) + 1;
+      if (oppScore === 0) newState.clubStats.cleanSheets = (newState.clubStats.cleanSheets || 0) + 1;
+      if (Math.abs(userScore - oppScore) >= 4 && userScore > oppScore) {
+        newState.boardConfidence = Math.min(100, newState.boardConfidence + 3);
+        newState.news = [`🔥 ${userScore}-${oppScore}'lik farklı galibiyet yönetimi memnun etti!`, ...newState.news.slice(0, 4)];
       }
 
-      // Difficulty income multiplier
       const diffMult = DIFFICULTY_CONFIG[newState.difficulty || 'normal']?.incomeMult || 1;
 
-      // Update opponent stats
+      /* — Rakip istatistikleri — */
       const oppTeam = newState.league.find(t => t.name === opponent.name);
       if (oppTeam) {
         oppTeam.o++;
@@ -521,91 +715,209 @@ export const useGameState = () => {
         else { oppTeam.m++; }
       }
 
-      // Simulate other matches
-      const otherTeams = newState.league.filter(t => !t.isUser && t.name !== opponent.name);
-      for (let i = 0; i < otherTeams.length - 1; i += 2) {
-        const team1 = otherTeams[i];
-        const team2 = otherTeams[i + 1];
-        if (team1 && team2) {
-          const score1 = Math.floor(Math.random() * 4);
-          const score2 = Math.floor(Math.random() * 4);
-          
+      /* — Diğer maçlar (Poisson tabanlı, gerçekçi skorlar) — yalnız lig haftasında — */
+      if (!isCup) {
+        const otherTeams = shuffleArray(newState.league.filter(t => !t.isUser && t.name !== opponent.name));
+        for (let i = 0; i < otherTeams.length - 1; i += 2) {
+          const team1 = otherTeams[i];
+          const team2 = otherTeams[i + 1];
+          if (!team1 || !team2) continue;
+          const s1 = poissonGoals(1.35 + (team1.ovr - team2.ovr) * 0.035);
+          const s2 = poissonGoals(1.2 + (team2.ovr - team1.ovr) * 0.035);
+
           team1.o++; team2.o++;
-          team1.gf += score1; team1.ga += score2;
-          team2.gf += score2; team2.ga += score1;
-          
-          if (score1 > score2) { team1.g++; team1.p += 3; team2.m++; }
-          else if (score1 === score2) { team1.b++; team1.p += 1; team2.b++; team2.p += 1; }
+          team1.gf += s1; team1.ga += s2;
+          team2.gf += s2; team2.ga += s1;
+          if (s1 > s2) { team1.g++; team1.p += 3; team2.m++; }
+          else if (s1 === s2) { team1.b++; team1.p += 1; team2.b++; team2.p += 1; }
           else { team2.g++; team2.p += 3; team1.m++; }
+
+          bumpScorers(newState.leagueScorers, team1.name, team1.logo, s1);
+          bumpScorers(newState.leagueScorers, team2.name, team2.logo, s2);
         }
       }
 
-      // Sort league
       newState.league.sort((a, b) => b.p - a.p || (b.gf - b.ga) - (a.gf - a.ga));
 
-      // Calculate match income
-      const baseIncome = newState.stadiumLvl * 100000;
-      const winBonus = userScore > oppScore ? 250000 : userScore === oppScore ? 75000 : 25000;
-      const income = Math.floor((baseIncome + winBonus) * (diffMult || 1));
-      newState.budget += income;
+      /* — Gelir: bilet + yayın + prim — */
+      const baseIncome = newState.stadiumLvl * 90000;
+      const winBonus = userWon ? 240000 : userScore === oppScore ? 70000 : 20000;
+      let matchIncome: number;
+      if (isHome) {
+        const ticketRevenue = Math.floor(attendance * ticketPrice(newState.stadiumLvl) * 0.7);
+        matchIncome = baseIncome + ticketRevenue + winBonus;
+        newState.clubStats.totalAttendance = (newState.clubStats.totalAttendance || 0) + attendance;
+        // Seyirci memnuniyeti
+        const capacity = newState.stadiumLvl * 5000 + 2000;
+        const fillRate = attendance / capacity;
+        if (fillRate > 0.9) newState.fanHappiness = Math.min(100, newState.fanHappiness + 2);
+        if (fillRate < 0.5) newState.fanHappiness = Math.max(0, newState.fanHappiness - 2);
+      } else {
+        const oppAttendance = calculateAttendance({
+          stadiumLvl: Math.max(1, Math.round(opponent.ovr / 12)),
+          leaguePosition: 5,
+          fanHappiness: 60,
+          opponentOvr: userTeam.ovr,
+          isHome: true,
+          weather
+        });
+        matchIncome = baseIncome + awayIncome(opponent.ovr, oppAttendance, newState.stadiumLvl) + winBonus;
+      }
+      newState.budget += Math.floor(matchIncome * (diffMult || 1));
 
-      // MAAŞ ÖDEMESİ + MAĞAZA GELİRİ - HER 5 MAÇTA BİR
+      /* — Kartlar & cezalar — */
+      const appliedCards = cards.length > 0
+        ? cards
+        : [];
+      // Bu hafta oynanmayan cezalar erir
+      const tickSuspension = (p: Player): Player =>
+        (p.suspension ?? 0) > 0 ? { ...p, suspension: (p.suspension ?? 0) - 1 } : p;
+      newState.team11 = newState.team11.map(tickSuspension);
+      newState.bench = newState.bench.map(tickSuspension);
+
+      const cardPatches: Record<number, { yellow: number; red: number }> = {};
+      appliedCards.forEach(c => {
+        const entry = cardPatches[c.playerId] || { yellow: 0, red: 0 };
+        if (c.type === 'yellow') entry.yellow += 1;
+        else entry.red += 1;
+        cardPatches[c.playerId] = entry;
+      });
+
+      const applyCardEffects = (p: Player): Player => {
+        const card = cardPatches[p.id];
+        if (!card) return p;
+        let yellowCards = (p.yellowCards ?? 0) + card.yellow;
+        let suspension = p.suspension ?? 0;
+        let morale = p.morale;
+        let redCard = p.redCard ?? false;
+
+        if (card.red > 0) {
+          suspension += 2;
+          redCard = true;
+          yellowCards = 0;
+          morale = Math.max(0, morale - 6);
+          newState.clubStats.redCards = (newState.clubStats.redCards || 0) + 1;
+          newState.news = [`🟥 ${p.name} kırmızı kart gördü — 2 maç ceza!`, ...newState.news.slice(0, 4)];
+        }
+        if (yellowCards >= 3) {
+          suspension += 1;
+          yellowCards = 0;
+          newState.news = [`🟨 ${p.name} 3 sarı kart sınırına ulaştı — 1 maç cezalı!`, ...newState.news.slice(0, 4)];
+        } else if (card.yellow > 0) {
+          newState.news = [`🟨 ${p.name} sarı kart gördü (${yellowCards}/3).`, ...newState.news.slice(0, 4)];
+        }
+        return { ...p, yellowCards, suspension, morale, redCard };
+      };
+
+      newState.team11 = newState.team11.map(applyCardEffects);
+      newState.bench = newState.bench.map(applyCardEffects);
+
+      /* — Sakatlıklar (gerçekten uygulanır) — */
+      injuries.forEach(inj => {
+        const patch = (p: Player): Player =>
+          p.id === inj.playerId
+            ? { ...p, injured: true, injuryWeeks: Math.max(1, inj.weeks), morale: Math.max(0, p.morale - 5) }
+            : p;
+        newState.team11 = newState.team11.map(patch);
+        newState.bench = newState.bench.map(patch);
+        const victim = [...newState.team11, ...newState.bench].find(p => p.id === inj.playerId);
+        if (victim) {
+          newState.news = [`🏥 ${victim.name} sakatlandı — ${inj.weeks} hafta yok!`, ...newState.news.slice(0, 4)];
+        }
+      });
+
+      /* — Oyuncu reytingleri & form — */
+      const ratingMap = new Map(ratings.map(r => [r.playerId, r]));
+      const applyRatings = (p: Player): Player => {
+        const r = ratingMap.get(p.id);
+        if (!r) return p;
+        const formDelta = r.rating >= 7.5 ? 1 : r.rating >= 6.5 ? 0 : -1;
+        return {
+          ...p,
+          form: Math.max(1, Math.min(10, (p.form || 5) + formDelta)),
+          morale: Math.max(0, Math.min(100, p.morale + (r.rating >= 7 ? 4 : r.rating < 5.5 ? -4 : 0)))
+        };
+      };
+      newState.team11 = newState.team11.map(applyRatings);
+      newState.bench = newState.bench.map(applyRatings);
+
+      if (motmPlayerId != null) {
+        const motm = [...newState.team11, ...newState.bench].find(p => p.id === motmPlayerId);
+        if (motm) {
+          newState.clubStats.motmAwards = (newState.clubStats.motmAwards || 0) + 1;
+          newState.managerRep = Math.min(100, newState.managerRep + 1);
+          const boost = (p: Player): Player =>
+            p.id === motmPlayerId ? { ...p, morale: Math.min(100, p.morale + 8), form: Math.min(10, (p.form || 5) + 1) } : p;
+          newState.team11 = newState.team11.map(boost);
+          newState.bench = newState.bench.map(boost);
+          newState.news = [`⭐ Maçın adamı: ${motm.name}!`, ...newState.news.slice(0, 4)];
+        }
+      }
+
+      /* — Enerji & moral — */
+      newState.team11 = newState.team11.map(p => ({
+        ...p,
+        energy: Math.max(0, p.energy - (weather === 'snow' || weather === 'storm' ? 12 : 10) + newState.healthLvl),
+        morale: Math.max(0, Math.min(100, p.morale + (userWon ? 5 : userLost ? -5 : 0)))
+      }));
+      newState.bench = newState.bench.map(p => ({
+        ...p,
+        energy: Math.min(100, p.energy + 15 + newState.healthLvl * 2)
+      }));
+
+      // Devre arası takım konuşmasının moral etkisi
+      if (teamTalkMorale) {
+        const talkBoost = (p: Player): Player => ({
+          ...p,
+          morale: Math.max(0, Math.min(100, p.morale + teamTalkMorale))
+        });
+        newState.team11 = newState.team11.map(talkBoost);
+        newState.bench = newState.bench.map(talkBoost);
+      }
+
+      /* — Maaş & mağaza gelirleri (5 haftada bir) — */
       if (newState.week % 5 === 0) {
         const totalWages = [...newState.team11, ...newState.bench].reduce((acc, p) => acc + p.wage, 0);
         const wageBill = totalWages * 5;
-        
-        // MAĞAZA GELİRLERİ (5 haftalık)
+
         let shopIncome = 0;
         if (newState.shopBranches && newState.shopBranches.length > 0) {
           const sortedLeague = [...newState.league].sort((a2, b2) => b2.p - a2.p || (b2.gf - b2.ga) - (a2.gf - a2.ga));
           const leaguePosition = sortedLeague.findIndex(t2 => t2.isUser) + 1;
           const topOvr = [...newState.team11].sort((a2, b2) => b2.ovr - a2.ovr).slice(0, 3);
-          
           const shopMultipliers: Record<string, number> = { small: 1, medium: 2.5, large: 5, flagship: 12 };
-          
+          const popMap: Record<number, number> = {
+            34: 16000000, 6: 5750000, 35: 4420000, 16: 3100000, 7: 2620000,
+            1: 2260000, 42: 2260000, 21: 1800000, 27: 2050000, 33: 1900000
+          };
+
           newState.shopBranches.forEach((branch: { cityId: number; shopType: string }) => {
-            const popMap: Record<number, number> = {};
-            // Basit nüfus hesabı (tam cities import etmeden)
-            [34, 6, 35, 16, 7].forEach(id => { popMap[id] = id === 34 ? 16000000 : id === 6 ? 5750000 : id === 35 ? 4420000 : id === 16 ? 3100000 : 2620000; });
             const pop = popMap[branch.cityId] || 500000;
             const popFactor = pop / 1000000;
             const posFactor = Math.max(1, (11 - leaguePosition) / 5);
             const starFactor = topOvr.length > 0 ? topOvr[0].ovr / 80 : 1;
             const mult = shopMultipliers[branch.shopType] || 1;
-            
             shopIncome += Math.floor(5000 * mult * popFactor * posFactor * starFactor) * 5;
           });
         }
-        
+
         newState.budget += shopIncome;
         newState.budget -= wageBill;
-        
+
         if (newState.budget < 0) {
           newState.team11 = newState.team11.map(p => ({ ...p, morale: Math.max(0, p.morale - 15) }));
           newState.bench = newState.bench.map(p => ({ ...p, morale: Math.max(0, p.morale - 15) }));
+          newState.boardConfidence = Math.max(0, newState.boardConfidence - 8);
           newState.news = [`⚠️ Maaşlar ödenemedi! Borç: $${Math.abs(newState.budget).toLocaleString()}`, ...newState.news.slice(0, 4)];
         } else {
-          const netStr = shopIncome > 0 
+          const netStr = shopIncome > 0
             ? `💰 Maaş: -$${wageBill.toLocaleString()} | Forma satış: +$${shopIncome.toLocaleString()}`
             : `💰 5 haftalık maaşlar ödendi: -$${wageBill.toLocaleString()}`;
           newState.news = [netStr, ...newState.news.slice(0, 4)];
         }
       }
 
-      // Player energy drain
-      newState.team11 = newState.team11.map(p => ({
-        ...p,
-        energy: Math.max(0, p.energy - (10 - newState.healthLvl)),
-        morale: p.morale + (userScore > oppScore ? 5 : userScore < oppScore ? -5 : 0)
-      }));
-
-      // Bench rest
-      newState.bench = newState.bench.map(p => ({
-        ...p,
-        energy: Math.min(100, p.energy + 15 + newState.healthLvl * 2)
-      }));
-
-      // Add to match history
+      /* — Maç geçmişi — */
       if (!isCup) {
         newState.matchHistory.push({
           week: newState.week,
@@ -613,111 +925,161 @@ export const useGameState = () => {
           opponentLogo: opponent.logo,
           homeScore: userScore,
           awayScore: oppScore,
-          isHome: true
+          isHome,
+          weather,
+          attendance,
+          penalties: penaltyWinner === 'user' ? 'user' : penaltyWinner === 'opponent' ? 'opponent' : undefined
         });
       }
 
-      // Sponsor income
+      /* — Sponsor — */
       if (newState.activeSponsor) {
         newState.budget += newState.activeSponsor.income;
-        newState.activeSponsor.weeksLeft--;
+        newState.activeSponsor = { ...newState.activeSponsor, weeksLeft: newState.activeSponsor.weeksLeft - 1 };
         if (newState.activeSponsor.weeksLeft <= 0) {
           newState.news = [`${newState.activeSponsor.name} sponsorluğu sona erdi.`, ...newState.news.slice(0, 4)];
           newState.activeSponsor = null;
         }
       }
 
-      // Investment updates
+      /* — Yatırımlar — */
       newState.investments = newState.investments.map(inv => {
         const change = Math.floor(Math.random() * 21) - 10;
         if (inv.owned > 0) {
-          const profit = Math.floor((inv.price * inv.owned) * (change / 100));
-          newState.budget += profit;
+          newState.budget += Math.floor((inv.price * inv.owned) * (change / 100));
         }
         return { ...inv, lastChange: change };
       });
 
-      // Injury recovery
-      newState.team11 = newState.team11.map(p => {
+      /* — İyileşme — */
+      const heal = (p: Player): Player => {
         if (p.injured && p.injuryWeeks > 0) {
-          const newInjuryWeeks = p.injuryWeeks - 1;
-          return {
-            ...p,
-            injuryWeeks: newInjuryWeeks,
-            injured: newInjuryWeeks > 0
-          };
+          const left = p.injuryWeeks - 1;
+          return { ...p, injuryWeeks: left, injured: left > 0 };
+        }
+        return p;
+      };
+      newState.team11 = newState.team11.map(heal);
+      newState.bench = newState.bench.map(heal);
+
+      /* — Haftalık antrenman odağı — */
+      const focus = newState.trainingFocus || 'balanced';
+      const focusGrowth = (p: Player): Player => {
+        if (p.injured) return p;
+        const youngFactor = p.age <= 23 ? 1 : p.age <= 28 ? 0.5 : 0.25;
+        const roleMatch =
+          (focus === 'attack' && (p.role === 'FW' || p.role === 'OS')) ||
+          (focus === 'defense' && (p.role === 'SB' || p.role === 'STP' || p.role === 'KL')) ||
+          (focus === 'fitness') ||
+          (focus === 'youth' && p.age <= 23) ||
+          focus === 'balanced';
+        if (!roleMatch) return p;
+        const chance = (0.18 + newState.trainingLvl * 0.05) * youngFactor * (focus === 'balanced' ? 0.8 : 1.15);
+        if (p.ovr < p.potential && Math.random() < chance) {
+          const ovr = Math.min(p.potential, p.ovr + 1);
+          return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
+        }
+        if (focus === 'fitness') return { ...p, energy: Math.min(100, p.energy + 4) };
+        return p;
+      };
+      newState.team11 = newState.team11.map(focusGrowth);
+      newState.bench = newState.bench.map(focusGrowth);
+
+      /* — Akademi gelişimi — */
+      newState.academyPlayers = newState.academyPlayers.map(p => {
+        const chance = 0.15 + newState.academyLevel * 0.08;
+        if (Math.random() < chance && p.ovr < p.potential) {
+          const ovr = p.ovr + 1;
+          return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
         }
         return p;
       });
 
-      newState.bench = newState.bench.map(p => {
-        if (p.injured && p.injuryWeeks > 0) {
-          const newInjuryWeeks = p.injuryWeeks - 1;
-          return {
-            ...p,
-            injuryWeeks: newInjuryWeeks,
-            injured: newInjuryWeeks > 0
-          };
+      /* — Kulüpten ayrılmak isteyenler — */
+      const markUnhappy = (p: Player): Player => {
+        if (p.morale <= UNHAPPY_MORALE && !p.wantsOut) {
+          newState.boardMessages = [`😠 ${p.name} mutsuz: "Yeterince süre almıyorum." Moral düzeltilmeli.`, ...newState.boardMessages.slice(0, 5)];
+          return { ...p, wantsOut: true };
         }
+        if (p.morale > 55 && p.wantsOut) return { ...p, wantsOut: false };
         return p;
-      });
+      };
+      newState.team11 = newState.team11.map(markUnhappy);
+      newState.bench = newState.bench.map(markUnhappy);
 
-      // RAKİP TAKIMLARIN TRANSFERLERİ
-      // Her hafta %30 şansla bir rakip transfer yapar
-      if (Math.random() < 0.30) {
-        const botTeams = newState.league.filter(t => !t.isUser);
-        const transferringTeam = botTeams[Math.floor(Math.random() * botTeams.length)];
-        
-        if (transferringTeam) {
-          // Transfer türü: %60 güçlendirme, %40 genç yetenek
-          const isYouthTransfer = Math.random() < 0.4;
-          
-          let ovrChange: number;
-          let transferNews: string;
-          
-          if (isYouthTransfer) {
-            // Genç yetenek transferi - gelecek için yatırım
-            ovrChange = Math.floor(Math.random() * 2); // 0-1 OVR artış
-            transferNews = `📰 ${transferringTeam.name} genç bir yetenek transfer etti!`;
-          } else {
-            // Yıldız transfer - anında güç
-            ovrChange = 1 + Math.floor(Math.random() * 3); // 1-3 OVR artış
-            transferNews = `🔥 ${transferringTeam.name} yıldız bir oyuncu transfer etti! (+${ovrChange} OVR)`;
-          }
-          
-          // Takımın OVR'ını güncelle
-          transferringTeam.ovr = Math.min(95, transferringTeam.ovr + ovrChange);
-          
-          // Haberlere ekle
-          newState.news = [transferNews, ...newState.news.slice(0, 4)];
+      /* — Rakip kulüpten transfer teklifleri — */
+      newState.transferOffers = (newState.transferOffers || []).filter(o => o.expiresWeek > newState.week);
+      const squad = [...newState.team11, ...newState.bench];
+      const hasOpenOffer = (id: number) => newState.transferOffers.some(o => o.playerId === id);
+      const wanted = squad.filter(p => p.ovr >= 74 && !hasOpenOffer(p.id));
+      if (wanted.length > 0 && Math.random() < 0.32) {
+        const target = wanted.sort((a, b) => (b.wantsOut ? 1 : 0) - (a.wantsOut ? 1 : 0) || b.ovr - a.ovr)[
+          Math.min(wanted.length - 1, Math.floor(Math.random() * Math.min(3, wanted.length)))
+        ];
+        const buyers = newState.league.filter(t => !t.isUser);
+        const buyer = buyers[Math.floor(Math.random() * buyers.length)];
+        const multiplier = target.wantsOut ? 0.95 : 1.05 + Math.random() * 0.5;
+        const offer: TransferOffer = {
+          id: Date.now(),
+          playerId: target.id,
+          playerName: target.name,
+          playerOvr: target.ovr,
+          fromClub: buyer.name,
+          fromLogo: buyer.logo,
+          amount: Math.floor(target.value * multiplier),
+          week: newState.week,
+          expiresWeek: newState.week + 2
+        };
+        newState.transferOffers = [offer, ...newState.transferOffers];
+        newState.news = [`📨 ${buyer.name}, ${target.name} için $${offer.amount.toLocaleString()} teklif etti!`, ...newState.news.slice(0, 4)];
+        newState.boardMessages = [`📨 ${buyer.name} kulübünden ${target.name} için teklif var (2 hafta geçerli).`, ...newState.boardMessages.slice(0, 5)];
+      }
+
+      /* — Sözleşmesi bitecekler uyarısı — */
+      if (newState.week % 6 === 0) {
+        const expiring = squad.filter(p => p.contract <= 1);
+        if (expiring.length > 0) {
+          newState.boardMessages = [
+            `📝 Sözleşmesi bitmek üzere: ${expiring.map(p => p.name).join(', ')}. Sezon sonu bedelsiz kaybedebilirsin!`,
+            ...newState.boardMessages.slice(0, 5)
+          ];
         }
       }
 
-      // Sezon ortasında (hafta 9) ve sezon sonunda büyük transfer dönemi
+      /* — Rakip transferleri — */
+      if (Math.random() < 0.30) {
+        const botTeams = newState.league.filter(t => !t.isUser);
+        const transferringTeam = botTeams[Math.floor(Math.random() * botTeams.length)];
+        if (transferringTeam) {
+          const isYouthTransfer = Math.random() < 0.4;
+          const ovrChange = isYouthTransfer ? Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 3);
+          transferringTeam.ovr = Math.min(95, transferringTeam.ovr + ovrChange);
+          newState.news = [
+            isYouthTransfer
+              ? `📰 ${transferringTeam.name} genç bir yetenek transfer etti!`
+              : `🔥 ${transferringTeam.name} yıldız bir oyuncu transfer etti! (+${ovrChange} OVR)`,
+            ...newState.news.slice(0, 4)
+          ];
+        }
+      }
+
       if (newState.week === 9 || newState.week === 18) {
         const botTeams = newState.league.filter(t => !t.isUser);
-        
-        // Her takım için transfer şansı
         botTeams.forEach(team => {
-          // Ligdeki sıraya göre transfer şansı - kötü takımlar daha çok transfer yapar
           const teamRank = newState.league.findIndex(t => t.name === team.name) + 1;
-          const transferChance = teamRank > 5 ? 0.7 : 0.4; // Alt sıradakiler daha aktif
-          
+          const transferChance = teamRank > 5 ? 0.7 : 0.4;
           if (Math.random() < transferChance) {
-            const ovrBoost = 1 + Math.floor(Math.random() * 4); // 1-4 OVR
-            team.ovr = Math.min(95, team.ovr + ovrBoost);
+            team.ovr = Math.min(95, team.ovr + 1 + Math.floor(Math.random() * 4));
           }
         });
-        
         const periodName = newState.week === 9 ? 'Ara transfer dönemi' : 'Yaz transfer dönemi';
         newState.news = [`📋 ${periodName} sona erdi. Rakipler güçlendi!`, ...newState.news.slice(0, 4)];
       }
 
-      if (!isCup) {
-        newState.week++;
-      }
+      /* — Hafta ilerle — */
+      if (!isCup) newState.week++;
 
-      // Auto achievement unlocks
+      /* — Başarımlar — */
       const unlock = (id: string) => {
         const a = newState.achievements?.find(x => x.id === id);
         if (a && !a.unlocked) {
@@ -727,34 +1089,53 @@ export const useGameState = () => {
           newState.news = [`🏅 Başarım: ${a.title}! +$${(a.reward || 0).toLocaleString()}`, ...newState.news.slice(0, 4)];
         }
       };
-      if (userScore > oppScore) unlock('first_win');
+      if (userWon) unlock('first_win');
       if (userScore >= 3) unlock('hat_trick');
       if (oppScore === 0) unlock('clean_sheet');
       if (newState.budget >= 5000000) unlock('millionaire');
       if ((newState.shopBranches?.length || 0) >= 3) unlock('shop_king');
       if (newState.stadiumLvl >= 3 && newState.trainingLvl >= 3 && newState.academyLevel >= 3) unlock('facility_max');
-      // Undefeated streak
+      if (Math.abs(userScore - oppScore) >= 5 && userScore > oppScore) unlock('big_win');
+      if (penaltyWinner === 'user') unlock('penalty_hero');
+      if (attendance >= 30000) unlock('full_house');
       const recent = newState.matchHistory.slice(-5);
       if (recent.length >= 5 && recent.every(m => m.homeScore > m.awayScore)) unlock('undefeated');
-      // Top scorer
+      if (newState.matchHistory.length === 18 && newState.matchHistory.every(m => m.homeScore >= m.awayScore)) unlock('invincible');
       const allP = [...newState.team11, ...newState.bench];
       if (allP.some(p => p.goals >= 15)) unlock('top_scorer');
 
-      // Form update
-      newState.team11 = newState.team11.map(p => ({
-        ...p,
-        form: Math.max(1, Math.min(10, (p.form || 5) + (userScore > oppScore ? 1 : userScore < oppScore ? -1 : 0))),
-        matchesPlayed: (p.matchesPlayed || 0) + 1
-      }));
+      /* — Yönetim güveni: uyarı & kovulma — */
+      if (newState.boardConfidence <= 25 && newState.boardWarnings < 3) {
+        newState.boardWarnings = newState.boardWarnings + 1;
+        const msg = newState.boardConfidence <= 10
+          ? '👔 Yönetim: "Sonuçlar kabul edilemez. Bir sonraki maç kader maçı!"'
+          : '👔 Yönetim: "Performanstan memnun değiliz, toparlanmalısın."';
+        newState.boardMessages = [msg, ...newState.boardMessages.slice(0, 5)];
+        newState.news = [msg, ...newState.news.slice(0, 4)];
+      }
+      if (newState.boardConfidence <= 0) {
+        newState.careerOver = true;
+        newState.careerOverReason = 'Yönetim kurulu güvenini kaybetti ve sözleşmen feshedildi.';
+      }
+
+      /* — Son maç raporu & hava durumu — */
+      if (report) {
+        newState.boardMessages = [
+          `📊 ${report.opponentName} maçı: ${report.userScore}-${report.oppScore} • Maçın adamı: ${report.motm}`,
+          ...newState.boardMessages.slice(0, 5)
+        ];
+      }
+      newState.weather = randomWeather();
 
       return newState;
     });
   }, []);
 
+  /* ══════════════ PERSONEL & TESİS ══════════════ */
   const hireStaff = useCallback((type: Staff['type'], cost: number) => {
     setGameState(prev => {
       if (!prev || prev.budget < cost) return prev;
-      
+
       const names: Record<Staff['type'], string> = {
         coach: 'Antrenör',
         scout: 'Scout',
@@ -762,20 +1143,10 @@ export const useGameState = () => {
         analyst: 'Analist'
       };
 
-      const newStaff: Staff = {
-        id: Date.now(),
-        type,
-        name: names[type],
-        level: 1,
-        salary: Math.floor(cost * 0.1)
-      };
+      const newStaff: Staff = { id: Date.now(), type, name: names[type], level: 1, salary: Math.floor(cost * 0.1) };
 
-      let updates: Partial<GameState> = {
-        staff: [...prev.staff, newStaff],
-        budget: prev.budget - cost
-      };
+      const updates: Partial<GameState> = { staff: [...prev.staff, newStaff], budget: prev.budget - cost };
 
-      // Apply staff bonuses
       if (type === 'coach') {
         updates.team11 = prev.team11.map(p => ({ ...p, ovr: Math.min(99, p.ovr + 1) }));
         updates.bench = prev.bench.map(p => ({ ...p, ovr: Math.min(99, p.ovr + 1) }));
@@ -789,51 +1160,58 @@ export const useGameState = () => {
     });
   }, []);
 
-  const upgradeFacility = useCallback((type: 'stadium' | 'training' | 'academy', cost: number) => {
+  const upgradeFacility = useCallback((type: 'stadium' | 'training' | 'academy' | 'health', cost: number) => {
     setGameState(prev => {
       if (!prev || prev.budget < cost) return prev;
 
-      const updates: Partial<GameState> = {
-        budget: prev.budget - cost
-      };
+      const updates: Partial<GameState> = { budget: prev.budget - cost };
 
       if (type === 'stadium') {
         updates.stadiumLvl = prev.stadiumLvl + 1;
+        updates.fanHappiness = Math.min(100, (prev.fanHappiness || 60) + 5);
       } else if (type === 'training') {
         updates.trainingLvl = prev.trainingLvl + 1;
         updates.team11 = prev.team11.map(p => ({ ...p, ovr: Math.min(99, p.ovr + 1) }));
         updates.bench = prev.bench.map(p => ({ ...p, ovr: Math.min(99, p.ovr + 1) }));
       } else if (type === 'academy') {
         updates.academyLevel = prev.academyLevel + 1;
+      } else if (type === 'health') {
+        updates.healthLvl = prev.healthLvl + 1;
+        updates.team11 = prev.team11.map(p =>
+          p.injured ? { ...p, injuryWeeks: Math.max(1, p.injuryWeeks - 1) } : { ...p, energy: Math.min(100, p.energy + 10) }
+        );
+        updates.bench = prev.bench.map(p =>
+          p.injured ? { ...p, injuryWeeks: Math.max(1, p.injuryWeeks - 1) } : { ...p, energy: Math.min(100, p.energy + 10) }
+        );
       }
 
       return { ...prev, ...updates };
     });
   }, []);
 
-  const discoverYouthPlayer = useCallback(() => {
+  const discoverYouthPlayer = useCallback((investment: number = 50000) => {
     setGameState(prev => {
-      if (!prev || prev.budget < 50000) return prev;
+      if (!prev || prev.budget < investment) return prev;
 
-      const chance = 0.4 + (prev.academyLevel * 0.1);
+      const chance = 0.4 + (prev.academyLevel * 0.1) + (prev.scoutLvl * 0.05);
       if (Math.random() < chance) {
         const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
         const role = posPool[Math.floor(Math.random() * posPool.length)];
         const player = generatePlayer(role, 55 + prev.academyLevel * 5, 70 + prev.academyLevel * 5, Date.now());
         player.age = 16 + Math.floor(Math.random() * 3);
-        
+
         return {
           ...prev,
           academyPlayers: [...prev.academyPlayers, player],
-          budget: prev.budget - 50000,
-          news: [`Yetenek keşfedildi: ${player.name} (${player.ovr})`, ...prev.news.slice(0, 4)]
+          budget: prev.budget - investment,
+          news: [`🌟 Yetenek keşfedildi: ${player.name} (${player.ovr} OVR, potansiyel ${player.potential})`, ...prev.news.slice(0, 4)]
         };
       }
 
       return {
         ...prev,
-        budget: prev.budget - 50000,
-        news: ['Yetenek araması başarısız oldu.', ...prev.news.slice(0, 4)]
+        budget: prev.budget - investment,
+        news: ['🔍 Yetenek araması başarısız oldu.', ...prev.news.slice(0, 4)]
       };
     });
   }, []);
@@ -841,15 +1219,15 @@ export const useGameState = () => {
   const promoteYouthPlayer = useCallback((playerId: number) => {
     setGameState(prev => {
       if (!prev) return null;
-      
+
       const player = prev.academyPlayers.find(p => p.id === playerId);
       if (!player) return prev;
 
       let result: GameState = {
         ...prev,
-        bench: [...prev.bench, player],
+        bench: [...prev.bench, { ...player, suspension: 0 }],
         academyPlayers: prev.academyPlayers.filter(p => p.id !== playerId),
-        news: [`${player.name} A takıma yükseldi!`, ...prev.news.slice(0, 4)]
+        news: [`⬆️ ${player.name} A takıma yükseldi!`, ...prev.news.slice(0, 4)]
       };
       const a = result.achievements?.find(x => x.id === 'youth_star');
       if (a && !a.unlocked) {
@@ -869,15 +1247,12 @@ export const useGameState = () => {
   const buyInvestment = useCallback((investmentId: number) => {
     setGameState(prev => {
       if (!prev) return null;
-      
       const inv = prev.investments.find(i => i.id === investmentId);
       if (!inv || prev.budget < inv.price) return prev;
 
       return {
         ...prev,
-        investments: prev.investments.map(i => 
-          i.id === investmentId ? { ...i, owned: i.owned + 1 } : i
-        ),
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned + 1 } : i)),
         budget: prev.budget - inv.price
       };
     });
@@ -886,57 +1261,63 @@ export const useGameState = () => {
   const sellInvestment = useCallback((investmentId: number) => {
     setGameState(prev => {
       if (!prev) return null;
-      
       const inv = prev.investments.find(i => i.id === investmentId);
       if (!inv || inv.owned <= 0) return prev;
 
       const sellPrice = Math.floor(inv.price * (1 + inv.lastChange / 100));
-
       return {
         ...prev,
-        investments: prev.investments.map(i => 
-          i.id === investmentId ? { ...i, owned: i.owned - 1 } : i
-        ),
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned - 1 } : i)),
         budget: prev.budget + sellPrice
       };
     });
   }, []);
 
-  const trainPlayer = useCallback((playerId: number, _attribute: string) => {
+  const trainPlayer = useCallback((playerId: number, _attribute?: string) => {
     setGameState(prev => {
       if (!prev || prev.budget < 25000) return prev;
 
+      const focus = prev.trainingFocus || 'balanced';
       const updatePlayerOvr = (player: Player): Player => {
         if (player.id !== playerId) return player;
-        
-        // Calculate training effect based on age and facilities
+
         const ageFactor = player.age < 23 ? 2 : player.age < 28 ? 1 : 0.5;
-        const facilityBonus = prev.trainingLvl * 0.3;
-        const improvement = Math.max(1, Math.round(ageFactor + facilityBonus));
-        
+        const facilityBonus = prev.trainingLvl * 0.3 + (prev.staff.some(s => s.type === 'coach') ? 0.5 : 0);
+        const focusBonus = focus === 'balanced' ? 0 : 0.4;
+        const improvement = Math.max(1, Math.round(ageFactor + facilityBonus + focusBonus));
+
         const newOvr = Math.min(player.potential, player.ovr + improvement);
-        const newValue = newOvr * 15000 * (player.age < 23 ? 1.3 : player.age > 30 ? 0.7 : 1);
-        
-        return {
-          ...player,
-          ovr: newOvr,
-          value: Math.floor(newValue)
-        };
+        return { ...player, ovr: newOvr, value: calculatePlayerValue(newOvr, player.age) };
       };
 
       const inTeam = prev.team11.find(p => p.id === playerId);
-      
+      const injuredRisk = focus === 'fitness' ? 0.02 : 0.05;
+      const gotInjured = Math.random() < injuredRisk && !prev.team11.find(p => p.id === playerId)?.injured;
+
+      let team11 = inTeam ? prev.team11.map(updatePlayerOvr) : prev.team11;
+      let bench = !inTeam ? prev.bench.map(updatePlayerOvr) : prev.bench;
+      if (gotInjured) {
+        const weeks = 1 + Math.floor(Math.random() * 2);
+        team11 = team11.map(p => (p.id === playerId ? { ...p, injured: true, injuryWeeks: weeks } : p));
+        bench = bench.map(p => (p.id === playerId ? { ...p, injured: true, injuryWeeks: weeks } : p));
+      }
+
       return {
         ...prev,
-        team11: inTeam ? prev.team11.map(updatePlayerOvr) : prev.team11,
-        bench: !inTeam ? prev.bench.map(updatePlayerOvr) : prev.bench,
+        team11,
+        bench,
         budget: prev.budget - 25000,
-        news: [`Oyuncu antrenmanı tamamlandı!`, ...prev.news.slice(0, 4)]
+        news: [
+          gotInjured
+            ? `🏥 Ekstra antrenmanda sakatlık! Oyuncu 1-2 hafta yok.`
+            : `🏋️ Oyuncu antrenmanı tamamlandı!`,
+          ...prev.news.slice(0, 4)
+        ]
       };
     });
   }, []);
 
-const openShopBranch = useCallback((cityId: number, district: string, shopType: 'small' | 'medium' | 'large' | 'flagship') => {
+  const openShopBranch = useCallback((cityId: number, district: string, shopType: 'small' | 'medium' | 'large' | 'flagship') => {
     setGameState(prev => {
       if (!prev) return null;
 
@@ -947,19 +1328,16 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
       const cost = Math.floor(shopInfo.baseCost * (city.population / 1000000 + 0.5));
       if (prev.budget < cost) return prev;
 
-      const newBranch = {
-        id: `${cityId}-${district}-${Date.now()}`,
-        cityId,
-        district,
-        shopType,
-        openedWeek: prev.week
-      };
+      const newBranch = { id: `${cityId}-${district}-${Date.now()}`, cityId, district, shopType, openedWeek: prev.week };
 
       let result: GameState = {
         ...prev,
         shopBranches: [...(prev.shopBranches || []), newBranch],
         budget: prev.budget - cost,
-        news: [`🏪 ${city.name}/${district} şubesinde ${shopType === 'flagship' ? 'Flagship' : shopType === 'large' ? 'Mega' : shopType === 'medium' ? 'Standart' : 'Mini'} mağaza açıldı!`, ...prev.news.slice(0, 4)]
+        news: [
+          `🏪 ${city.name}/${district} şubesinde ${shopType === 'flagship' ? 'Flagship' : shopType === 'large' ? 'Mega' : shopType === 'medium' ? 'Standart' : 'Mini'} mağaza açıldı!`,
+          ...prev.news.slice(0, 4)
+        ]
       };
       if ((result.shopBranches?.length || 0) >= 3) {
         const a = result.achievements?.find(x => x.id === 'shop_king');
@@ -978,7 +1356,6 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
     });
   }, []);
 
-
   const unlockAchievement = useCallback((id: string) => {
     setGameState(prev => {
       if (!prev) return null;
@@ -988,16 +1365,14 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
       return {
         ...prev,
         budget: prev.budget + reward,
-        achievements: prev.achievements.map(a =>
-          a.id === id ? { ...a, unlocked: true, unlockedWeek: prev.week } : a
-        ),
+        achievements: prev.achievements.map(a => (a.id === id ? { ...a, unlocked: true, unlockedWeek: prev.week } : a)),
         news: [`🏅 Başarım açıldı: ${ach.title}! +$${reward.toLocaleString()}`, ...prev.news.slice(0, 4)]
       };
     });
   }, []);
 
   const completeTutorial = useCallback(() => {
-    setGameState(prev => prev ? { ...prev, tutorialDone: true } : null);
+    setGameState(prev => (prev ? { ...prev, tutorialDone: true } : null));
   }, []);
 
   const applyMinigameReward = useCallback((reward: {
@@ -1031,10 +1406,8 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
         next.team11 = next.team11.map(p => ({ ...p, energy: Math.min(100, p.energy + reward.energy!) }));
         next.bench = next.bench.map(p => ({ ...p, energy: Math.min(100, p.energy + reward.energy!) }));
       }
-      if (reward.news) {
-        next.news = [reward.news, ...next.news.slice(0, 4)];
-      }
-      // Achievement checks
+      if (reward.news) next.news = [reward.news, ...next.news.slice(0, 4)];
+
       if ((next.clubStats.minigamesWon || 0) >= 10) {
         const a = next.achievements.find(x => x.id === 'minigame_master');
         if (a && !a.unlocked) {
@@ -1044,7 +1417,7 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
             achievements: next.achievements.map(x =>
               x.id === 'minigame_master' ? { ...x, unlocked: true, unlockedWeek: next.week } : x
             ),
-            news: [`🏅 Başarım: Mini Oyun Ustası!`, ...next.news.slice(0, 4)]
+            news: ['🏅 Başarım: Mini Oyun Ustası!', ...next.news.slice(0, 4)]
           };
         }
       }
@@ -1069,15 +1442,26 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
     isLoading,
     initializeGame,
     updateGameState,
+    setGameStateExternal,
     updatePlayer,
     swapPlayers,
     sellPlayer,
     buyPlayer,
+    renewContract,
+    setCaptain,
+    setSetPieceTaker,
+    setTrainingFocus,
+    toggleSound,
+    dismissBoardMessage,
+    acceptTransferOffer,
+    rejectTransferOffer,
     saveGame,
     loadGame,
+    resetCareer,
     refreshMarket,
     applyFormation,
     updateTactics,
+    applyFixedLineup,
     processMatchResult,
     hireStaff,
     upgradeFacility,
@@ -1092,3 +1476,4 @@ const openShopBranch = useCallback((cityId: number, district: string, shopType: 
     applyMinigameReward
   };
 };
+

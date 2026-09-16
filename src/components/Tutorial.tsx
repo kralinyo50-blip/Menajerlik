@@ -25,6 +25,18 @@ const STEPS = [
     tip: 'İpucu: Enerjisi düşük oyuncuları yedekten değiştir.'
   },
   {
+    icon: '🌦️',
+    title: 'Hava, Kart ve Sakatlık',
+    text: 'Her maçta hava durumu farklı: yağmur/kar gol oranını ve sakatlık riskini değiştirir. Sarı kartlar birikir (3 sarı = 1 maç ceza), kırmızı yiyen oyuncu sahada kalmaz!',
+    tip: 'İpucu: Maç öncesi taktik odasında cezalı/sakat oyuncular otomatik düzeltilir.'
+  },
+  {
+    icon: '🏢',
+    title: 'Ofisini Yönet',
+    text: 'Ofis sekmesinden rakip kulüplerin transfer tekliflerini değerlendir, sözleşmeleri yenile, kaptanı ve duran top görevlilerini seç, antrenman odağını belirle.',
+    tip: 'İpucu: Yönetim güveni sıfıra inerse kovulursun — sonuçlara dikkat!'
+  },
+  {
     icon: '💰',
     title: 'Transfer & Bütçe',
     text: 'Transfer pazarından oyuncu al, pazarlık yap. Her 5 haftada bir maaşlar ödenir — bütçeyi dikkatli yönet!',

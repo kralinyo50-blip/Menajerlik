@@ -1,4 +1,7 @@
 // Game Types
+
+export type Weather = 'sunny' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'wind' | 'fog';
+
 export interface Player {
   id: number;
   name: string;
@@ -19,8 +22,12 @@ export interface Player {
   l?: number; // pitch position left %
   yellowCards?: number;
   redCard?: boolean;
+  /** Kaç maç cezalı (sarı/kırmızı kart birikimi) */
+  suspension?: number;
   matchesPlayed?: number;
   form?: number; // 1-10 form rating
+  /** Kulüpten ayrılma talebi (moral çok düşükse) */
+  wantsOut?: boolean;
 }
 
 export type PlayerRole = 'KL' | 'STP' | 'SB' | 'OS' | 'FW';
@@ -41,6 +48,12 @@ export interface Team {
   isUser: boolean;
 }
 
+/** Fikstür satırı: rakip + iç saha mı? */
+export interface FixtureEntry extends Team {
+  isHome: boolean;
+  week: number;
+}
+
 export interface Match {
   week: number;
   opponent: string;
@@ -48,6 +61,10 @@ export interface Match {
   homeScore: number;
   awayScore: number;
   isHome: boolean;
+  weather?: Weather;
+  attendance?: number;
+  /** Penaltılarla kazanan taraf (kupa) */
+  penalties?: string;
 }
 
 export interface Investment {
@@ -89,6 +106,8 @@ export interface CupMatch {
   played: boolean;
   userScore?: number;
   oppScore?: number;
+  /** Penaltı atışları sonucu: 'user' | 'opponent' */
+  penaltyWinner?: 'user' | 'opponent';
 }
 
 export interface Achievement {
@@ -101,13 +120,65 @@ export interface Achievement {
   reward?: number;
 }
 
+/** Rakip kulüplerin oyuncularına ait lig istatistiği */
+export interface LeagueScorer {
+  name: string;
+  club: string;
+  logo: string;
+  goals: number;
+  assists: number;
+}
+
+/** Rakip kulüpten gelen transfer teklifi */
+export interface TransferOffer {
+  id: number;
+  playerId: number;
+  playerName: string;
+  playerOvr: number;
+  fromClub: string;
+  fromLogo: string;
+  amount: number;
+  week: number;
+  expiresWeek: number;
+}
+
+/** Maç sonu oyuncu performansı */
+export interface PlayerRating {
+  playerId: number;
+  name: string;
+  role: PlayerRole;
+  rating: number;
+  goals: number;
+  assists: number;
+  yellow: boolean;
+  red: boolean;
+  injured: boolean;
+}
+
+export interface MatchReport {
+  userScore: number;
+  oppScore: number;
+  opponentName: string;
+  opponentLogo: string;
+  isHome: boolean;
+  weather: Weather;
+  attendance: number;
+  possession: number;
+  shots: { home: number; away: number };
+  motm: string;
+  ratings: PlayerRating[];
+  penaltyWinner?: 'user' | 'opponent';
+}
+
+export type TrainingFocus = 'balanced' | 'attack' | 'defense' | 'fitness' | 'youth';
+
 export interface GameState {
   teamName: string;
   teamLogo: string;
   team11: Player[];
   bench: Player[];
   league: Team[];
-  fixture: Team[];
+  fixture: FixtureEntry[];
   marketList: Player[];
   week: number;
   season: number;
@@ -133,6 +204,9 @@ export interface GameState {
     cleanSheets: number;
     penaltiesScored: number;
     minigamesWon: number;
+    totalAttendance?: number;
+    motmAwards?: number;
+    redCards?: number;
   };
   tactics: Tactics;
   investments: Investment[];
@@ -150,6 +224,25 @@ export interface GameState {
   fanHappiness: number;
   teamChemistry: number;
   boardConfidence: number;
+  // ── v3: Kariyer Sistemi ──
+  captainId: number | null;
+  setPieceTakers: {
+    penalty: number | null;
+    freekick: number | null;
+    corner: number | null;
+  };
+  trainingFocus: TrainingFocus;
+  leagueScorers: LeagueScorer[];
+  transferOffers: TransferOffer[];
+  weather: Weather;
+  soundOn: boolean;
+  /** Yönetim kaç kez resmi uyarı verdi */
+  boardWarnings: number;
+  /** Kariyer sona erdi mi (kovulma) */
+  careerOver: boolean;
+  careerOverReason: string | null;
+  /** Yönetim kurulundan gelen mesajlar */
+  boardMessages: string[];
 }
 
 export interface ShopBranchData {

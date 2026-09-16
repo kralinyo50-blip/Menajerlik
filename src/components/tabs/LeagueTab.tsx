@@ -233,6 +233,93 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
           </div>
         </div>
 
+        {/* Gol Krallığı */}
+        <div className="mt-6 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white">⚽ Gol Krallığı</h3>
+            <span className="text-xs text-slate-400">Lig geneli</span>
+          </div>
+          {(() => {
+            const userScorers = [...gameState.team11, ...gameState.bench]
+              .filter(p => p.goals > 0)
+              .map(p => ({ name: p.name, club: gameState.teamName, logo: gameState.teamLogo, goals: p.goals, assists: p.assists, isUser: true }));
+            const all = [...userScorers, ...(gameState.leagueScorers || []).map(s => ({ ...s, isUser: false }))]
+              .sort((a, b) => b.goals - a.goals || b.assists - a.assists)
+              .slice(0, 10);
+            if (all.length === 0) {
+              return <div className="px-4 py-6 text-center text-sm text-slate-400">Henüz gol yok — sezon yeni başladı!</div>;
+            }
+            return (
+              <div className="divide-y divide-slate-700/40">
+                {all.map((s, i) => (
+                  <div key={`${s.name}-${i}`} className={`flex items-center justify-between px-4 py-2 text-sm ${s.isUser ? 'bg-emerald-500/10' : ''}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-5 text-xs text-slate-400">{i + 1}</span>
+                      <span className="text-lg">{s.logo}</span>
+                      <div className="min-w-0">
+                        <div className={`truncate ${s.isUser ? 'text-emerald-400 font-bold' : 'text-white'}`}>{s.name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{s.club}</div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-amber-400 font-bold">⚽ {s.goals}</span>
+                      <span className="text-slate-400 text-xs ml-2">🅰️ {s.assists}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Fikstür */}
+        <div className="mt-6 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white">📅 Fikstür ve Sonuçlar</h3>
+            <span className="text-xs text-slate-400">18 hafta • İç saha / Deplasman</span>
+          </div>
+          <div className="divide-y divide-slate-700/40 max-h-80 overflow-y-auto">
+            {gameState.fixture.map(fx => {
+              const result = gameState.matchHistory.find(m => m.week === fx.week);
+              const isNext = fx.week === gameState.week;
+              return (
+                <div
+                  key={`${fx.week}-${fx.name}`}
+                  className={`flex items-center justify-between px-4 py-2 text-sm ${
+                    isNext ? 'bg-amber-500/10' : result ? '' : 'opacity-70'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-6 text-xs text-slate-500">{fx.week}</span>
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                      fx.isHome ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                    }`}>
+                      {fx.isHome ? 'EV' : 'DEP'}
+                    </span>
+                    <span className="text-lg">{fx.logo}</span>
+                    <span className="text-white truncate">{fx.name}</span>
+                  </div>
+                  <div className="shrink-0">
+                    {result ? (
+                      <span className={`font-black ${
+                        result.homeScore > result.awayScore ? 'text-emerald-400'
+                        : result.homeScore === result.awayScore ? 'text-slate-300' : 'text-red-400'
+                      }`}>
+                        {result.homeScore}-{result.awayScore}
+                        {result.penalties && <span className="text-[10px] text-amber-300 ml-1">(P)</span>}
+                      </span>
+                    ) : isNext ? (
+                      <span className="text-amber-400 text-xs font-bold">SIRADAKİ</span>
+                    ) : (
+                      <span className="text-slate-500 text-xs">—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Season Info */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">

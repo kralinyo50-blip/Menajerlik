@@ -9,6 +9,27 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '3.0.0',
+    date: '16 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: 'Kariyer Sistemi & Gerçek Maç Deneyimi',
+    items: [
+      'İç saha / deplasman fikstürü + ev sahibi avantajı ve seyirci geliri',
+      'Hava durumu sistemi (7 tip): gol ve sakatlık oranlarını etkiler',
+      'Sarı/kırmızı kart birikimi, cezalı oyuncu ve otomatik kadro düzeltme',
+      'Maç içi sakatlıklar artık gerçekten uygulanıyor (1-3 hafta)',
+      'Oyuncu reytingleri + maçın adamı (MOTM) bonusu',
+      'Devre arası takım konuşması: öv / fırça at / sakin taktik',
+      'Kupa maçlarında uzatma ve interaktif penaltı atışları',
+      'Yeni Ofis sekmesi: transfer teklifleri, sözleşme yenileme, kaptan, duran top görevleri',
+      'Rakip kulüplerden oyuncularına gelen teklifler (kabul/red)',
+      'Haftalık antrenman odağı ve genç gelişimi',
+      'Lig gol krallığı (rakip oyuncular dahil) ve fikstür ekranı',
+      'Yönetim güveni: uyarılar ve kovulma (kariyer sonu ekranı)',
+      'Kayıt slotları (3), yedek indir/yükle (.json), ses efektleri',
+    ],
+  },
+  {
     version: '2.1.0',
     date: '15 Eyl 2026',
     tag: 'BÜYÜK',
@@ -63,4 +84,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '2.1.0';
+export const CURRENT_VERSION = '3.0.0';

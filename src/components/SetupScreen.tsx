@@ -28,11 +28,14 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
   const [tipIdx, setTipIdx] = useState(0);
 
   const tips = [
-    '💡 Maçta penaltı çıkarsa sen kullanırsın — skora yazılır!',
-    '🚌 Maç öncesi otobüs yolculuğu takım enerjisini etkiler.',
-    '🕵️ Sabotaj riskli ama rakibi zayıflatabilir...',
-    '🏅 Başarımları aç, ekstra bütçe kazan.',
-    '⚡ Enerjisi düşük oyuncuları yedekten değiştir.',
+    '💡 Maç içinde penaltı/frikik çıkarsa sen kullanırsın — skora yazılır!',
+    '🟨 3 sarı kart = 1 maç ceza. Cezalı oyuncular maç öncesi otomatik düzeltilir.',
+    '🌧️ Hava durumu gol ve sakatlık oranlarını değiştirir — kadronu ona göre kur.',
+    '🏢 Ofis sekmesinden sözleşmeleri yenile ve transfer tekliflerini değerlendir.',
+    '🎽 Kaptan seç, güç bonusu kazan; duran top görevlilerini ayarla.',
+    '⚖️ Kupa maçları berabere biterse uzatma ve penaltılar var!',
+    '🏋️ Haftalık antrenman odağı genç oyuncuların gelişimini hızlandırır.',
+    '👔 Yönetim güveni düşerse kovulursun — sonuçlara dikkat!',
   ];
 
   useEffect(() => {

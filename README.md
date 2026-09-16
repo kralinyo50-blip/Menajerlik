@@ -1,6 +1,6 @@
-# Manager Pro 2026 — Ultimate Edition
+# Manager Pro 2026 — Ultimate Edition (v3.0 Kariyer Sistemi)
 
-Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar.
+Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar — artık **kariyer sistemi, hava durumu, kart/ceza, sözleşmeler ve penaltı atışları** ile.
 
 ## Hızlı Başlatma (Windows)
 
@@ -32,21 +32,36 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ## Özellikler
 
-- **Tutorial** — Yeni oyuncular için adım adım rehber
-- **Zorluk seviyeleri** — Kolay / Normal / Zor / Efsane
-- **Canlı maç motoru** — Gol, sakatlık, değişiklik, hız kontrolü
-- **Oyun içi mini-oyunlar** — Maçta penaltı/frikik/kaleci; maç öncesi otobüs; maç sonrası sabotaj, basın, antrenman, taraftar
-- **Transfer pazarlığı** — Scout seviyesi ile pazarlık
-- **Tesis & akademi** — Altyapı yetenekleri
-- **Forma mağazaları** — Türkiye genelinde şube ağı
-- **Başarımlar** — Kariyer rozetleri
-- **Kayıt sistemi** — localStorage + otomatik kayıt
+### Maç
+- **İç saha / deplasman** fikstürü, ev sahibi avantajı ve **seyirci + bilet geliri**
+- **Hava durumu** (güneş/yağmur/kar/fırtına/sis/rüzgâr) → gol ve sakatlık oranlarına etki
+- **Canlı maç motoru** — 1x/2x/4x hız, top hakimiyeti, şut/korner/faul istatistikleri, atlama
+- **Kart & ceza sistemi** — 3 sarı = 1 maç, kırmızı = 2 maç ceza; sahada 10 kişi kalabilirsin
+- **Gerçek sakatlıklar** (1-3 hafta) ve zorunlu oyuncu değişikliği
+- **Oyuncu reytingleri + maçın adamı (MOTM)** — form takibi ve moral etkisi
+- **Devre arası takım konuşması** — öv / fırça at / sakin taktik
+- **Kupa'da uzatma ve interaktif penaltı atışları**
+- Oyun içi mini-oyunlar: penaltı, frikik, kaleci kurtarışı, otobüs, sabotaj, basın, sprint, taraftar
+
+### Kariyer & Yönetim
+- **🏢 Ofis sekmesi**: transfer teklifleri, sözleşme yenileme, kaptanlık, duran top görevleri, antrenman odağı, yönetim mesajları
+- **Rakip kulüplerden gelen transfer teklifleri** (kabul/red, 2 hafta geçerli)
+- **Sözleşme sistemi** — süresi biten oyuncular bedelsiz ayrılır
+- **Haftalık antrenman odağı** ve genç oyuncu gelişimi
+- **Yönetim güveni** — uyarılar ve kovulma (kariyer sonu ekranı)
+- **Sezon sonu gazete raporu**, lig/üst lig yükselme, kupa, gol krallığı
+- **Başarımlar** (23 adet) — kariyer rozetleri ve ödüller
+- **3 kayıt slotu** + yedek indir/yükle (.json)
+- **Ses efektleri** (WebAudio) ve aç/kapat
+- Tutorial, 4 zorluk seviyesi, güncelleme günlüğü
 
 ## Kontroller
 
-- Sol menüden **MAÇA ÇIK** ile lig maçı
-- Üst sekmeler: Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Mini Oyun, …
-- Maç içinde hız: 1x / 2x / 4x / Atla
-- `💾 Kaydet` veya otomatik kayıt (her maç sonrası)
+- Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
+- Üst sekmeler: Ofis, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
+- Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak), ⏭️ Atla
+- 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
+
+Geliştirme yol haritası ve detaylı analiz: [`GELISTIRME_PLANI.md`](./GELISTIRME_PLANI.md)
 
 İyi şanslar, şampiyon! ⚽🏆
