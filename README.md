@@ -1,4 +1,4 @@
-# Manager Pro 2026 — Ultimate Edition (v3.0 Kariyer Sistemi)
+# Manager Pro 2026 — Ultimate Edition (v3.1 Kariyer İlerlemesi)
 
 Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar — artık **kariyer sistemi, hava durumu, kart/ceza, sözleşmeler ve penaltı atışları** ile.
 
@@ -43,6 +43,14 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - **Kupa'da uzatma ve interaktif penaltı atışları**
 - Oyun içi mini-oyunlar: penaltı, frikik, kaleci kurtarışı, otobüs, sabotaj, basın, sprint, taraftar
 
+### İlerleme & Bağlılık (v3.1)
+- **🎯 Görev sistemi** — haftalık (5 haftada yenilenen), sezonluk ve kariyer görevleri; nakit + XP + jeton + yetenek puanı
+- **🧠 Menajer seviyesi ve 8 dallı beceri ağacı** — taktik, motivasyon, kondisyon, pazarlık, scout, genç gelişimi, sağlık, medya (hepsi oyuna gerçekten bağlı)
+- **⚽ Canlı 2D maç sahası** — diziliş, top hareketi, gol animasyonu, son olay akışı
+- **🎁 Günlük giriş ödülü** — 7 günlük artan seri tablosu
+- **🧠 "En İyi 11" otomatik kadro seçimi** (form + enerji + OVR + moral)
+- **🧠 Kariyer sekmesi** — seviye, beceriler, görevler ve kariyer kaydı; kenar panelde anlık görev takibi
+
 ### Kariyer & Yönetim
 - **🏢 Ofis sekmesi**: transfer teklifleri, sözleşme yenileme, kaptanlık, duran top görevleri, antrenman odağı, yönetim mesajları
 - **Rakip kulüplerden gelen transfer teklifleri** (kabul/red, 2 hafta geçerli)
@@ -58,7 +66,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ## Kontroller
 
 - Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
-- Üst sekmeler: Ofis, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
+- Üst sekmeler: Ofis, **Kariyer**, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
 - Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak), ⏭️ Atla
 - 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
 

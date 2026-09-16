@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
-  LeagueScorer, MatchReport, TrainingFocus, PlayerRating
+  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
@@ -13,6 +13,11 @@ import { generateFixture, calculateAttendance, ticketPrice, awayIncome, } from '
 import { readSlot, writeSlot, randomWeather } from '../utils/save';
 import { fixLineup } from '../utils/lineup';
 import { renewalCost, renewalWage } from '../utils/contract';
+import { createCareerMissions, createSeasonMissions, createWeeklyMissions, evaluateMissions, refreshWeeklyIfNeeded } from '../utils/missions';
+import {
+  SKILLS, emptySkillTree, grantXp, skillBuyDiscount, skillFatigueReduction, skillInjuryReduction, skillMoraleBonus,
+  skillRecoveryBonus, skillScoutBonus, skillSellBonus, skillSponsorBonus, skillYouthBonus
+} from '../utils/progression';
 
 const generatePlayerName = () => {
   return `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
@@ -241,8 +246,23 @@ export const useGameState = () => {
       careerOverReason: null,
       boardMessages: [
         '👔 Yönetim: Sezon hedefimiz ilk 5. Başarılar dileriz.'
-      ]
+      ],
+      managerXp: 0,
+      managerLevel: 1,
+      skillPoints: 2,
+      skills: emptySkillTree(),
+      missions: [],
+      lastPlayedDate: '',
+      loginStreak: 0,
+      lastDailyReward: null
     };
+
+    // Görevler: kariyer (kalıcı) + sezon + haftalık
+    initialState.missions = [
+      ...createCareerMissions(initialState, 4),
+      ...createSeasonMissions(initialState, 3),
+      ...createWeeklyMissions(initialState, 3)
+    ];
 
     setGameState(initialState);
   }, []);
@@ -305,7 +325,7 @@ export const useGameState = () => {
       const player = isBench ? prev.bench.find(p => p.id === playerId) : prev.team11.find(p => p.id === playerId);
       if (!player) return prev;
 
-      const sellValue = Math.floor(player.value * 0.8);
+      const sellValue = Math.floor(player.value * (0.8 + skillSellBonus(prev.skills?.negotiation ?? 0)));
 
       if (isBench) {
         return {
@@ -333,7 +353,8 @@ export const useGameState = () => {
   const buyPlayer = useCallback((player: Player, finalPrice?: number) => {
     setGameState(prev => {
       if (!prev) return null;
-      const price = finalPrice ?? player.value;
+      const rawPrice = finalPrice ?? player.value;
+      const price = Math.max(10000, Math.floor(rawPrice * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0))));
       if (prev.budget < price) return prev;
 
       const newWage = Math.max(player.wage, Math.floor(player.ovr * 550));
@@ -342,6 +363,7 @@ export const useGameState = () => {
         bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: 3, suspension: 0 }],
         marketList: prev.marketList.filter(p => p.id !== player.id),
         budget: prev.budget - price,
+        clubStats: { ...prev.clubStats, transfers: (prev.clubStats.transfers || 0) + 1 },
         news: [`${player.name} $${price.toLocaleString()} karşılığında transfer edildi!`, ...prev.news.slice(0, 4)]
       };
 
@@ -373,7 +395,7 @@ export const useGameState = () => {
       const player = inTeam || inBench;
       if (!player) return prev;
 
-      const signingBonus = renewalCost(player, years);
+      const signingBonus = Math.floor(renewalCost(player, years) * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0)));
       const newWage = renewalWage(player, years);
       if (prev.budget < signingBonus) return prev;
 
@@ -525,10 +547,10 @@ export const useGameState = () => {
   const refreshMarket = useCallback(() => {
     setGameState(prev => {
       if (!prev) return null;
-      const refreshCost = 200000;
+      const refreshCost = Math.max(120000, 200000 - (prev.skills?.scouting ?? 0) * 16000);
       if (prev.budget < refreshCost) return prev;
 
-      const baseOvr = 50 + (5 - prev.leagueLevel) * 10 + (prev.scoutLvl * 3);
+      const baseOvr = 50 + (5 - prev.leagueLevel) * 10 + (prev.scoutLvl * 3) + skillScoutBonus(prev.skills?.scouting ?? 0);
       const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
       const newMarket: Player[] = [];
 
@@ -855,14 +877,16 @@ export const useGameState = () => {
       }
 
       /* — Enerji & moral — */
+      const fitnessLvl = prev.skills?.fitness ?? 0;
+      const motivationLvl = prev.skills?.motivation ?? 0;
       newState.team11 = newState.team11.map(p => ({
         ...p,
-        energy: Math.max(0, p.energy - (weather === 'snow' || weather === 'storm' ? 12 : 10) + newState.healthLvl),
-        morale: Math.max(0, Math.min(100, p.morale + (userWon ? 5 : userLost ? -5 : 0)))
+        energy: Math.max(0, Math.round(p.energy - (weather === 'snow' || weather === 'storm' ? 12 : 10) + newState.healthLvl + skillFatigueReduction(fitnessLvl))),
+        morale: Math.max(0, Math.min(100, p.morale + (userWon ? 5 + skillMoraleBonus(motivationLvl) : userLost ? -5 : 0)))
       }));
       newState.bench = newState.bench.map(p => ({
         ...p,
-        energy: Math.min(100, p.energy + 15 + newState.healthLvl * 2)
+        energy: Math.min(100, p.energy + 15 + newState.healthLvl * 2 + skillRecoveryBonus(fitnessLvl))
       }));
 
       // Devre arası takım konuşmasının moral etkisi
@@ -934,7 +958,8 @@ export const useGameState = () => {
 
       /* — Sponsor — */
       if (newState.activeSponsor) {
-        newState.budget += newState.activeSponsor.income;
+        const sponsorMediaBonus = 1 + skillSponsorBonus(prev.skills?.media ?? 0);
+        newState.budget += Math.floor(newState.activeSponsor.income * sponsorMediaBonus);
         newState.activeSponsor = { ...newState.activeSponsor, weeksLeft: newState.activeSponsor.weeksLeft - 1 };
         if (newState.activeSponsor.weeksLeft <= 0) {
           newState.news = [`${newState.activeSponsor.name} sponsorluğu sona erdi.`, ...newState.news.slice(0, 4)];
@@ -952,9 +977,12 @@ export const useGameState = () => {
       });
 
       /* — İyileşme — */
+      const medicalLvl = prev.skills?.medical ?? 0;
       const heal = (p: Player): Player => {
         if (p.injured && p.injuryWeeks > 0) {
-          const left = p.injuryWeeks - 1;
+          // Sağlık Ekibi yeteneği iyileşmeyi hızlandırabilir
+          let left = p.injuryWeeks - 1;
+          if (medicalLvl > 0 && left > 0 && Math.random() < skillInjuryReduction(medicalLvl) * 1.5) left -= 1;
           return { ...p, injuryWeeks: left, injured: left > 0 };
         }
         return p;
@@ -974,7 +1002,7 @@ export const useGameState = () => {
           (focus === 'youth' && p.age <= 23) ||
           focus === 'balanced';
         if (!roleMatch) return p;
-        const chance = (0.18 + newState.trainingLvl * 0.05) * youngFactor * (focus === 'balanced' ? 0.8 : 1.15);
+        const chance = (0.18 + newState.trainingLvl * 0.05 + skillYouthBonus(prev.skills?.youth ?? 0)) * youngFactor * (focus === 'balanced' ? 0.8 : 1.15);
         if (p.ovr < p.potential && Math.random() < chance) {
           const ovr = Math.min(p.potential, p.ovr + 1);
           return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
@@ -987,7 +1015,7 @@ export const useGameState = () => {
 
       /* — Akademi gelişimi — */
       newState.academyPlayers = newState.academyPlayers.map(p => {
-        const chance = 0.15 + newState.academyLevel * 0.08;
+        const chance = 0.15 + newState.academyLevel * 0.08 + skillYouthBonus(prev.skills?.youth ?? 0);
         if (Math.random() < chance && p.ovr < p.potential) {
           const ovr = p.ovr + 1;
           return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
@@ -1118,6 +1146,55 @@ export const useGameState = () => {
         newState.careerOverReason = 'Yönetim kurulu güvenini kaybetti ve sözleşmen feshedildi.';
       }
 
+      /* — Görevler, XP ve yetenek etkileri — */
+      if (!isCup && (newState.clubStats.penaltyWins === undefined)) newState.clubStats.penaltyWins = 0;
+      if (penaltyWinner === 'user') {
+        newState.clubStats.penaltyWins = (newState.clubStats.penaltyWins || 0) + 1;
+        newState.news = [`🥅 Penaltı zaferi kaydedildi!`, ...newState.news.slice(0, 4)];
+      }
+
+      // Yetenek: medya (taraftar) + sponsor geliri
+      const mediaLvl = prev.skills?.media ?? 0;
+      if (userWon && mediaLvl > 0) {
+        newState.fanHappiness = Math.min(100, newState.fanHappiness + mediaLvl * 0.5);
+      }
+
+      // Yetenek: pazarlık (satış) — kulübün kasasına ekstra gelir
+      const negotiationLvl = prev.skills?.negotiation ?? 0;
+      if (negotiationLvl > 0) {
+        newState.budget += Math.floor(matchIncome * negotiationLvl * 0.01);
+      }
+
+      // Görev değerlendirmesi + XP verme
+      const evaluation = evaluateMissions(newState);
+      newState.missions = evaluation.missions;
+      newState.budget += evaluation.budget;
+      newState.minigameTokens = (newState.minigameTokens || 0) + evaluation.tokens;
+
+      const matchXp = (userWon ? 25 : userLost ? 3 : 10) + Math.min(5, userScore);
+      const xpResult = grantXp(
+        { managerXp: prev.managerXp || 0, managerLevel: prev.managerLevel || 1, skillPoints: prev.skillPoints || 0 },
+        matchXp + evaluation.xp
+      );
+      newState.managerXp = xpResult.managerXp;
+      newState.managerLevel = xpResult.managerLevel;
+      newState.skillPoints = xpResult.skillPoints + evaluation.skillPoints;
+      if (xpResult.levelUps > 0) {
+        newState.news = [
+          `⬆️ Menajer seviyesi ${xpResult.managerLevel}! +${xpResult.levelUps} yetenek puanı (Kariyer sekmesi)`,
+          ...newState.news.slice(0, 4)
+        ];
+      }
+      evaluation.completed.forEach(c => {
+        newState.news = [
+          `🎯 Görev tamamlandı: ${c.icon} ${c.title} (+$${c.budget.toLocaleString()}, +${c.xp} XP)`,
+          ...newState.news.slice(0, 4)
+        ];
+      });
+
+      // Haftalık görevleri tazele
+      newState.missions = refreshWeeklyIfNeeded(newState);
+
       /* — Son maç raporu & hava durumu — */
       if (report) {
         newState.boardMessages = [
@@ -1227,6 +1304,7 @@ export const useGameState = () => {
         ...prev,
         bench: [...prev.bench, { ...player, suspension: 0 }],
         academyPlayers: prev.academyPlayers.filter(p => p.id !== playerId),
+        clubStats: { ...prev.clubStats, youthPromoted: (prev.clubStats.youthPromoted || 0) + 1 },
         news: [`⬆️ ${player.name} A takıma yükseldi!`, ...prev.news.slice(0, 4)]
       };
       const a = result.achievements?.find(x => x.id === 'youth_star');
@@ -1371,6 +1449,106 @@ export const useGameState = () => {
     });
   }, []);
 
+  /* ══════════════ KARİYER: YETENEK, GÜNLÜK ÖDÜL, KADRO ══════════════ */
+  const spendSkillPoint = useCallback((skillId: SkillId) => {
+    setGameState(prev => {
+      if (!prev || (prev.skillPoints || 0) <= 0) return prev;
+      const current = prev.skills?.[skillId] ?? 0;
+      if (current >= 5) return prev;
+      const info = SKILLS.find(sk => sk.id === skillId);
+      return {
+        ...prev,
+        skillPoints: prev.skillPoints - 1,
+        skills: { ...(prev.skills || emptySkillTree()), [skillId]: current + 1 },
+        news: [
+          `🧠 ${info?.icon || ''} ${info?.name || 'Yetenek'} ${current + 1}. seviyeye çıktı! (${info?.effectPerLevel})`,
+          ...prev.news.slice(0, 4)
+        ]
+      };
+    });
+  }, []);
+
+  /** Günlük giriş ödülü — günde bir kez, seri arttıkça büyür */
+  const claimDailyReward = useCallback((): { day: number; budget: number; tokens: number } | null => {
+    if (!gameState) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    if (gameState.lastPlayedDate === today) return null;
+
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const streak = gameState.lastPlayedDate === yesterday ? (gameState.loginStreak || 0) + 1 : 1;
+    const table = [
+      { budget: 40000, tokens: 0 },
+      { budget: 60000, tokens: 0 },
+      { budget: 90000, tokens: 1 },
+      { budget: 120000, tokens: 1 },
+      { budget: 180000, tokens: 1 },
+      { budget: 250000, tokens: 2 },
+      { budget: 400000, tokens: 3 }
+    ];
+    const reward = table[Math.min(streak, table.length) - 1];
+    const xpGain = grantXp(
+      { managerXp: gameState.managerXp || 0, managerLevel: gameState.managerLevel || 1, skillPoints: gameState.skillPoints || 0 },
+      25
+    );
+
+    setGameState(prev => prev ? {
+      ...prev,
+      lastPlayedDate: today,
+      loginStreak: streak,
+      budget: prev.budget + reward.budget,
+      minigameTokens: (prev.minigameTokens || 0) + reward.tokens,
+      managerXp: xpGain.managerXp,
+      managerLevel: xpGain.managerLevel,
+      skillPoints: xpGain.skillPoints,
+      lastDailyReward: { day: streak, budget: reward.budget, tokens: reward.tokens },
+      news: [
+        `🎁 Günlük giriş ödülü (${streak}. gün): +$${reward.budget.toLocaleString()}${reward.tokens ? ` +${reward.tokens} jeton` : ''}`,
+        ...prev.news.slice(0, 4)
+      ]
+    } : null);
+
+    return { day: streak, budget: reward.budget, tokens: reward.tokens };
+  }, [gameState]);
+
+  const dismissDailyReward = useCallback(() => {
+    setGameState(prev => prev ? { ...prev, lastDailyReward: null } : null);
+  }, []);
+
+  /** En iyi 11'i form + enerji + OVR'a göre otomatik seçer */
+  const autoPickBestEleven = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const formation = FORMATIONS[prev.tactics.formation] || FORMATIONS['4-3-3'];
+      const pool = [...prev.team11, ...prev.bench].filter(p => !p.injured && (p.suspension ?? 0) === 0);
+      if (pool.length < 11) return prev;
+
+      const score = (p: Player) => p.ovr * 2 + (p.form ?? 5) * 1.6 + p.energy * 0.15 + p.morale * 0.05;
+      const used = new Set<number>();
+      const chosen: Player[] = [];
+
+      formation.forEach(slot => {
+        const ideal = pool.filter(p => !used.has(p.id) && p.role === slot.r).sort((a, b) => score(b) - score(a))[0];
+        const pick = ideal || pool.filter(p => !used.has(p.id)).sort((a, b) => score(b) - score(a))[0];
+        if (pick) {
+          used.add(pick.id);
+          chosen.push({ ...pick, t: slot.t, l: slot.l, role: slot.r as Player['role'] });
+        }
+      });
+
+      if (chosen.length < 11) return prev;
+      const bench = pool
+        .filter(p => !used.has(p.id))
+        .map(p => ({ ...p, t: undefined, l: undefined }));
+
+      return {
+        ...prev,
+        team11: chosen,
+        bench,
+        news: ['🧠 En iyi 11 otomatik seçildi (form + enerji + OVR).', ...prev.news.slice(0, 4)]
+      };
+    });
+  }, []);
+
   const completeTutorial = useCallback(() => {
     setGameState(prev => (prev ? { ...prev, tutorialDone: true } : null));
   }, []);
@@ -1473,7 +1651,11 @@ export const useGameState = () => {
     openShopBranch,
     unlockAchievement,
     completeTutorial,
-    applyMinigameReward
+    applyMinigameReward,
+    spendSkillPoint,
+    claimDailyReward,
+    dismissDailyReward,
+    autoPickBestEleven
   };
 };
 

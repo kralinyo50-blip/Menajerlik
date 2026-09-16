@@ -172,6 +172,38 @@ export interface MatchReport {
 
 export type TrainingFocus = 'balanced' | 'attack' | 'defense' | 'fitness' | 'youth';
 
+/* ══════════ GÖREV / MİSYON SİSTEMİ ══════════ */
+export type MissionMetric =
+  | 'wins' | 'goals' | 'cleanSheets' | 'penaltyWins' | 'motm' | 'attendance'
+  | 'minigames' | 'transfers' | 'youthPromoted' | 'trophies' | 'unbeatenStreak' | 'budget';
+
+export type MissionType = 'weekly' | 'season' | 'career';
+
+export interface Mission {
+  id: string;
+  type: MissionType;
+  metric: MissionMetric;
+  icon: string;
+  title: string;
+  description: string;
+  target: number;
+  baseline: number;
+  progress: number;
+  completed: boolean;
+  rewardBudget: number;
+  rewardXp: number;
+  rewardTokens: number;
+  rewardSkillPoint: number;
+  expiresWeek?: number;
+}
+
+/* ══════════ MENAJER GELİŞİMİ ══════════ */
+export type SkillId =
+  | 'tactics' | 'motivation' | 'fitness' | 'negotiation'
+  | 'scouting' | 'youth' | 'medical' | 'media';
+
+export type SkillTree = Record<SkillId, number>;
+
 export interface GameState {
   teamName: string;
   teamLogo: string;
@@ -207,6 +239,9 @@ export interface GameState {
     totalAttendance?: number;
     motmAwards?: number;
     redCards?: number;
+    transfers?: number;
+    youthPromoted?: number;
+    penaltyWins?: number;
   };
   tactics: Tactics;
   investments: Investment[];
@@ -243,6 +278,17 @@ export interface GameState {
   careerOverReason: string | null;
   /** Yönetim kurulundan gelen mesajlar */
   boardMessages: string[];
+  // ── v3.1: Kariyer & İlerleme ──
+  managerXp: number;
+  managerLevel: number;
+  skillPoints: number;
+  skills: SkillTree;
+  missions: Mission[];
+  /** Günlük giriş ödülü takibi */
+  lastPlayedDate: string;
+  loginStreak: number;
+  /** Son gün gösterilen günlük ödül (modal için) */
+  lastDailyReward?: { day: number; budget: number; tokens: number } | null;
 }
 
 export interface ShopBranchData {

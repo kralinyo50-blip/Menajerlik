@@ -1,6 +1,7 @@
 # Manager Pro 2026 — Geliştirme Planı ve Oyun Analizi
 
-> Tarih: 16 Eylül 2026 • Sürüm: **3.0.0 (Kariyer Sistemi)**
+> Tarih: 16 Eylül 2026 • Sürüm: **3.1.0 (Kariyer İlerlemesi)**
+> v3.0: Kariyer Sistemi (maç deneyimi + yönetim) → v3.1: **oyuncuyu oyunda tutan ilerleme katmanı**
 
 Bu doküman; mevcut oyunun **tespitini (audit)**, kapatılan eksikleri ve sıradaki
 geliştirme adımlarını tek yerde toplar. Amaç: oyunu "simülasyon"dan **gerçek bir
@@ -64,9 +65,43 @@ Oyunun mevcut kod yapısı incelendiğinde şu **ölü (dead) mekanikler** ve ek
 
 ---
 
+## 2b. v3.1.0 — Oyuncuyu Oyunda Tutan Katman (Retention)
+
+Oyunun "bir kere oynanıp bırakılmasını" engelleyen, **her girişte bir sebep** yaratan sistemler:
+
+### 🎯 Görev / Misyon Sistemi (12 farklı metrik)
+| Tür | Süre | Ödül |
+|-----|------|------|
+| **Haftalık (3 görev)** | 5 hafta geçerli, sonra yenilenir | Nakit + XP + 1 mini oyun jetonu |
+| **Sezonluk (3 görev)** | Sezon boyu | Büyük nakit + XP (+ bazıları yetenek puanı) |
+| **Kariyer (4 görev)** | Kalıcı, sezonlar arası devam eder | Çok büyük nakit + XP + yetenek puanı |
+
+Metrikler: galibiyet, gol, clean sheet, seyirci, mini oyun, maçın adamı, transfer, altyapı çıkışı, yenilmezlik serisi, penaltı zaferi, kupa, kasa. Görevler **kenar panelde anlık** takip edilir.
+
+### 🧠 Menajer Seviyesi + 8 Dallı Beceri Ağacı
+- XP kaynağı: galibiyet (25), beraberlik (10), gol başına +1, görev ödülleri, günlük giriş.
+- Seviye atlayınca **1 yetenek puanı**; toplam 40 puanla tamamlanan ağaç.
+- **Taktik Zekâsı** (maç gücü +1.5/dal), **Motivasyon** (galibiyet morali), **Kondisyon** (yorgunluk −, dönüş +), **Pazarlıkçı** (alış −%3 / satış +%2), **Scout Ağı** (pazar kalitesi +1.5 OVR ve daha ucuz liste yenileme), **Genç Gelişimi** (+%3), **Sağlık Ekibi** (sakatlık riski −%6, iyileşme hızı +), **Medya İlişkileri** (taraftar +0.5, sponsor geliri +%4).
+- Her beceri maç motoruna / ekonomiye **gerçekten** bağlı (kozmetik değil).
+
+### ⚽ Canlı 2D Maç Sahası
+- Diziliş (kullanıcı alt kale, rakip üst), top **hücum yönünde hareket eder**, gol anında saha flaşı ve animasyon.
+- Sahada anlık skor/dakika, top hakimiyeti barı ve **son 3 olay akışı**.
+- Kırmızı kart gören oyuncu sahada görünmez; 10 kişi kaldığın görsel olarak belli olur.
+
+### 🎁 Günlük Giriş Ödülü
+- 7 günlük artan tablo ($40K → $400K + 3 jeton), seri bozulmazsa katlanır; günde bir defa.
+
+### 🧠 "En İyi 11" Otomatik Seçim
+- Form, enerji, OVR ve morale göre pozisyon uyumlu en iyi kadro — tek tık, kadro seçme derdine son.
+
+---
+
 ## 3. Sıradaki Adımlar — Önceliklendirilmiş Yol Haritası
 
-### 🔥 Yüksek Etki / Orta Emek
+### 🔥 Yüksek Etki / Orta Emek (sıradaki "olmazsa olmaz" adayları)
+0. **Başarımlar → Koleksiyon kitabı**: başarım kartları, rozet galerisi ve "yakında" görünümü (tamamlanmış ilerleme hissi).
+0b. **Transfer müzakeresi diyalogu**: teklifini yükselt/geri çek, rakip kulübün sabrı, oyuncuyu ikna konuşması.
 1. **Kiralama (loan) sistemi** — Gençleri kiraya ver, gelişim + maaş payı; rakipten kiralık oyuncu al.
 2. **Oyuncu özellikleri (traits)** — "Frikik ustası", "Lider", "Cam adam", "Kart manyağı": maç motoruna kişisel çarpanlar.
 3. **Seyirci/bilet yönetimi** — Bilet fiyatı belirleme, kampanya, kombine satışı; fan memnuniyeti-fiyat dengesi.
@@ -95,17 +130,19 @@ Oyunun mevcut kod yapısı incelendiğinde şu **ölü (dead) mekanikler** ve ek
 22. **Mod desteği** — Takım/oyuncu isimlerini dışa aktarılan JSON ile değiştirme.
 
 ### 🧪 Denge & Test İşleri
-23. **Ekonomi dengeleme**: bilet geliri / maaş / transfer fiyatları oranının uzun vadeli testi (5 sezon simülasyonu).
-24. **Zorluk seviyesi derinleştirme**: Efsane'de rakiplerin transfer zekâsı artışı.
-25. **Otomatik testler**: maç motoru ve ekonomi için birim testleri (örn. Vitest).
+23. **Sezon içi hikâye olayları**: yıldız oyuncunun sakatlık krizi, taraftar protestosu, başkan değişimi gibi kariyere özgü olay zincirleri.
+24. **Ekonomi dengeleme**: bilet geliri / maaş / transfer fiyatları oranının uzun vadeli testi (5 sezon simülasyonu).
+25. **Zorluk seviyesi derinleştirme**: Efsane'de rakiplerin transfer zekâsı artışı.
+26. **Otomatik testler**: maç motoru ve ekonomi için birim testleri (örn. Vitest).
 
 ---
 
 ## 4. Teknik Notlar
 
-- **Yeni dosyalar**: `src/utils/fixture.ts`, `src/utils/lineup.ts`, `src/utils/sound.ts`, `src/utils/save.ts`, `src/utils/contract.ts`, `src/components/PreMatchScreen.tsx`, `src/components/GameOverScreen.tsx`, `src/components/PenaltyShootout.tsx`, `src/components/tabs/OfficeTab.tsx`.
+- **v3.1 yeni dosyalar**: `src/utils/missions.ts`, `src/utils/progression.ts`, `src/components/tabs/CareerTab.tsx`, `src/components/LivePitch.tsx`, `src/components/DailyRewardModal.tsx`.
+- **v3.0 yeni dosyalar**: `src/utils/fixture.ts`, `src/utils/lineup.ts`, `src/utils/sound.ts`, `src/utils/save.ts`, `src/utils/contract.ts`, `src/components/PreMatchScreen.tsx`, `src/components/GameOverScreen.tsx`, `src/components/PenaltyShootout.tsx`, `src/components/tabs/OfficeTab.tsx`.
 - **Genişletilen tipler**: `GameState` içine `captainId`, `setPieceTakers`, `trainingFocus`, `leagueScorers`, `transferOffers`, `weather`, `soundOn`, `boardWarnings`, `careerOver`, `boardMessages`; `FixtureEntry` (isHome/week) ve `MatchReport`/`PlayerRating` eklendi.
 - **Kayıt uyumluluğu**: Eski (2.x) kayıtlar `migrateState()` ile otomatik yeni şemaya taşınır (haftaların iç/dış sahası, kaptan, hava durumu vb. otomatik atanır).
-- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı; fikstür üretimi, seyirci/gelir hesabı ve kayıt migrasyonu için duman testi (smoke test) çalıştırıldı.
+- **Doğrulama**: `npx tsc --noEmit` temiz, `npm run build` başarılı; fikstür üretimi, seyirci/gelir hesabı, kayıt migrasyonu, görev/XP dengesi (30 maç → seviye 5) ve 20 ekranın tamamı render testinden geçirildi.
 
 İyi şanslar, şampiyon! ⚽🏆

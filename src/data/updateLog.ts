@@ -9,6 +9,21 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '3.1.0',
+    date: '16 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: 'Kariyer İlerlemesi: Görevler, Beceriler, 2D Saha',
+    items: [
+      '🎯 Görev/Misyon sistemi: haftalık + sezonluk + kariyer görevleri, ödüllü (nakit, XP, jeton, yetenek puanı)',
+      '🧠 Menajer seviyesi ve 8 dallı beceri ağacı (taktik, motivasyon, pazarlık, scout, genç, sağlık, medya, kondisyon)',
+      '⚽ Maçta canlı 2D saha: diziliş, top hareketi, son olay akışı ve gol animasyonu',
+      '🎁 Günlük giriş ödülü (7 günlük seri tablosu)',
+      '🧠 "En iyi 11" otomatik kadro seçimi (form + enerji + OVR)',
+      'Yeni Kariyer sekmesi: seviye, beceriler, görevler ve kariyer kaydı',
+      'Kenar panelde anlık görev takibi ve seviye çubuğu',
+    ],
+  },
+  {
     version: '3.0.0',
     date: '16 Eyl 2026',
     tag: 'BÜYÜK',
@@ -84,4 +99,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '3.0.0';
+export const CURRENT_VERSION = '3.1.0';

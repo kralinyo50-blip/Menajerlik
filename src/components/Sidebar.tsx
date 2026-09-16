@@ -2,6 +2,7 @@ import React from 'react';
 import { GameState, Sponsor } from '../types/game';
 import { SPONSOR_OFFERS, WEATHER_INFO, ROLE_NAMES } from '../data/constants';
 import { describeSlots, clearSlot, SlotInfo } from '../utils/save';
+import { managerLevelTitle, xpForLevel } from '../utils/progression';
 
 interface SidebarProps {
   gameState: GameState;
@@ -199,6 +200,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         )}
+
+        {/* Menajer seviyesi & aktif görevler */}
+        <div className="bg-violet-500/10 rounded-xl p-2 mb-3 border border-violet-500/20">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-violet-300 font-bold">
+              🧠 Seviye {gameState.managerLevel || 1} · {managerLevelTitle(gameState.managerLevel || 1)}
+            </span>
+            {(gameState.skillPoints || 0) > 0 && (
+              <span className="bg-amber-500 text-black text-[9px] font-black px-1.5 rounded animate-pulse">
+                {gameState.skillPoints} PUAN
+              </span>
+            )}
+          </div>
+          <div className="h-1.5 bg-slate-700 rounded-full mt-1 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+              style={{ width: `${Math.min(100, Math.round(((gameState.managerXp || 0) / xpForLevel(gameState.managerLevel || 1)) * 100))}%` }}
+            />
+          </div>
+          {(() => {
+            const active = (gameState.missions || []).filter(m => !m.completed).slice(0, 2);
+            if (active.length === 0) return <div className="text-[10px] text-emerald-300 mt-1">✅ Tüm görevler tamam!</div>;
+            return (
+              <div className="mt-1.5 space-y-1">
+                {active.map(m => (
+                  <div key={m.id} className="text-[10px] text-slate-300 flex items-center justify-between gap-1">
+                    <span className="truncate">{m.icon} {m.title}</span>
+                    <span className="text-slate-400 shrink-0">
+                      {Math.min(m.progress, m.target)}/{m.target}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Captain */}
         {gameState.captainId != null && (() => {

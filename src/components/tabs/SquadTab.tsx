@@ -11,10 +11,11 @@ interface SquadTabProps {
   onUpdatePlayer: (id: number, updates: Partial<Player>, isBench: boolean) => void;
   onSetCaptain: (playerId: number | null) => void;
   onRenewContract: (playerId: number, years: number) => void;
+  onAutoPick?: () => void;
 }
 
 export const SquadTab: React.FC<SquadTabProps> = ({
-  gameState, onSwapPlayers, onSellPlayer, onSetCaptain, onRenewContract
+  gameState, onSwapPlayers, onSellPlayer, onSetCaptain, onRenewContract, onAutoPick
 }) => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [draggedPlayer, setDraggedPlayer] = useState<{ id: number; isBench: boolean } | null>(null);
@@ -133,10 +134,20 @@ export const SquadTab: React.FC<SquadTabProps> = ({
 
       {/* Bench Column */}
       <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 bg-slate-800/50 backdrop-blur-sm rounded-xl lg:rounded-2xl p-3 lg:p-4 border border-slate-700/50 overflow-y-auto max-h-[250px] lg:max-h-none">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-700/50">
+        <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-700/50">
           <h3 className="text-lg font-bold text-emerald-400">Yedek Kulübesi</h3>
           <span className="text-xs text-slate-400">{gameState.bench.length} oyuncu</span>
         </div>
+
+        {onAutoPick && (
+          <button
+            onClick={onAutoPick}
+            className="w-full mb-3 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white text-xs font-bold rounded-xl transition-all"
+          >
+            🧠 En İyi 11'i Otomatik Seç
+            <span className="block text-[9px] font-normal text-violet-100">form + enerji + OVR + moral</span>
+          </button>
+        )}
 
         <div className="space-y-2">
           {gameState.bench.map(player => {

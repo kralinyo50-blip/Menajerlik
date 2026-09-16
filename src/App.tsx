@@ -14,6 +14,8 @@ import { TrainingTab } from './components/tabs/TrainingTab';
 import { ShopTab } from './components/tabs/ShopTab';
 import { MerchTab } from './components/tabs/MerchTab';
 import { OfficeTab } from './components/tabs/OfficeTab';
+import { CareerTab } from './components/tabs/CareerTab';
+import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
 import { GameOverScreen } from './components/GameOverScreen';
@@ -29,14 +31,15 @@ import {
   pickStoryMinigame,
   applyMinigameToState
 } from './components/InGameMinigames';
-import { Difficulty, FixtureEntry, Player, Sponsor, TrainingFocus } from './types/game';
+import { Difficulty, FixtureEntry, Player, Sponsor, TrainingFocus, SkillId } from './types/game';
 import { BOT_NAMES_BY_LEVEL, FORMATIONS } from './data/constants';
 import { calculateAttendance, generateFixture } from './utils/fixture';
+import { createSeasonMissions, createWeeklyMissions } from './utils/missions';
 import { exportSaveToFile, importSaveFromFile, writeSlot, clearSlot } from './utils/save';
 import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
-  | 'office' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
+  | 'office' | 'career' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
   | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
@@ -88,7 +91,11 @@ function App() {
     openShopBranch,
     completeTutorial,
     resetCareer,
-    setGameStateExternal
+    setGameStateExternal,
+    spendSkillPoint,
+    claimDailyReward,
+    dismissDailyReward,
+    autoPickBestEleven
   } = useGameState();
 
   const [activeTab, setActiveTab] = useState<TabId>('office');
@@ -121,6 +128,16 @@ function App() {
     setSoundEnabled(gameState?.soundOn !== false);
   }, [gameState?.soundOn]);
 
+  // Günlük giriş ödülü (günde bir)
+  useEffect(() => {
+    if (!gameState) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (gameState.lastPlayedDate === today) return;
+    const reward = claimDailyReward();
+    if (reward) setTimeout(() => sfx.levelUp(), 300);
+  }, [gameState?.lastPlayedDate, gameState?.teamName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hafta ilerledikçe menajer XP'si (maç içi XP zaten ekleniyor)
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2800);
@@ -575,7 +592,15 @@ function App() {
       departed
     };
 
+    const provisional = { ...gameState, week: 1, season: (gameState.season || 1) + 1 } as typeof gameState;
+    const nextMissions = [
+      ...(gameState.missions || []).filter(m => m.type === 'career'),
+      ...createSeasonMissions(provisional, 3),
+      ...createWeeklyMissions(provisional, 3)
+    ];
+
     updateGameState({
+      missions: nextMissions,
       trophies: newTrophies,
       leagueLevel: newLeagueLevel,
       clubStats: newClubStats,
@@ -724,8 +749,13 @@ function App() {
   const expiringCount = [...gameState.team11, ...gameState.bench].filter(p => p.contract <= 1).length;
   const officeBadge = offersCount + messagesCount + expiringCount;
 
+  const pendingPoints = gameState.skillPoints || 0;
+  const activeMissions = (gameState.missions || []).filter(m => !m.completed).length;
+  const careerBadge = pendingPoints + (activeMissions > 0 ? 1 : 0);
+
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
+    { id: 'career', label: 'Kariyer', icon: '🧠', badge: careerBadge },
     { id: 'squad', label: 'Kadro', icon: '⚽' },
     { id: 'transfer', label: 'Transfer', icon: '💰' },
     { id: 'tactics', label: 'Taktik', icon: '📋' },
@@ -868,6 +898,16 @@ function App() {
         </div>
       )}
 
+      {gameState.lastDailyReward && (
+        <DailyRewardModal
+          day={gameState.lastDailyReward.day}
+          budget={gameState.lastDailyReward.budget}
+          tokens={gameState.lastDailyReward.tokens}
+          loginStreak={gameState.loginStreak || 1}
+          onClose={dismissDailyReward}
+        />
+      )}
+
       {/* Mobil menü */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -951,6 +991,9 @@ function App() {
                 onDismissBoardMessage={dismissBoardMessage}
               />
             )}
+            {activeTab === 'career' && (
+              <CareerTab gameState={gameState} onSpendSkillPoint={(id: SkillId) => spendSkillPoint(id)} />
+            )}
             {activeTab === 'squad' && (
               <SquadTab
                 gameState={gameState}
@@ -959,6 +1002,7 @@ function App() {
                 onUpdatePlayer={updatePlayer}
                 onSetCaptain={setCaptain}
                 onRenewContract={renewContract}
+                onAutoPick={autoPickBestEleven}
               />
             )}
             {activeTab === 'transfer' && (

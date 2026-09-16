@@ -1,5 +1,7 @@
 import { GameState, FixtureEntry, Weather } from '../types/game';
 import { INITIAL_ACHIEVEMENTS } from '../data/achievements';
+import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from './missions';
+import { emptySkillTree } from './progression';
 
 export const SLOT_KEYS = [
   'ManagerPro2026_Save',       // Slot 1 (eski otomatik kayıt)
@@ -41,6 +43,7 @@ const randomWeather = (): Weather => WEATHERS[Math.floor(Math.random() * WEATHER
 /** Eski kayıtları yeni şemaya taşır (geriye dönük uyumluluk) */
 export function migrateState(parsed: Partial<GameState> & Record<string, unknown>): GameState {
   const state = { ...parsed } as GameState;
+  void 0;
 
   // Fikstür: isHome bilgisi olmayan eski kayıtlar → sırayla iç/dış saha ata
   const rawFixture = (parsed.fixture || []) as (FixtureEntry | Record<string, unknown>)[];
@@ -53,7 +56,7 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
   const allPlayers = [...(state.team11 || []), ...(state.bench || [])];
   const bestPlayer = [...allPlayers].sort((a, b) => b.ovr - a.ovr)[0];
 
-  return {
+  const result: GameState = {
     ...state,
     season: state.season ?? 1,
     difficulty: state.difficulty ?? 'normal',
@@ -79,6 +82,14 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     careerOver: state.careerOver ?? false,
     careerOverReason: state.careerOverReason ?? null,
     boardMessages: state.boardMessages ?? [],
+    managerXp: state.managerXp ?? 0,
+    managerLevel: state.managerLevel ?? 1,
+    skillPoints: state.skillPoints ?? 2,
+    skills: state.skills ?? emptySkillTree(),
+    missions: state.missions ?? [],
+    lastPlayedDate: state.lastPlayedDate ?? '',
+    loginStreak: state.loginStreak ?? 0,
+    lastDailyReward: state.lastDailyReward ?? null,
     team11: (state.team11 || []).map(p => ({ ...p, suspension: p.suspension ?? 0 })),
     bench: (state.bench || []).map(p => ({ ...p, suspension: p.suspension ?? 0 })),
     clubStats: {
@@ -87,6 +98,17 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     },
     shopBranches: state.shopBranches ?? [],
   };
+
+  // Görevler yoksa (eski kayıt) oluştur
+  if (!result.missions || result.missions.length === 0) {
+    result.missions = [
+      ...createCareerMissions(result, 4),
+      ...createSeasonMissions(result, 3),
+      ...createWeeklyMissions(result, 3),
+    ];
+  }
+
+  return result;
 }
 
 export function readSlot(slot: number): GameState | null {

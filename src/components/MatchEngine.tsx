@@ -5,6 +5,8 @@ import { DIFFICULTY_CONFIG } from '../data/achievements';
 import { InGameMinigame, MinigameContext, MinigameResult } from './InGameMinigames';
 import { PenaltyShootout } from './PenaltyShootout';
 import { sfx } from '../utils/sound';
+import { skillInjuryReduction, skillTacticsBonus } from '../utils/progression';
+import { LivePitch } from './LivePitch';
 import { fixLineup } from '../utils/lineup';
 
 export interface MatchExtras {
@@ -123,6 +125,13 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
     // Analist personeli
     if (gameState.staff?.some(s => s.type === 'analyst')) { attackBonus += 3; defenseBonus += 3; }
+
+    // Menajer yeteneği: Taktik Zekâsı
+    const tactSkill = gameState.skills?.tactics ?? 0;
+    if (tactSkill > 0) {
+      attackBonus += skillTacticsBonus(tactSkill);
+      defenseBonus += skillTacticsBonus(tactSkill);
+    }
 
     // Devre arası konuşma etkisi
     attackBonus += talkBonus.attack;
@@ -349,7 +358,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     }
 
     /* — Sakatlıklar (gerçekten uygulanır) — */
-    const injuryChance = 0.005 * (diffCfg?.injuryMult || 1) * (weatherInfo.injuryMult || 1);
+    const injuryChance = 0.005 * (diffCfg?.injuryMult || 1) * (weatherInfo.injuryMult || 1) *
+      (1 - skillInjuryReduction(gameState.skills?.medical ?? 0));
     if (Math.random() < injuryChance && currentMinute > 15) {
       const player = getRandomPlayer();
       if (!player.injured) {
@@ -785,6 +795,25 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             </div>
           )}
         </div>
+
+        {/* Canlı 2D saha */}
+        {phase !== 'pre' && (
+          <div className="px-2 lg:px-4 pt-3">
+            <LivePitch
+              minute={minute}
+              possession={possession}
+              events={events}
+              homeLogo={gameState.teamLogo}
+              awayLogo={opponent.logo}
+              homeName={gameState.teamName}
+              awayName={opponent.name}
+              isHome={isHome}
+              lineup={activeLineup}
+              sentOff={sentOff}
+              phase={phase}
+            />
+          </div>
+        )}
 
         {/* Match Console */}
         <div className="p-2 lg:p-4">
