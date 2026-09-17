@@ -18,6 +18,7 @@ import { CareerTab } from './components/tabs/CareerTab';
 import { StadiumTab } from './components/tabs/StadiumTab';
 import { LifeTab } from './components/tabs/LifeTab';
 import { SocialTab } from './components/tabs/SocialTab';
+import { TechTab } from './components/tabs/TechTab';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -50,7 +51,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
+  | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -128,6 +129,13 @@ function App() {
     upgradeTribune,
     hostStadiumEvent,
     setTacticsSlider,
+    buyDevice,
+    setActiveDevice,
+    sellDevice,
+    buyPCComponent,
+    setPCPart,
+    sellPCComponent,
+    assemblePC,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,
@@ -909,6 +917,7 @@ function App() {
     { id: 'merch', label: 'Formalar', icon: '👕' },
     { id: 'invest', label: 'Yatırım', icon: '📈' },
     { id: 'history', label: 'Geçmiş', icon: '📊' },
+    { id: 'tech', label: 'Teknoloji', icon: '🛒' },
   ];
 
   return (
@@ -1263,6 +1272,7 @@ function App() {
               <InvestTab gameState={gameState} onBuyInvestment={buyInvestment} onSellInvestment={sellInvestment} onTakeCredit={takeCredit} onRepayCredit={repayCreditEarly} />
             )}
             {activeTab === 'history' && <HistoryTab gameState={gameState} />}
+            {activeTab === 'tech' && <TechTab gameState={gameState} onBuyDevice={buyDevice} onSetActiveDevice={setActiveDevice} onSellDevice={sellDevice} onBuyPCComponent={buyPCComponent} onSetPCPart={setPCPart} onSellPCComponent={sellPCComponent} onAssemblePC={assemblePC} />}
             </div>
           </div>
         </div>

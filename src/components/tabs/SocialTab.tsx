@@ -131,6 +131,17 @@ export const SocialTab: React.FC<SocialTabProps> = ({ gameState, onCreatePost, o
         </div>
       </div>
 
+      {/* Cihaz bar — aktif cihaz kalitesiyle post etkisi */}
+      <div className="h-[36px] bg-gradient-to-r from-violet-600/20 via-slate-800 to-cyan-600/15 border-b border-neutral-800 flex items-center justify-between px-3 shrink-0">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center">{(gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.icon || '📱'}</span>
+          <span className="text-white font-bold">{(gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.name || 'Telefon'}</span>
+          <span className="hidden sm:inline text-slate-400">• Kalite {(gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.quality || 42}/100</span>
+          <span className="hidden md:inline text-[11px] bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full text-emerald-300">+{Math.round((((gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.quality||42)-42)/12*85 + ((gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.quality||42)*2)} beğeni bonusu</span>
+        </div>
+        <div className="text-[11px] text-slate-400 hidden sm:flex items-center gap-1">📱 Cihazın iyiyse video 4K, beğeni fırlar — <span className="text-violet-300">Teknoloji → AVM</span>’den yükselt</div>
+      </div>
+
       <div className="flex-1 flex overflow-hidden">
         {/* ── Center feed ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-black">
@@ -516,7 +527,7 @@ export const SocialTab: React.FC<SocialTabProps> = ({ gameState, onCreatePost, o
                   <span>Gelişmiş ayarlar</span>
                   <span>›</span>
                 </div>
-                <div className="text-[11px] text-neutral-500 mt-2">💡 İpucu: Maç öncesi paylaşım yaparsan galibiyette +taraftar & ün, mağlubiyette özür ile moral toplarsın.</div>
+                <div className="text-[11px] text-neutral-500 mt-2">💡 İpucu: Maç öncesi paylaşım yaparsan galibiyette +taraftar & ün, mağlubiyette özür ile moral toplarsın. • Aktif cihaz: {(gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.name} (Kalite {(gameState.devices||[]).find(d=> d.id===gameState.activeDeviceId)?.quality}/100) — kalite arttıkça beğeni + viral şansı artar.</div>
               </div>
             </div>
           </div>

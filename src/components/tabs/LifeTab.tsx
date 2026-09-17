@@ -300,6 +300,30 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
           </div>
         </div>
 
+        {/* AVM — 3D Mağaza Sokağı (Yaşamdan geçiş) */}
+        <div className="bg-gradient-to-br from-violet-900/30 via-slate-800 to-cyan-900/20 rounded-2xl border border-violet-500/20 p-4 shadow-xl">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="text-sm font-black text-white flex items-center gap-2">🏬 AVM — Teknoloji Sokağı <span className="text-[10px] bg-violet-500/20 border border-violet-500/30 px-2 py-1 rounded-full text-violet-200">3D</span></h3>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">Yaşam → AVM → Teknoloji sekmesinde detaylı alışveriş</span>
+          </div>
+          <div className="relative h-[110px] bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-700/40 overflow-hidden flex items-end justify-center gap-2 px-2 pb-2">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[11px] bg-slate-900/70 border border-slate-700/40 px-2 py-0.5 rounded-full text-slate-300">📍 Forum İstanbul — Teknoloji Koridoru</div>
+            <div className="w-[22%] h-[80px] bg-gradient-to-b from-orange-100 to-orange-300 border-2 border-orange-400 rounded-t-lg flex flex-col items-center justify-center"><span className="text-lg">🏬</span><span className="text-[10px] font-black text-slate-800">TeknoSA</span></div>
+            <div className="w-[22%] h-[85px] bg-gradient-to-b from-blue-100 to-blue-300 border-2 border-blue-400 rounded-t-lg flex flex-col items-center justify-center"><span className="text-lg">💻</span><span className="text-[10px] font-black text-slate-800">Vatan</span></div>
+            <div className="w-[22%] h-[90px] bg-gradient-to-b from-violet-100 to-violet-300 border-2 border-violet-500 rounded-t-lg flex flex-col items-center justify-center scale-[1.02] shadow-md"><span className="text-lg">🛠️</span><span className="text-[10px] font-black text-slate-800">İtopya</span><span className="text-[8px] bg-violet-600 text-white px-1 rounded">PC TOPLA</span></div>
+            <div className="w-[22%] h-[80px] bg-gradient-to-b from-emerald-100 to-emerald-300 border-2 border-emerald-400 rounded-t-lg flex flex-col items-center justify-center"><span className="text-lg">📷</span><span className="text-[10px] font-black text-slate-800">MediaMarkt</span></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 text-center text-[11px]">
+            <div className="bg-slate-900/40 rounded-lg p-2 border border-slate-700/30"><div className="text-white font-bold">📱 Telefon Vitrini</div><div className="text-slate-400">Meyve/Semsun — kaliteye göre beğeni</div></div>
+            <div className="bg-slate-900/40 rounded-lg p-2 border border-slate-700/30"><div className="text-white font-bold">💻 Bilgisayar & Kamera</div><div className="text-slate-400">VlogCam, Canavar, HafifBook</div></div>
+            <div className="bg-slate-900/40 rounded-lg p-2 border border-slate-700/30"><div className="text-white font-bold">🖥️ PC Toplama</div><div className="text-slate-400">İtopya mantığı parça parça</div></div>
+          </div>
+          <div className="mt-3 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-xs text-amber-200 flex items-center justify-between gap-2">
+            <span>💡 AVM alışverişi için üst menüden <b className="text-white">Teknoloji 🛒</b> sekmesine geç — oradan cihaz alıp sosyal medya kaliteni katla!</span>
+            <span className="hidden sm:inline text-[11px] bg-slate-800 border border-slate-700 px-2 py-1 rounded-full text-slate-300">Teknoloji → AVM 3D → Sepet</span>
+          </div>
+        </div>
+
         {/* Geçmiş */}
         {life.history.length > 0 && (
           <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">

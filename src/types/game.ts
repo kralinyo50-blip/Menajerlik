@@ -297,6 +297,46 @@ export interface ScoutReport {
   generatedSeason: number;
 }
 
+export type DeviceCategory = 'phone' | 'computer' | 'camera' | 'tablet' | 'console';
+export interface Device {
+  id: string;
+  name: string;
+  brand: string;
+  category: DeviceCategory;
+  price: number;
+  quality: number; // 1-100, sosyal medya kalitesi
+  camera: number; // 1-100
+  performance: number; // 1-100
+  icon: string;
+  desc: string;
+}
+
+export type PCComponentType = 'cpu' | 'gpu' | 'ram' | 'motherboard' | 'storage' | 'psu' | 'case' | 'cooling' | 'monitor';
+export interface PCComponent {
+  id: string;
+  name: string;
+  brand: string;
+  type: PCComponentType;
+  price: number;
+  tier: 'giriş' | 'orta' | 'üst' | 'efsane';
+  specs: string;
+  performance: number; // 1-100
+  icon: string;
+  power?: number; // watt
+}
+
+export interface PCBuild {
+  cpu?: PCComponent;
+  gpu?: PCComponent;
+  ram?: PCComponent;
+  motherboard?: PCComponent;
+  storage?: PCComponent;
+  psu?: PCComponent;
+  case?: PCComponent;
+  cooling?: PCComponent;
+  monitor?: PCComponent;
+}
+
 export interface Sponsor {
   name: string;
   income: number;
@@ -582,6 +622,11 @@ export interface GameState {
   pendingPress?: PressConference | null;
   scoutMissions: ScoutMission[];
   scoutReports: ScoutReport[];
+  // ── Teknoloji & AVM (v4.5) ──
+  devices: Device[];
+  activeDeviceId?: string | null;
+  pcBuild: PCBuild;
+  pcInventory: PCComponent[];
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──
