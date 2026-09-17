@@ -42,7 +42,7 @@ export function timeAgoFromWeek(currentWeek: number, postWeek: number): string {
 
 export function generateInitialFeed(state: GameState): SocialPost[] {
   const posts: SocialPost[] = [];
-  // Hoşgeldin postu
+  // Hoşgeldin postu — Instagram
   posts.push({
     id: `init-1`,
     author: 'FutbolX',
@@ -60,6 +60,7 @@ export function generateInitialFeed(state: GameState): SocialPost[] {
     verified: true,
     tags: ['#SüperLig', `#Sezon${state.season}`],
     timeAgo: 'şimdi',
+    platform: 'instagram',
   });
   // Diğer kulüplerden selam
   const bots = state.league.filter(t => !t.isUser).slice(0, 3);
@@ -86,6 +87,7 @@ export function generateInitialFeed(state: GameState): SocialPost[] {
       verified: Math.random() < 0.3,
       tags: ['#SüperLig'],
       timeAgo: `${i+1}h önce`,
+      platform: (['instagram','tiktok','youtube'] as const)[i%3],
     });
     posts.push({
       id: `init-pundit-${i}`,
@@ -106,7 +108,50 @@ export function generateInitialFeed(state: GameState): SocialPost[] {
       isUser: false,
       verified: pundit.verified,
       timeAgo: `${2+i}h önce`,
+      platform: 'youtube',
     });
+  });
+  // Platforma özel karşılama — TikTok & YouTube'dan da selam
+  posts.push({
+    id: `init-tiktok`,
+    author: 'TikTok Futbol',
+    handle: '@tiktokfutbol',
+    logo: '🎵',
+    content: `🔥 ${state.teamName} TikTok'ta! İlk dikey videonu at, #keşfet'e düş! #SüperLig`,
+    type: 'hype',
+    week: state.week,
+    season: state.season,
+    likes: randLikes(900),
+    retweets: 0,
+    comments: Math.floor(Math.random()*40),
+    liked: false,
+    isUser: false,
+    verified: true,
+    tags: ['#keşfet','#SüperLig'],
+    timeAgo: 'az önce',
+    platform: 'tiktok',
+    views: Math.floor(5000 + Math.random()*50000),
+  });
+  posts.push({
+    id: `init-youtube`,
+    author: 'YouTube Futbol',
+    handle: '@futbolyt',
+    logo: '▶️',
+    content: `▶️ ${state.teamName} YouTube'da! İlk özet videonu yükle — izlenme kaliten cihazına bağlı. 4K için iyi kamera lazım!`,
+    type: 'hype',
+    week: state.week,
+    season: state.season,
+    likes: randLikes(700),
+    retweets: 0,
+    comments: Math.floor(Math.random()*30),
+    liked: false,
+    isUser: false,
+    verified: true,
+    tags: ['#YouTube','#SüperLig'],
+    timeAgo: 'az önce',
+    platform: 'youtube',
+    views: Math.floor(2000 + Math.random()*20000),
+    videoId: 'pRpeEdMmmQ0',
   });
   return posts;
 }
@@ -147,6 +192,7 @@ export function generateMatchFeedPosts(
     verified: true,
     tags: ['#SüperLig', `#Hafta${week}`],
     timeAgo: 'şimdi',
+    platform: 'instagram',
   });
 
   // Rakip kulüp paylaşımı
@@ -176,6 +222,8 @@ export function generateMatchFeedPosts(
     isUser: false,
     verified: Math.random() < 0.4,
     timeAgo: 'az önce',
+    platform: 'tiktok',
+    views: Math.floor(2000 + Math.random()*30000),
   });
 
   // Taraftar tepkisi
@@ -205,6 +253,8 @@ export function generateMatchFeedPosts(
     liked: false,
     isUser: false,
     timeAgo: 'az önce',
+    platform: 'youtube',
+    views: Math.floor(5000 + Math.random()*40000),
   });
 
   // Pundit yorumu
@@ -228,6 +278,31 @@ export function generateMatchFeedPosts(
     isUser: false,
     verified: true,
     timeAgo: 'az önce',
+    platform: 'youtube',
+    views: Math.floor(3000 + Math.random()*50000),
+    videoId: 'dQw4w9WgXcQ',
+  });
+
+  // Ek TikTok dikey gol clip'i — maç sonrası viral
+  posts.push({
+    id: `match-tiktok-${Date.now()+4}`,
+    author: 'TikTok Gol',
+    handle: '@golclip',
+    logo: '🎵',
+    content: won ? `GOLLL! ${userScore}-${oppScore} anı dikey kamerada 🔥 #keşfet` : `Maçtan en iyi an — dikey açı 📱`,
+    type: 'match',
+    week,
+    season: state.season,
+    likes: randLikes(800),
+    retweets: 0,
+    comments: Math.floor(Math.random()*60),
+    liked: false,
+    isUser: false,
+    verified: false,
+    tags: ['#keşfet','#Gol'],
+    timeAgo: 'az önce',
+    platform: 'tiktok',
+    views: Math.floor(8000 + Math.random()*60000),
   });
 
   return posts;
@@ -252,6 +327,8 @@ export function generateTransferPost(playerName: string, ovr: number, teamName: 
     verified: true,
     tags: ['#Transfer', '#SüperLig'],
     timeAgo: 'şimdi',
+    platform: (['instagram','youtube','tiktok'] as const)[Math.floor(Math.random()*3)],
+    views: Math.floor(3000 + Math.random()*40000),
   };
 }
 
@@ -278,6 +355,8 @@ export function generateWeeklyBotPosts(state: GameState): SocialPost[] {
         liked: false,
         isUser: false,
         timeAgo: 'az önce',
+        platform: 'youtube',
+        views: Math.floor(1000 + Math.random()*20000),
       });
     } else {
       posts.push({
@@ -299,6 +378,8 @@ export function generateWeeklyBotPosts(state: GameState): SocialPost[] {
         liked: false,
         isUser: false,
         timeAgo: 'az önce',
+        platform: (['instagram','tiktok'] as const)[Math.floor(Math.random()*2)],
+        views: Math.floor(500 + Math.random()*15000),
       });
     }
   });

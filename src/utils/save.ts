@@ -39,6 +39,7 @@ const DEFAULT_CLUB_STATS: GameState['clubStats'] = {
   totalAttendance: 0,
   motmAwards: 0,
   redCards: 0,
+  socialEarnings: 0,
 };
 
 const WEATHERS: Weather[] = ['sunny', 'cloudy', 'rain', 'storm', 'snow', 'wind', 'fog'];
@@ -64,6 +65,9 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
   const result: GameState = {
     ...state,
     season: state.season ?? 1,
+    lifetimeSocialEarnings: (state as any).lifetimeSocialEarnings ?? 0,
+    weeklySocialEarnings: (state as any).weeklySocialEarnings ?? 0,
+    lastSocialPayoutWeek: (state as any).lastSocialPayoutWeek ?? 0,
     difficulty: state.difficulty ?? 'normal',
     achievements: state.achievements ?? INITIAL_ACHIEVEMENTS.map(a => ({ ...a })),
     tutorialDone: state.tutorialDone ?? true,

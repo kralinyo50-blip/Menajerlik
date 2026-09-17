@@ -33,6 +33,10 @@ export interface StadiumState {
   vip: boolean;
   /** Satın alınmış kozmetikler: 'roof:glass', 'stands:bowl', 'color:#f43f5e' … */
   cosmetics: string[];
+  /** Tribün seviyeleri (1-5) — Stadyum İmparatorluğu */
+  tribunes?: { north: number; south: number; east: number; west: number };
+  /** Son stadyum etkinliği geliri */
+  lastEventIncome?: number;
 }
 
 /* ══════════ MENAJERİN KENDİ HAYATI (v4.0) ══════════ */
@@ -175,10 +179,162 @@ export interface Investment {
   id: number;
   name: string;
   price: number;
-  type: string;
+  type: 'stock' | 'gold' | 'realestate' | 'crypto' | 'bond' | 'fx';
   owned: number;
   lastChange: number;
   icon: string;
+  basePrice: number;
+  history: number[];
+  volatility: number; // weekly sigma (0.02 = 2%)
+  drift: number; // expected weekly return (0.004 = 0.4%)
+  dividendYield: number; // annual dividend / rent / coupon (0.015 = 1.5%)
+  risk: 'Düşük' | 'Orta' | 'Yüksek' | 'Çok Yüksek';
+  sector: string;
+  description: string;
+  avgCost: number;
+  dividendsEarned: number;
+  // Piyasa duyarlılığı için korelasyon katsayısı
+  marketBeta?: number;
+}
+
+/* ══════════ KREDİ & TEFECİ SİSTEMİ (v2.1) ══════════ */
+export interface CreditPackage {
+  id: string;
+  name: string;
+  amount: number; // anapara
+  weeks: number; // vade
+  interestRate: number; // toplam faiz oranı 0.18 = %18
+  weeklyPayment: number; // haftalık taksit
+  totalRepayment: number; // toplam geri ödeme
+  type: 'bank' | 'shark';
+  icon: string;
+  description: string;
+  requirement?: string; // örn: "Yönetim güveni %45+"
+  maxActive?: number;
+}
+
+export interface ActiveCredit {
+  id: string; // unique instance id
+  packageId: string;
+  name: string;
+  principal: number;
+  totalRepayment: number;
+  weeklyPayment: number;
+  weeksTotal: number;
+  weeksLeft: number;
+  paidAmount: number;
+  interestRate: number;
+  type: 'bank' | 'shark';
+  takenWeek: number;
+  takenSeason: number;
+}
+
+/* ══════════ KULÜP KİMLİĞİ & MÜZE (v4.2) ══════════ */
+export type ClubPhilosophy = 'youth' | 'money' | 'trophy' | null;
+
+export interface UltrasRequest {
+  id: string;
+  kind: 'youth' | 'derby' | 'star' | 'cleanSheet';
+  text: string;
+  deadlineWeek: number;
+  deadlineSeason: number;
+  reward: string;
+  penalty: string;
+}
+
+export interface MuseumEntry {
+  season: number;
+  position: number;
+  leagueLevel: number;
+  trophies: string[];
+  topScorer?: { name: string; goals: number };
+  budget: number;
+}
+
+export type PressAnswerTone = 'humble' | 'confident' | 'aggressive' | 'neutral';
+export interface PressQuestion {
+  id: string;
+  question: string;
+  answers: { tone: PressAnswerTone; label: string; effect: string; }[];
+}
+export interface PressConference {
+  id: string;
+  opponent: string;
+  wasWin: boolean;
+  wasDraw: boolean;
+  questions: PressQuestion[];
+  answered: number;
+}
+
+export type ScoutRegionId = 'balkans' | 'west_eu' | 'south_america' | 'africa' | 'east_eu' | 'asia';
+export interface ScoutRegion {
+  id: ScoutRegionId;
+  name: string;
+  flag: string;
+  desc: string;
+  cost: number;
+  weeks: number;
+  ovrRange: [number, number];
+  potRange: [number, number];
+  trait: string;
+}
+export interface ScoutMission {
+  id: string;
+  regionId: ScoutRegionId;
+  regionName: string;
+  weeksLeft: number;
+  totalWeeks: number;
+  cost: number;
+  startedWeek: number;
+  startedSeason: number;
+}
+export interface ScoutReport {
+  id: string;
+  regionId: ScoutRegionId;
+  regionName: string;
+  players: Player[];
+  generatedWeek: number;
+  generatedSeason: number;
+}
+
+export type DeviceCategory = 'phone' | 'computer' | 'camera' | 'tablet' | 'console';
+export interface Device {
+  id: string;
+  name: string;
+  brand: string;
+  category: DeviceCategory;
+  price: number;
+  quality: number; // 1-100, sosyal medya kalitesi
+  camera: number; // 1-100
+  performance: number; // 1-100
+  icon: string;
+  desc: string;
+}
+
+export type PCComponentType = 'cpu' | 'gpu' | 'ram' | 'motherboard' | 'storage' | 'psu' | 'case' | 'cooling' | 'monitor';
+export interface PCComponent {
+  id: string;
+  name: string;
+  brand: string;
+  type: PCComponentType;
+  price: number;
+  tier: 'giriş' | 'orta' | 'üst' | 'efsane';
+  specs: string;
+  performance: number; // 1-100
+  icon: string;
+  power?: number; // watt
+}
+
+export interface PCBuild {
+  cpu?: PCComponent;
+  gpu?: PCComponent;
+  ram?: PCComponent;
+  motherboard?: PCComponent;
+  storage?: PCComponent;
+  psu?: PCComponent;
+  case?: PCComponent;
+  cooling?: PCComponent;
+  monitor?: PCComponent;
 }
 
 export interface Sponsor {
@@ -202,6 +358,12 @@ export interface Tactics {
   style: 'balanced' | 'attack' | 'defense' | 'possession';
   pressing: 'low' | 'medium' | 'high';
   tempo: 'slow' | 'normal' | 'fast';
+  /** 5 kaydırıcı — 0-100, ortalama görselde sade bar */
+  defensiveLine?: number; // 0 derin, 100 yüksek
+  width?: number; // 0 dar, 100 geniş
+  creativity?: number; // 0 disiplinli, 100 yaratıcı
+  pressingIntensity?: number; // 0 gevşek, 100 şiddetli pres
+  tempoValue?: number; // 0 yavaş, 100 hızlı (tempo string ile senkron)
 }
 
 export interface CupMatch {
@@ -371,6 +533,9 @@ export interface GameState {
   week: number;
   season: number;
   budget: number;
+  lifetimeSocialEarnings: number;
+  weeklySocialEarnings: number;
+  lastSocialPayoutWeek: number;
   stadiumLvl: number;
   trainingLvl: number;
   healthLvl: number;
@@ -398,9 +563,12 @@ export interface GameState {
     transfers?: number;
     youthPromoted?: number;
     penaltyWins?: number;
-  };
+    socialEarnings: number;
+};
   tactics: Tactics;
   investments: Investment[];
+  activeCredits: ActiveCredit[];
+  creditScore: number; // 300-850
   cupMatches: CupMatch[];
   cupEliminated: boolean;
   seasonObjective: string;
@@ -450,6 +618,19 @@ export interface GameState {
   outgoingLoans: OutgoingLoan[];
   // ── v3.3: Stadyum Stüdyosu (3D) ──
   stadium: StadiumState;
+  // ── v4.2: Kulüp Kimliği & Müze ──
+  clubPhilosophy: ClubPhilosophy;
+  ultrasHappiness: number; // 0-100
+  ultrasRequests: UltrasRequest[];
+  museum: MuseumEntry[];
+  pendingPress?: PressConference | null;
+  scoutMissions: ScoutMission[];
+  scoutReports: ScoutReport[];
+  // ── Teknoloji & AVM (v4.5) ──
+  devices: Device[];
+  activeDeviceId?: string | null;
+  pcBuild: PCBuild;
+  pcInventory: PCComponent[];
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──
@@ -464,7 +645,8 @@ export interface ShopBranchData {
   openedWeek: number;
 }
 
-/* ══════════ SOSYAL MEDYA (FIFA tarzı) ══════════ */
+/* ══════════ SOSYAL MEDYA (FIFA tarzı) — çok platformlu ══════════ */
+export type SocialPlatform = 'instagram' | 'tiktok' | 'youtube';
 export type SocialPostType = 'user' | 'bot' | 'match' | 'transfer' | 'news' | 'hype';
 
 export interface SocialPost {
@@ -485,6 +667,9 @@ export interface SocialPost {
   image?: string;
   tags?: string[];
   timeAgo: string;
+  platform: SocialPlatform;
+  views?: number;
+  videoId?: string;
 }
 
 export interface MatchEvent {

@@ -20,6 +20,8 @@ export interface MatchExtras {
   shots: { home: number; away: number };
   corners: { home: number; away: number };
   fouls: { home: number; away: number };
+  xg: { home: number; away: number };
+  shotMap?: { x:number; y:number; team:'home'|'away'; minute:number; xg:number }[];
   teamTalkMorale: number;
   penaltyWinner?: 'user' | 'opponent';
 }
@@ -59,6 +61,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [speed, setSpeed] = useState<1 | 2 | 4>(2);
   const [possession, setPossession] = useState(50);
   const [shots, setShots] = useState({ home: 0, away: 0 });
+  const [xg, setXg] = useState({ home: 0, away: 0 });
+  const [spiker, setSpiker] = useState<string | null>(null);
+  const [shotMap, setShotMap] = useState<{ x:number; y:number; team:'home'|'away'; minute:number; xg:number }[]>([]);
   const [corners, setCorners] = useState({ home: 0, away: 0 });
   const [fouls, setFouls] = useState({ home: 0, away: 0 });
   const [activeLineup, setActiveLineup] = useState<Player[]>(() => fixLineup(gameState).team11);
@@ -91,6 +96,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const sentOffRef = useRef<number[]>([]);
   const handlerRef = useRef<(m: number, extra: boolean) => void>(() => {});
 
+  const pushSpiker = useCallback((txt: string) => {
+    setSpiker(txt);
+    setTimeout(() => setSpiker(null), 2000);
+  }, []);
+
   const soundOn = gameState.soundOn !== false;
   const play = useCallback((fn: () => void) => { if (soundOn) fn(); }, [soundOn]);
 
@@ -118,6 +128,28 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     if (gameState.tactics.pressing === 'low') { defenseBonus += 5; }
     if (gameState.tactics.tempo === 'fast') { attackBonus += 7; defenseBonus -= 2; }
     if (gameState.tactics.tempo === 'slow') { defenseBonus += 7; }
+    // 5 kaydırıcı — mild dengeli (ortalama görsel, gerçekçi)
+    const tac: any = gameState.tactics as any;
+    const dl = tac.defensiveLine ?? 50;
+    const wd = tac.width ?? 50;
+    const cr = tac.creativity ?? 50;
+    const pi = tac.pressingIntensity ?? 50;
+    const tv = tac.tempoValue ?? 50;
+    // defensiveLine: yüksek = önde basar, riskli
+    attackBonus += (dl - 50) * 0.08;
+    defenseBonus += (50 - dl) * 0.06;
+    // width: geniş = kanat hücumu
+    attackBonus += (wd - 50) * 0.05;
+    defenseBonus += (50 - wd) * 0.04;
+    // creativity: yaratıcı = hücum + ama top kaybı
+    attackBonus += (cr - 50) * 0.07;
+    defenseBonus += (50 - cr) * 0.05;
+    // pressingIntensity: string ile zaten var ama slider ince ayar
+    attackBonus += (pi - 50) * 0.06;
+    defenseBonus += (50 - pi) * 0.03;
+    // tempoValue
+    attackBonus += (tv - 50) * 0.07;
+    defenseBonus += (50 - tv) * 0.05;
 
     // Ev sahibi avantajı / deplasman
     if (isHome) { attackBonus += HOME_ADVANTAGE; defenseBonus += HOME_ADVANTAGE; }
@@ -212,6 +244,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       });
     }
     play(sfx.goal);
+    pushSpiker(`⚽ GOOOOLL! ${player?.name || 'Takım'} affetmedi! xG ${ (Math.random()*0.4+0.3).toFixed(2)}`);
     setGoalFlash(true);
     setTimeout(() => setGoalFlash(false), 900);
     // kısa gol kutlaması — performansa hafif, sadece CSS
@@ -258,6 +291,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
       if (isUserAttack) {
         setShots(s => ({ ...s, home: s.home + 1 }));
+        const thisXg = 0.08 + Math.random()*0.32;
+        setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
+        setShotMap(m => [...m, { x: 72 + Math.random()*20, y: 20 + Math.random()*60, team: 'home', minute: currentMinute, xg: thisXg }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
         const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01))) * goalMult);
@@ -310,6 +346,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         }
       } else {
         setShots(s => ({ ...s, away: s.away + 1 }));
+        const thisXgA = 0.06 + Math.random()*0.28;
+        setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
+        setShotMap(m => [...m, { x: 8 + Math.random()*20, y: 20 + Math.random()*60, team: 'away', minute: currentMinute, xg: thisXgA }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
         const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008))) * goalMult);
         const roll = Math.random();
@@ -332,6 +371,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           scoreRef.current.o += 1;
           setOppScore(scoreRef.current.o);
           play(sfx.conceded);
+          pushSpiker(`❌ ${opponent.name} cezayı kesti! Tribünler sustu...`);
           setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
           setTimeout(() => setCelebration(null), 2200);
           addEvent({
@@ -740,6 +780,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       shots,
       corners,
       fouls,
+      xg,
+      shotMap,
       teamTalkMorale: talkBonus.morale,
       penaltyWinner
     };
@@ -764,10 +806,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const score = { u: userScore, o: oppScore };
 
   return (
-    <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-2 lg:p-4 overflow-y-auto ${goalFlash ? 'animate-goal-flash' : ''}`}>
-      <div className="w-full max-w-3xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/30 my-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between flex-wrap gap-2">
+    <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-0 sm:p-2 lg:p-3 overflow-y-auto overflow-x-hidden ${goalFlash ? 'animate-goal-flash' : ''}`}>
+      <div className="w-full max-w-5xl xl:max-w-6xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-none sm:rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl border-0 sm:border border-emerald-500/30 my-auto flex flex-col max-h-[100dvh] sm:max-h-[96dvh] lg:max-h-[92dvh]">
+        {/* Header + maç ilerleme çubuğu */}
+        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0 relative overflow-hidden">
+          {/* dakika ilerleme */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+            <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${Math.min(100, (minute / (extraTime ? 120 : 90)) * 100)}%` }} />
+          </div>
           <div className="text-white text-xs lg:text-sm font-medium flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 bg-black/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
@@ -807,8 +853,15 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         </div>
 
+        {/* Spiker */}
+        {spiker && (
+          <div className="bg-amber-500 text-black text-xs font-bold px-3 py-1.5 flex items-center gap-2 animate-pulse">
+            <span className="bg-black text-amber-400 px-1.5 py-0.5 rounded text-[10px]">SPİKER</span>
+            <span className="truncate">{spiker}</span>
+          </div>
+        )}
         {/* Scoreboard */}
-        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5">
+        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0">
           <div className="flex items-center justify-between max-w-xl mx-auto">
             <div className="text-center flex-1">
               <div className="text-3xl lg:text-4xl mb-1">{gameState.teamLogo}</div>
@@ -848,38 +901,45 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
 
           {(phase !== 'pre') && (
-            <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2 max-w-2xl mx-auto text-center text-xs">
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Top Hakimiyeti</div>
-                <div className="text-white font-bold">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
-                <div className="mt-1 h-1.5 bg-slate-600 rounded-full overflow-hidden flex">
-                  <div className="bg-emerald-500 h-full" style={{ width: `${possession}%` }} />
-                  <div className="bg-red-500 h-full" style={{ width: `${100 - possession}%` }} />
+            <div className="mt-3 grid grid-cols-2 lg:grid-cols-6 gap-2 max-w-3xl mx-auto text-center text-xs">
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20 hover:border-emerald-500/30 transition-colors">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">TOP HAKİMİYETİ</div>
+                <div className="text-white font-black text-sm">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
+                <div className="mt-1.5 h-2 bg-slate-800 rounded-full overflow-hidden flex p-0.5">
+                  <div className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full rounded-full transition-all duration-700" style={{ width: `${possession}%` }} />
+                  <div className="bg-gradient-to-r from-red-500 to-red-400 h-full rounded-full transition-all duration-700" style={{ width: `${100 - possession}%` }} />
                 </div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Şutlar</div>
-                <div className="text-white font-bold">{shots.home} - {shots.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">ŞUTLAR</div>
+                <div className="text-white font-black text-lg">{shots.home} <span className="text-slate-500 text-xs">-</span> {shots.away}</div>
+                <div className="text-[10px] text-slate-500">toplam</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Korner</div>
-                <div className="text-white font-bold">{corners.home} - {corners.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">KORNER</div>
+                <div className="text-white font-black text-lg">{corners.home} <span className="text-slate-500 text-xs">-</span> {corners.away}</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Faul</div>
-                <div className="text-white font-bold">{fouls.home} - {fouls.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">FAUL</div>
+                <div className="text-white font-black text-lg">{fouls.home} <span className="text-slate-500 text-xs">-</span> {fouls.away}</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Değişiklik</div>
-                <div className="text-white font-bold">{substitutions.length}/5</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">xG</div>
+                <div className="text-white font-black text-sm">{xg.home.toFixed(2)} <span className="text-slate-500 text-xs">-</span> {xg.away.toFixed(2)}</div>
+                <div className="text-[10px] text-slate-500">beklenen gol (xG)</div>
+              </div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">DEĞİŞİKLİK</div>
+                <div className="text-white font-black text-lg">{substitutions.length}<span className="text-slate-500 text-sm">/5</span></div>
+                <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className="h-full bg-blue-500 transition-all" style={{ width: `${(substitutions.length/5)*100}%` }} /></div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Canlı 2D saha */}
+        {/* Canlı 2D saha - büyütüldü, ekrana uyumlu */}
         {phase !== 'pre' && (
-          <div className="px-2 lg:px-4 pt-3">
+          <div className="px-2 lg:px-4 pt-3 flex-shrink-0">
             <LivePitch
               minute={minute}
               possession={possession}
@@ -897,9 +957,35 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         )}
 
-        {/* Match Console */}
-        <div className="p-2 lg:p-4">
-          <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 h-36 lg:h-52 overflow-y-auto p-3 lg:p-4 font-mono text-xs lg:text-sm">
+        {/* Şut Haritası — ortalama görsel, sade */}
+        {phase !== 'pre' && shotMap.length > 0 && (
+          <div className="px-2 lg:px-4 pt-2">
+            <div className="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] tracking-widest font-bold text-slate-400">ŞUT HARİTASI — xG {xg.home.toFixed(2)} : {xg.away.toFixed(2)}</div>
+                <div className="text-[10px] text-slate-500">{shotMap.length} şut • yeşil senin, kırmızı rakip</div>
+              </div>
+              <div className="relative h-28 bg-gradient-to-b from-emerald-900/30 to-emerald-800/20 rounded-lg border border-emerald-700/30 overflow-hidden">
+                {/* saha çizgileri */}
+                <div className="absolute inset-2 border border-white/20 rounded-sm" />
+                <div className="absolute top-1/2 left-2 right-2 h-px bg-white/20 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-12 h-16 border border-white/15 rounded-sm -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-white/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-2 bottom-2 left-2 w-6 border-r border-white/15 bg-white/[0.03]" />
+                <div className="absolute top-2 bottom-2 right-2 w-6 border-l border-white/15 bg-white/[0.03]" />
+                {shotMap.slice(-18).map((s,i)=> (
+                  <div key={i} title={`${s.team==='home'?gameState.teamName:opponent.name} ${s.minute}' xG ${s.xg.toFixed(2)}`} className={`absolute w-2.5 h-2.5 rounded-full border border-white/60 shadow-sm -translate-x-1/2 -translate-y-1/2 ${s.team==='home' ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ left: `${s.x}%`, top: `${s.y}%`, opacity: 0.82 }} />
+                ))}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1.5 flex gap-3">
+                <span>● Yeşil = sen ({shots.home} şut)</span><span>● Kırmızı = rakip ({shots.away})</span><span className="ml-auto hidden sm:inline">Son 18 şut gösterilir — ortalama mod sade</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Match Console - büyütüldü */}
+        <div className="p-2 lg:p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 flex-1 min-h-[160px] lg:min-h-[200px] max-h-[42vh] lg:max-h-[300px] overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">
             {events.map((event, i) => (
               <div
                 key={i}
@@ -920,7 +1006,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         </div>
 
         {/* Controls */}
-        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap">
+        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap flex-shrink-0">
           {phase === 'pre' && (
             <div className="w-full">
               <div className="text-center text-slate-300 text-xs mb-3">

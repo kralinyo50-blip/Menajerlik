@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GameState, Player, TrainingFocus } from '../../types/game';
-import { ROLE_NAMES, TRAINING_FOCUS_INFO, WEATHER_INFO } from '../../data/constants';
+import { ROLE_NAMES, TRAINING_FOCUS_INFO, WEATHER_INFO, PHILOSOPHIES } from '../../data/constants';
 import { TIER_INFO } from '../../data/stars';
 import { formatMoney } from '../../utils/pricing';
 import { renewalCost, renewalWage, contractRisk } from '../../utils/contract';
@@ -17,6 +17,10 @@ interface OfficeTabProps {
   onExerciseLoanOption: (playerId: number) => void;
   onReturnLoanEarly: (playerId: number) => void;
   onRecallLoan: (loanId: number) => void;
+  onSetPhilosophy?: (p: import('../../types/game').ClubPhilosophy) => void;
+  onCompleteUltras?: (id: string) => void;
+  onDismissUltras?: (id: string) => void;
+  onGenerateUltras?: () => void;
 }
 
 const Section: React.FC<{ title: string; icon: string; children: React.ReactNode; accent?: string }> = ({
@@ -33,7 +37,8 @@ const Section: React.FC<{ title: string; icon: string; children: React.ReactNode
 export const OfficeTab: React.FC<OfficeTabProps> = ({
   gameState, onAcceptOffer, onRejectOffer, onRenewContract,
   onSetCaptain, onSetSetPieceTaker, onSetTrainingFocus, onDismissBoardMessage,
-  onExerciseLoanOption, onReturnLoanEarly, onRecallLoan
+  onExerciseLoanOption, onReturnLoanEarly, onRecallLoan,
+  onSetPhilosophy, onCompleteUltras, onDismissUltras, onGenerateUltras
 }) => {
   const [renewYears, setRenewYears] = useState(2);
 
@@ -110,6 +115,59 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
               ))}
             </div>
           )}
+        </Section>
+
+        {/* Kulüp Felsefesi */}
+        <Section title="Kulüp Felsefesi" icon="🧭" accent="text-violet-400">
+          <p className="text-xs text-slate-400 mb-3">Sezon başında bir kimlik seç — bonuslar ve taraftar beklentisi ona göre şekillenir. Seçimi değiştirebilirsin — ultras kısa süre bozulur, yeni bonus hemen gelir.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {PHILOSOPHIES.map(ph => {
+              const selected = gameState.clubPhilosophy === ph.id;
+              const border = selected ? (ph.color==='emerald' ? 'border-emerald-500 bg-emerald-500/10' : ph.color==='amber' ? 'border-amber-500 bg-amber-500/10' : 'border-violet-500 bg-violet-500/10') : 'border-slate-700/40 bg-slate-800/40 hover:bg-slate-700/40';
+              const btnCol = ph.color==='emerald' ? 'bg-emerald-600 hover:bg-emerald-500' : ph.color==='amber' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-violet-600 hover:bg-violet-500';
+              return (
+                <div key={ph.id} className={`rounded-2xl border p-4 flex flex-col gap-2 ${border} transition-colors`}>
+                  <div className="text-2xl">{ph.icon}</div>
+                  <div className="font-black text-white text-sm">{ph.name}</div>
+                  <div className="text-[11px] text-slate-300 leading-relaxed">{ph.desc}</div>
+                  <div className="text-[11px] bg-slate-900/40 rounded-lg p-2 border border-slate-700/30 text-slate-200">🎁 {ph.bonus}</div>
+                  <div className="text-[11px] text-slate-500 italic">Beklenti: {ph.fanExpectation}</div>
+                  <button onClick={() => onSetPhilosophy?.(ph.id as any)} disabled={selected} className={`mt-auto py-2 rounded-xl text-xs font-black transition-all ${selected ? 'bg-white text-slate-900 cursor-default' : `${btnCol} text-white`}`}>{selected ? '✓ Seçili' : 'Seç'}</button>
+                </div>
+              );
+            })}
+          </div>
+          {!gameState.clubPhilosophy && <div className="text-[11px] text-amber-300 mt-2">💡 İpucu: Bir felsefe seçmezsen ultras kararsız kalır, bonus da alamazsın.</div>}
+        </Section>
+
+        {/* Ultras */}
+        <Section title={`Ultras Tribünü — Sadakat %${gameState.ultrasHappiness ?? 65}`} icon="🔥" accent="text-red-400">
+          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/40 p-1 mb-2">
+            <div className={`h-full rounded-full transition-all duration-700 ${(gameState.ultrasHappiness ?? 65) >= 70 ? 'bg-gradient-to-r from-red-500 to-orange-500' : (gameState.ultrasHappiness ?? 65) >= 45 ? 'bg-gradient-to-r from-amber-500 to-yellow-500' : 'bg-gradient-to-r from-slate-500 to-slate-600'}`} style={{width: `${Math.max(4, gameState.ultrasHappiness ?? 65)}%`}} />
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-3">
+            <span>{(gameState.ultrasHappiness ?? 65) >= 75 ? '🔥 Ultras coşkulu — stadyum doluyor!' : (gameState.ultrasHappiness ?? 65) >= 50 ? 'Ultras dengede' : '⚠️ Ultras homurdanıyor — ıslıklar gelebilir'}</span>
+            <button onClick={() => onGenerateUltras?.()} className="text-[11px] bg-slate-700 hover:bg-slate-600 text-white px-3 py-1 rounded-full border border-slate-600">+ Yeni İstek Üret</button>
+          </div>
+          {(gameState.ultrasRequests || []).length === 0 ? (
+            <p className="text-xs text-slate-400">Şu an ultrasın bir isteği yok. Maçlar ilerledikçe ve felsefene göre yeni pankartlar gelecek.</p>
+          ) : (
+            <div className="space-y-2">
+              {(gameState.ultrasRequests || []).map(req => (
+                <div key={req.id} className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/30 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-white text-sm font-bold flex items-center gap-1">{req.kind==='youth'?'🌱':req.kind==='star'?'⭐':req.kind==='derby'?'⚔️':'🛡️'} {req.text}</div>
+                    <div className="text-[11px] text-slate-300">Ödül: <span className="text-emerald-300">{req.reward}</span> • Cezası: <span className="text-red-300">{req.penalty}</span> • Son: Sezon {req.deadlineSeason} Hafta {req.deadlineWeek}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => onCompleteUltras?.(req.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold">✓ Yaptım</button>
+                    <button onClick={() => onDismissUltras?.(req.id)} className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white rounded-lg text-xs">✕ Reddet</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="text-[11px] text-slate-500 mt-2">Dengeli: istekler maç sonrası %20 şansla gelir, süresi dolarsa taraftar -5 / ultras -8. Galibiyet ultras +3~5, mağlubiyet -3.</div>
         </Section>
 
         {/* Transfer offers */}

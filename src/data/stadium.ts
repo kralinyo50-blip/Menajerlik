@@ -107,8 +107,22 @@ export function defaultStadium(): StadiumState {
     ticketMultiplier: 1,
     vip: false,
     cosmetics: ['floodlights', 'pitch:plain'],
+    tribunes: { north: 1, south: 1, east: 1, west: 1 },
+    lastEventIncome: 0,
   };
 }
+
+export const TRIBUNES = [
+  { id: 'north' as const, name: 'Kuzey Kale Arkası', icon: '⬆️', desc: 'Genç ve ateşli taraftar, atmosferi ateşler', baseSeats: 2200, pricePerLevel: 650000 },
+  { id: 'south' as const, name: 'Güney Kale Arkası', icon: '⬇️', desc: 'Aile tribünü, istikrarlı doluluk', baseSeats: 2200, pricePerLevel: 650000 },
+  { id: 'east' as const, name: 'Doğu Maraton', icon: '➡️', desc: 'Ana maraton, TV’ye en yakın', baseSeats: 3200, pricePerLevel: 850000 },
+  { id: 'west' as const, name: 'Batı Kapalı (VIP)', icon: '⬅️', desc: 'Kapalı ve VIP’e yakın, yüksek gelir', baseSeats: 3200, pricePerLevel: 900000 },
+];
+
+export const STADIUM_EVENTS = [
+  { id: 'concert', label: 'Konser', icon: '🎤', income: 180000, desc: 'Hafta içi konser — saha yorulur ama kasa dolar' },
+  { id: 'fair', label: 'Fuar', icon: '🏢', desc: 'Endüstri fuarı — düşük gelir, risksiz', income: 90000 },
+];
 
 /** Tüm seçenekler (ücretsizler dahil) — UI listesi */
 export function isUnlocked(stadium: StadiumState, id: string): boolean {

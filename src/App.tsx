@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGameState } from './hooks/useGameState';
 import { SetupScreen } from './components/SetupScreen';
 import { Sidebar } from './components/Sidebar';
@@ -18,6 +18,7 @@ import { CareerTab } from './components/tabs/CareerTab';
 import { StadiumTab } from './components/tabs/StadiumTab';
 import { LifeTab } from './components/tabs/LifeTab';
 import { SocialTab } from './components/tabs/SocialTab';
+import { TechTab } from './components/tabs/TechTab';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -27,6 +28,8 @@ import { PostMatchEvent, PostMatchEventData, generatePostMatchEvent } from './co
 import { TeamActivityEvent, shouldTriggerTeamActivity } from './components/TeamActivityEvent';
 import { Tutorial } from './components/Tutorial';
 import { AchievementsPanel } from './components/AchievementsPanel';
+import AiAssistant from './components/AiAssistant';
+import { PressConference } from './components/PressConference';
 import {
   InGameMinigame,
   MinigameContext,
@@ -48,7 +51,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
+  | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -95,6 +98,19 @@ function App() {
     promoteYouthPlayer,
     buyInvestment,
     sellInvestment,
+    takeCredit,
+    repayCreditEarly,
+    setClubPhilosophy,
+    generatePressConference,
+    answerPressQuestion,
+    dismissPress,
+    generateUltrasRequests,
+    completeUltrasRequest,
+    dismissUltrasRequest,
+    sendScout,
+    claimScoutReport,
+    dismissScoutReport,
+    cancelScoutMission,
     trainPlayer,
     openShopBranch,
     completeTutorial,
@@ -110,6 +126,16 @@ function App() {
     buyCapacityPackage,
     setTicketMultiplier,
     upgradeStadiumLevel,
+    upgradeTribune,
+    hostStadiumEvent,
+    setTacticsSlider,
+    buyDevice,
+    setActiveDevice,
+    sellDevice,
+    buyPCComponent,
+    setPCPart,
+    sellPCComponent,
+    assemblePC,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,
@@ -138,6 +164,8 @@ function App() {
   const [pendingMatchAfterStory, setPendingMatchAfterStory] = useState(false);
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
   const [seasonHandled, setSeasonHandled] = useState<number | null>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [tabsScrollFade, setTabsScrollFade] = useState({ left: false, right: false });
 
   // Show tutorial for new games
   useEffect(() => {
@@ -163,10 +191,41 @@ function App() {
     if (reward) setTimeout(() => sfx.levelUp(), 300);
   }, [gameState?.lastPlayedDate, gameState?.teamName]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sekme değişince aktif sekmeyi ortaya kaydır + fade hesapla
+  const updateTabsFade = useCallback(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setTabsScrollFade({
+      left: scrollLeft > 8,
+      right: scrollLeft + clientWidth < scrollWidth - 8
+    });
+  }, []);
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    // aktif sekmeyi görünür yap
+    const activeBtn = el.querySelector(`[data-tab=\"${activeTab}\"]`) as HTMLElement | null;
+    if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    updateTabsFade();
+  }, [activeTab, updateTabsFade]);
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el) return;
+    const onScroll = () => updateTabsFade();
+    const onResize = () => updateTabsFade();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+    // ilk ölçüm
+    requestAnimationFrame(updateTabsFade);
+    const id = setInterval(updateTabsFade, 800);
+    return () => { el.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); clearInterval(id); };
+  }, [updateTabsFade]);
+
   // Hafta ilerledikçe menajer XP'si (maç içi XP zaten ekleniyor)
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2800);
+    setTimeout(() => setToast(null), 3200);
   }, []);
 
   const handleStart = useCallback((teamName: string, teamLogo: string, difficulty: Difficulty) => {
@@ -352,7 +411,15 @@ function App() {
     setIsCupMatch(false);
     setShowPreMatch(false);
 
-    // Maç sonu hikâye mini oyunu / olay (sezonun son maçında gösterilmez)
+    // Basın toplantısı — her lig maçı sonrası (kupa dahil) drama modunda
+    const wasWinPress = userWon && !isDraw;
+    if (opponent && !isCupMatch) {
+      setTimeout(() => generatePressConference(opponent.name, wasWinPress, isDraw), 500);
+    } else if (opponent && isCupMatch) {
+      setTimeout(() => generatePressConference(opponent.name, wasWinPress, isDraw), 600);
+    }
+
+    // Maç sonu hikâye mini oyunu / olay (sezonun son maçında gösterilmez) — basın sonrası gecikmeli
     const wasWin = userWon && !isDraw;
     if (opponent && (isCupMatch || gameState.week < 18)) {
       const story = pickStoryMinigame(gameState, wasWin, opponent.name);
@@ -369,7 +436,7 @@ function App() {
     setTimeout(() => saveGame(0), 1200);
   }, [
     gameState, isCupMatch, updatePlayer, processMatchResult, updateGameState,
-    currentOpponent, currentFixture, saveGame
+    currentOpponent, currentFixture, saveGame, generatePressConference
   ]);
 
   const handleStoryMinigameComplete = useCallback((result: MinigameResult) => {
@@ -634,6 +701,21 @@ function App() {
       : 'İlk 3\'e gir';
 
     const careerOver = boardConfidence <= 0;
+    // Müze kaydı — bu sezonun özeti rafa eklenir
+    const seasonTrophies: string[] = [];
+    if (champion) seasonTrophies.push('🏆');
+    if (newClubStats.cupWins > gameState.clubStats.cupWins) seasonTrophies.push('🏅');
+    // eğer hiç kupa kazanılmadıysa ama position iyi ise boş bırak (müze yine kayıt tutar)
+    const museumEntry: import('./types/game').MuseumEntry = {
+      season: gameState.season,
+      position: userPosition,
+      leagueLevel: gameState.leagueLevel,
+      trophies: seasonTrophies.length ? seasonTrophies : (champion || seasonTrophies.length ? seasonTrophies : []),
+      topScorer: topScorer ? { name: topScorer.name, goals: topScorer.goals } : (undefined as any),
+      budget: gameState.budget + budgetBonus + seasonPrize,
+    };
+    const newMuseum = [...(gameState.museum || []), museumEntry];
+
     const summary: SeasonSummary = {
       season: gameState.season,
       position: userPosition,
@@ -657,6 +739,7 @@ function App() {
     updateGameState({
       missions: nextMissions,
       trophies: newTrophies,
+      museum: newMuseum as any,
       leagueLevel: newLeagueLevel,
       clubStats: newClubStats,
       achievements: newAchievements,
@@ -834,6 +917,7 @@ function App() {
     { id: 'merch', label: 'Formalar', icon: '👕' },
     { id: 'invest', label: 'Yatırım', icon: '📈' },
     { id: 'history', label: 'Geçmiş', icon: '📊' },
+    { id: 'tech', label: 'Teknoloji', icon: '🛒' },
   ];
 
   return (
@@ -853,8 +937,9 @@ function App() {
       )}
 
       {toast && (
-        <div className="fixed top-4 right-4 z-[70] bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-lg font-medium animate-slide-in">
-          {toast}
+        <div className="fixed top-4 right-4 z-[70] bg-slate-900/95 backdrop-blur-xl border border-emerald-500/30 text-white px-5 py-3 rounded-xl shadow-xl shadow-black/30 font-medium animate-slide-in flex items-center gap-3 max-w-sm">
+          <span className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-sm flex-shrink-0">✓</span>
+          <span className="text-sm">{toast}</span>
         </div>
       )}
 
@@ -914,6 +999,10 @@ function App() {
 
       {storyMinigame && (
         <InGameMinigame context={storyMinigame} gameState={gameState} onComplete={handleStoryMinigameComplete} />
+      )}
+
+      {gameState.pendingPress && (
+        <PressConference press={gameState.pendingPress} onAnswer={answerPressQuestion} onDismiss={dismissPress} />
       )}
 
       {/* Sezon sonu gazetesi */}
@@ -987,22 +1076,23 @@ function App() {
         />
       )}
 
-      {/* Mobil menü */}
+      {/* Mobil menü - premium glass */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 bg-slate-800 p-3 rounded-xl border border-slate-700"
+        className="lg:hidden fixed top-4 left-4 z-50 bg-slate-800/90 backdrop-blur-xl p-3 rounded-xl border border-slate-700 shadow-xl hover:bg-slate-700/90 active:scale-95 transition-all"
+        aria-label="Menüyü aç/kapat"
       >
-        <span className="text-2xl">{sidebarOpen ? '✕' : '☰'}</span>
+        <span className="text-xl w-6 h-6 flex items-center justify-center">{sidebarOpen ? '✕' : '☰'}</span>
       </button>
 
-      {/* Başarımlar */}
+      {/* Başarımlar - premium */}
       <button
         onClick={() => setShowAchievements(true)}
-        className="fixed top-4 right-4 z-50 bg-amber-500/90 hover:bg-amber-400 text-black font-bold px-3 py-2 rounded-xl shadow-lg text-sm flex items-center gap-1"
+        className="fixed top-4 right-4 z-50 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black px-3.5 py-2 rounded-xl shadow-lg shadow-amber-500/20 text-sm flex items-center gap-1.5 active:scale-95 transition-all border border-amber-400/20"
         title="Başarımlar"
       >
-        🏅
-        <span className="hidden sm:inline">
+        <span className="text-base">🏅</span>
+        <span className="hidden sm:inline tracking-tight">
           {(gameState.achievements || []).filter(a => a.unlocked).length}/{(gameState.achievements || []).length}
         </span>
       </button>
@@ -1015,7 +1105,7 @@ function App() {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           flex-shrink-0
         `}>
-          <div className="w-72 xl:w-80 h-full p-3 lg:p-4 bg-slate-900/95 lg:bg-transparent overflow-y-auto">
+          <div className="w-72 xl:w-80 h-full p-3 lg:p-4 bg-slate-900/95 lg:bg-transparent overflow-y-auto custom-scroll">
             <Sidebar
               gameState={gameState}
               onPlayMatch={handlePlayMatch}
@@ -1035,33 +1125,57 @@ function App() {
         </div>
 
         <div className="flex-1 flex flex-col p-2 lg:p-4 pl-0 min-w-0 overflow-hidden">
-          <div className="flex gap-1.5 mb-3 lg:mb-4 overflow-x-auto pb-1 flex-shrink-0 scrollbar-hide bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 ${
-                  activeTab === tab.id
-                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-                }`}
-              >
-                <span className="text-base">{tab.icon}</span>
-                <span className="hidden sm:inline tracking-wide">{tab.label}</span>
-                {!!tab.badge && tab.badge > 0 && (
-                  <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600':'bg-red-500 text-white'}`}>
-                    {tab.badge > 9 ? '9+' : tab.badge}
-                  </span>
-                )}
-              </button>
-            ))}
+          {/* Üst sekmeler - kaydırma barı görünür + aktif sekmeye otomatik kaydırma + fade */}
+          <div className="relative mb-3 lg:mb-4 flex-shrink-0">
+            <div
+              ref={tabsRef}
+              onScroll={updateTabsFade}
+              className="flex gap-1.5 overflow-x-auto pb-2 custom-scroll bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20 scroll-smooth snap-x snap-mandatory scroll-px-2"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(16,185,129,0.9) rgba(15,23,42,0.6)' }}
+            >
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  data-tab={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  onMouseMove={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    (e.currentTarget as HTMLElement).style.setProperty('--x', `${e.clientX - r.left}px`);
+                    (e.currentTarget as HTMLElement).style.setProperty('--y', `${e.clientY - r.top}px`);
+                  }}
+                  className={`tab-btn snap-start relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 btn-press ${
+                    activeTab === tab.id
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  <span className="text-base">{tab.icon}</span>
+                  <span className="hidden sm:inline tracking-wide">{tab.label}</span>
+                  {!!tab.badge && tab.badge > 0 && (
+                    <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600 animate-badge-pop':'bg-red-500 text-white'}`}>
+                      {tab.badge > 9 ? '9+' : tab.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* sol/sağ fade - kaydırılabilir olduğunu gösterir */}
+            <div className={`pointer-events-none absolute inset-y-1.5 left-1.5 w-8 rounded-l-2xl transition-opacity ${tabsScrollFade.left ? 'opacity-100' : 'opacity-0'} tabs-fade-left`} />
+            <div className={`pointer-events-none absolute inset-y-1.5 right-1.5 w-8 rounded-r-2xl transition-opacity ${tabsScrollFade.right ? 'opacity-100' : 'opacity-0'} tabs-fade-right`} />
+            {/* küçük ipucu */}
+            {tabsScrollFade.right && (
+              <div className="pointer-events-none hidden sm:flex absolute -bottom-1 right-3 text-[10px] text-slate-500 items-center gap-1">
+                <span>kaydır →</span><span className="animate-pulse">›</span>
+              </div>
+            )}
           </div>
 
-          <div className="flex-1 bg-slate-800/45 backdrop-blur-xl rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden relative">
+          <div className="flex-1 bg-slate-800/45 backdrop-blur-xl rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
             <div className="pointer-events-none absolute top-3 right-4 hidden lg:flex items-center gap-1.5 opacity-[0.35] hover:opacity-60 transition-opacity">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span className="kaan-watermark text-[10px] tracking-[0.18em]">MADE BY KAAN</span>
             </div>
+            <div key={activeTab} className="tab-content">
             {activeTab === 'social' && (
               <SocialTab gameState={gameState} onCreatePost={addSocialPost} onLikePost={likeSocialPost} onAddComment={commentOnPost} />
             )}
@@ -1078,6 +1192,10 @@ function App() {
                 onExerciseLoanOption={exerciseLoanOption}
                 onReturnLoanEarly={returnLoanEarly}
                 onRecallLoan={recallLoan}
+                onSetPhilosophy={setClubPhilosophy}
+                onCompleteUltras={completeUltrasRequest}
+                onDismissUltras={dismissUltrasRequest}
+                onGenerateUltras={generateUltrasRequests}
               />
             )}
             {activeTab === 'career' && (
@@ -1100,6 +1218,8 @@ function App() {
                 onBuyCapacity={buyCapacityPackage}
                 onSetTicketMultiplier={setTicketMultiplier}
                 onUpgradeStadiumLevel={upgradeStadiumLevel}
+                onUpgradeTribune={upgradeTribune}
+                onHostEvent={hostStadiumEvent}
               />
             )}
             {activeTab === 'squad' && (
@@ -1126,7 +1246,7 @@ function App() {
               />
             )}
             {activeTab === 'tactics' && (
-              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} />
+              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} />
             )}
             {activeTab === 'training' && (
               <TrainingTab gameState={gameState} onTrainPlayer={trainPlayer} />
@@ -1140,14 +1260,20 @@ function App() {
                 onHireStaff={hireStaff}
                 onDiscoverYouth={discoverYouthPlayer}
                 onPromoteYouth={promoteYouthPlayer}
+                onSendScout={sendScout}
+                onClaimScoutReport={claimScoutReport}
+                onDismissScoutReport={dismissScoutReport}
+                onCancelScoutMission={cancelScoutMission}
               />
             )}
             {activeTab === 'shop' && <ShopTab gameState={gameState} onPurchase={handleShopPurchase} />}
             {activeTab === 'merch' && <MerchTab gameState={gameState} onOpenShop={openShopBranch} />}
             {activeTab === 'invest' && (
-              <InvestTab gameState={gameState} onBuyInvestment={buyInvestment} onSellInvestment={sellInvestment} />
+              <InvestTab gameState={gameState} onBuyInvestment={buyInvestment} onSellInvestment={sellInvestment} onTakeCredit={takeCredit} onRepayCredit={repayCreditEarly} />
             )}
             {activeTab === 'history' && <HistoryTab gameState={gameState} />}
+            {activeTab === 'tech' && <TechTab gameState={gameState} onBuyDevice={buyDevice} onSetActiveDevice={setActiveDevice} onSellDevice={sellDevice} onBuyPCComponent={buyPCComponent} onSetPCPart={setPCPart} onSellPCComponent={sellPCComponent} onAssemblePC={assemblePC} />}
+            </div>
           </div>
         </div>
       </div>
@@ -1162,6 +1288,7 @@ function App() {
           <span className="text-amber-300/70">☀️ Bütün Yaz Boyunca Geliştirildi</span>
         </div>
       </div>
+      <AiAssistant />
       <NewsTicker news={gameState.news} />
     </div>
   );

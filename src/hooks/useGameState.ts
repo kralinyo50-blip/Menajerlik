@@ -5,7 +5,7 @@ import {
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
-  INITIAL_INVESTMENTS, UNHAPPY_MORALE
+  INITIAL_INVESTMENTS, CREDIT_PACKAGES, UNHAPPY_MORALE
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
 import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
@@ -122,6 +122,72 @@ const bumpScorers = (scorers: LeagueScorer[], club: string, logo: string, goals:
   }
 };
 
+/* ══════════ GERÇEKÇİ YATIRIM MOTORU ══════════ */
+function gaussian(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Eski kayıtları yeni şemaya göç ettir
+function ensureInvestments(investments: any[]): import('../types/game').Investment[] {
+  if (!investments || investments.length === 0) return [...INITIAL_INVESTMENTS].map(i => ({ ...i, history: [...(i.history as number[])] })) as any;
+  const byId = new Map(INITIAL_INVESTMENTS.map(i => [i.id, i] as const));
+  return investments.map((inv: any) => {
+    const tpl = byId.get(inv.id);
+    if (!tpl) return inv;
+    const base = tpl as any;
+    return {
+      id: inv.id,
+      name: inv.name ?? base.name,
+      price: typeof inv.price === 'number' ? inv.price : base.price,
+      basePrice: inv.basePrice ?? base.basePrice,
+      type: inv.type ?? base.type,
+      owned: inv.owned ?? 0,
+      lastChange: inv.lastChange ?? 0,
+      icon: inv.icon ?? base.icon,
+      history: Array.isArray(inv.history) && inv.history.length >= 8 ? inv.history.slice(-20) : [...base.history],
+      volatility: inv.volatility ?? base.volatility,
+      drift: inv.drift ?? base.drift,
+      dividendYield: inv.dividendYield ?? base.dividendYield,
+      risk: inv.risk ?? base.risk,
+      sector: inv.sector ?? base.sector,
+      description: inv.description ?? base.description,
+      avgCost: inv.avgCost ?? inv.price ?? base.price,
+      dividendsEarned: inv.dividendsEarned ?? 0,
+      marketBeta: inv.marketBeta ?? base.marketBeta,
+    };
+  });
+}
+
+function investmentFeeRate(type: string): number {
+  switch (type) {
+    case 'stock': return 0.008; // %0.8
+    case 'gold': return 0.006;
+    case 'realestate': return 0.012; // tapu + komisyon yüksek
+    case 'crypto': return 0.010;
+    case 'bond': return 0.004;
+    default: return 0.008;
+  }
+}
+
+function pickMarketEvent(): { label: string; mods: Partial<Record<string, number>> } | null {
+  if (Math.random() > 0.28) return null;
+  const events = [
+    { label: 'TCMB faiz artırdı — tahvil fırladı, borsa baskılandı', mods: { bond: 0.016, stock: -0.018, gold: 0.008 } },
+    { label: 'Enflasyon beklentiyi aştı — altın ve emlak coştu', mods: { gold: 0.022, realestate: 0.014, bond: -0.010 } },
+    { label: 'Kripto ETF onayı — kripto rallisi', mods: { crypto: 0.075, stock: 0.006 } },
+    { label: 'Kripto düzenleme endişesi — sert satış', mods: { crypto: -0.085 } },
+    { label: 'BIST bilançolar güçlü — borsa pozitif', mods: { stock: 0.021, realestate: 0.006 } },
+    { label: 'Küresel risk iştahı düştü — güvenli liman talebi', mods: { gold: 0.018, stock: -0.015, crypto: -0.025 } },
+    { label: 'Konut kampanyası açıklandı — GYO prim yaptı', mods: { realestate: 0.019 } },
+    { label: 'Hazine ihalesine güçlü talep — tahvil ralli', mods: { bond: 0.012 } },
+  ];
+  return events[Math.floor(Math.random() * events.length)];
+}
+
+
 export interface MatchOutcomeOptions {
   isCup?: boolean;
   isHome?: boolean;
@@ -203,6 +269,9 @@ export const useGameState = () => {
       week: 1,
       season: 1,
       budget: diffCfg.startingBudget,
+      lifetimeSocialEarnings: 0,
+      weeklySocialEarnings: 0,
+      lastSocialPayoutWeek: 0,
       stadiumLvl: 1,
       trainingLvl: 1,
       healthLvl: 1,
@@ -215,6 +284,7 @@ export const useGameState = () => {
       academyPlayers: [],
       matchHistory: [],
       clubStats: {
+        socialEarnings: 0,
         totalGoals: 0,
         totalWins: 0,
         totalDraws: 0,
@@ -232,9 +302,16 @@ export const useGameState = () => {
         formation: '4-3-3',
         style: 'balanced',
         pressing: 'medium',
-        tempo: 'normal'
+        tempo: 'normal',
+        defensiveLine: 50,
+        width: 50,
+        creativity: 50,
+        pressingIntensity: 50,
+        tempoValue: 50,
       },
-      investments: [...INITIAL_INVESTMENTS],
+      investments: INITIAL_INVESTMENTS.map(i => ({ ...i, history: [...(i.history as number[])] })),
+      activeCredits: [],
+      creditScore: 620,
       cupMatches,
       cupEliminated: false,
       seasonObjective: 'İlk 5\'e gir',
@@ -281,6 +358,17 @@ export const useGameState = () => {
       loanList: [],
       outgoingLoans: [],
       stadium: defaultStadium(),
+      clubPhilosophy: null,
+      ultrasHappiness: 65,
+      ultrasRequests: [],
+      museum: [],
+      pendingPress: null,
+      scoutMissions: [],
+      scoutReports: [],
+      devices: [{ id: 'phone_mini', name: 'Akıllı Mini 12', brand: 'Meyve', category: 'phone', price: 18000, quality: 42, camera: 45, performance: 40, icon: '📱', desc: 'Giriş seviye' }],
+      activeDeviceId: 'phone_mini',
+      pcBuild: {},
+      pcInventory: [],
       life: defaultLife(),
       socialFeed: []
     };
@@ -313,6 +401,40 @@ export const useGameState = () => {
   }, []);
 
   const setGameStateExternal = useCallback((state: GameState) => {
+    if ((state as any).investments) {
+      (state as any).investments = ensureInvestments((state as any).investments) as any;
+    }
+    if (!(state as any).activeCredits) (state as any).activeCredits = [];
+    if ((state as any).creditScore == null) (state as any).creditScore = 620;
+    if ((state as any).clubPhilosophy === undefined) (state as any).clubPhilosophy = null;
+    if ((state as any).ultrasHappiness == null) (state as any).ultrasHappiness = 65;
+    if (!(state as any).ultrasRequests) (state as any).ultrasRequests = [];
+    if (!(state as any).museum) (state as any).museum = [];
+    if (!(state as any).scoutMissions) (state as any).scoutMissions = [];
+    if (!(state as any).scoutReports) (state as any).scoutReports = [];
+    if ((state as any).pendingPress === undefined) (state as any).pendingPress = null;
+    if (!(state as any).devices) (state as any).devices = [{ id: 'phone_mini', name: 'Akıllı Mini 12', brand: 'Meyve', category: 'phone', price: 18000, quality: 42, camera: 45, performance: 40, icon: '📱', desc: 'Giriş seviye' }];
+    if ((state as any).activeDeviceId === undefined) (state as any).activeDeviceId = (state as any).devices?.[0]?.id || 'phone_mini';
+    if (!(state as any).pcBuild) (state as any).pcBuild = {};
+    if (!(state as any).pcInventory) (state as any).pcInventory = [];
+    if ((state as any).socialFeed) (state as any).socialFeed = (state as any).socialFeed.map((post: any)=> ({ platform: 'instagram', views: post.views ?? Math.floor(post.likes*12), ...post }));
+    if ((state as any).lifetimeSocialEarnings === undefined) (state as any).lifetimeSocialEarnings = 0;
+    if ((state as any).weeklySocialEarnings === undefined) (state as any).weeklySocialEarnings = 0;
+    if ((state as any).lastSocialPayoutWeek === undefined) (state as any).lastSocialPayoutWeek = 0;
+    if ((state as any).clubStats && (state as any).clubStats.socialEarnings === undefined) (state as any).clubStats.socialEarnings = 0;
+    if (!(state as any).stadium?.tribunes) {
+      const baseStadium = (state as any).stadium || {};
+      baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
+      (state as any).stadium = baseStadium;
+    }
+    if ((state as any).tactics) {
+      const tac: any = (state as any).tactics;
+      if (tac.defensiveLine == null) tac.defensiveLine = 50;
+      if (tac.width == null) tac.width = 50;
+      if (tac.creativity == null) tac.creativity = 50;
+      if (tac.pressingIntensity == null) tac.pressingIntensity = 50;
+      if (tac.tempoValue == null) tac.tempoValue = 50;
+    }
     setGameState(state);
   }, []);
 
@@ -610,6 +732,37 @@ export const useGameState = () => {
     const loaded = readSlot(slot);
     if (!loaded) return false;
     if (loaded.careerOver) loaded.careerOver = false; // kariyer ekranından devam edilmez
+    // eski yatırımları yeni şemaya taşı
+    if (loaded.investments) {
+      loaded.investments = ensureInvestments(loaded.investments as any) as any;
+    }
+    if (!(loaded as any).activeCredits) (loaded as any).activeCredits = [];
+    if ((loaded as any).creditScore == null) (loaded as any).creditScore = 620;
+    if ((loaded as any).clubPhilosophy === undefined) (loaded as any).clubPhilosophy = null;
+    if ((loaded as any).ultrasHappiness == null) (loaded as any).ultrasHappiness = 65;
+    if (!(loaded as any).ultrasRequests) (loaded as any).ultrasRequests = [];
+    if (!(loaded as any).museum) (loaded as any).museum = [];
+    if (!(loaded as any).scoutMissions) (loaded as any).scoutMissions = [];
+    if (!(loaded as any).scoutReports) (loaded as any).scoutReports = [];
+    if ((loaded as any).pendingPress === undefined) (loaded as any).pendingPress = null;
+    if (!(loaded as any).stadium?.tribunes) {
+      const baseStadium = (loaded as any).stadium || {};
+      baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
+      (loaded as any).stadium = baseStadium;
+    }
+    if ((loaded as any).tactics) {
+      const tac: any = (loaded as any).tactics;
+      if (tac.defensiveLine == null) tac.defensiveLine = 50;
+      if (tac.width == null) tac.width = 50;
+      if (tac.creativity == null) tac.creativity = 50;
+      if (tac.pressingIntensity == null) tac.pressingIntensity = 50;
+      if (tac.tempoValue == null) tac.tempoValue = 50;
+    }
+    if ((loaded as any).socialFeed) (loaded as any).socialFeed = (loaded as any).socialFeed.map((post: any)=> ({ platform: post.platform || 'instagram', views: post.views ?? Math.floor((post.likes||200)*12), ...post }));
+    if ((loaded as any).lifetimeSocialEarnings === undefined) (loaded as any).lifetimeSocialEarnings = 0;
+    if ((loaded as any).weeklySocialEarnings === undefined) (loaded as any).weeklySocialEarnings = 0;
+    if ((loaded as any).lastSocialPayoutWeek === undefined) (loaded as any).lastSocialPayoutWeek = 0;
+    if ((loaded as any).clubStats && (loaded as any).clubStats.socialEarnings === undefined) (loaded as any).clubStats.socialEarnings = 0;
     setGameState(loaded);
     return true;
   }, []);
@@ -910,7 +1063,8 @@ export const useGameState = () => {
         achievements: (prev.achievements || []).map(a => ({ ...a })),
         matchHistory: [...prev.matchHistory],
         news: [...prev.news],
-        investments: prev.investments.map(i => ({ ...i })),
+        investments: prev.investments.map(i => ({ ...i, history: [...(i as any).history || []] })),
+        activeCredits: [...((prev as any).activeCredits || [])].map((c: any) => ({ ...c })),
         team11: prev.team11.map(p => ({ ...p })),
         bench: prev.bench.map(p => ({ ...p })),
         leagueScorers: prev.leagueScorers.map(s => ({ ...s })),
@@ -1216,14 +1370,137 @@ export const useGameState = () => {
         }
       }
 
-      /* — Yatırımlar — */
-      newState.investments = newState.investments.map(inv => {
-        const change = Math.floor(Math.random() * 21) - 10;
-        if (inv.owned > 0) {
-          newState.budget += Math.floor((inv.price * inv.owned) * (change / 100));
+      /* — Sosyal pasif gelir (haftalık) — takipçi + etkileşimden otomatik */
+      {
+        const baseFollowers = 18400 + ((newState.life?.stats.fame||40)*620) + ((newState.fanHappiness||60)*240) + (newState.week*420) + ((newState.managerRep||50)*140);
+        const totalFollowers = baseFollowers;
+        const userPosts = (newState.socialFeed||[]).filter((p:any)=> p.isUser).length;
+        const engagement = 0.045 + Math.min(0.065, userPosts*0.005 + ((newState.life?.stats.fame||40)/900)*0.02);
+        const qualityMult = 0.95 + (((newState as any).devices?.find((d:any)=> d.id===(newState as any).activeDeviceId)?.quality||42)/150);
+        const weeklyPassive = Math.floor(totalFollowers * engagement * 1.85 * qualityMult);
+        if (weeklyPassive>900) {
+          newState.budget += weeklyPassive;
+          (newState as any).lifetimeSocialEarnings = (((newState as any).lifetimeSocialEarnings)||0) + weeklyPassive;
+          (newState as any).weeklySocialEarnings = weeklyPassive;
+          (newState.clubStats as any).socialEarnings = (((newState.clubStats as any).socialEarnings)||0) + weeklyPassive;
+          newState.news = [`💰 Sosyal pasif gelir: +$${weeklyPassive.toLocaleString()} (${totalFollowers.toLocaleString()} takipçi • %${Math.round(engagement*100)} etkileşim • ${(() => { const q=((newState as any).devices?.find((d:any)=> d.id===(newState as any).activeDeviceId)?.quality||42); return q>=80?'4K':q>=65?'1080p':'720p'; })()})`, ...newState.news.slice(0,4)];
+        } else if (weeklyPassive>0) {
+          (newState as any).weeklySocialEarnings = weeklyPassive;
         }
-        return { ...inv, lastChange: change };
-      });
+        (newState as any).lastSocialPayoutWeek = newState.week;
+      }
+
+      /* — Yatırımlar — gerçekçi simülasyon: drift + volatilite + piyasa betası + olay şoku + temettü */
+      {
+        // eski kayıtları göç ettir
+        newState.investments = ensureInvestments(newState.investments as any) as any;
+        const marketSentiment = gaussian() * 0.012; // haftalık genel piyasa rüzgârı ±%1.2
+        const event = pickMarketEvent();
+        let totalDividend = 0;
+        newState.investments = newState.investments.map((raw: any) => {
+          const inv: any = { ...raw, history: [...(raw.history || [])] };
+          const vol = inv.volatility ?? 0.03;
+          const drift = inv.drift ?? 0.002;
+          const beta = inv.marketBeta ?? 0.6;
+          const eventMod = event?.mods[inv.type] ?? event?.mods[inv.type as string] ?? 0;
+          // fat-tail: crypto %8 ihtimalle ekstra şok
+          let shock = gaussian() * vol;
+          if (inv.type === 'crypto' && Math.random() < 0.08) shock += (Math.random() < 0.5 ? 1 : -1) * 0.09;
+          if (inv.type === 'gold' && marketSentiment < -0.008) shock += Math.abs(marketSentiment) * 0.6; // güvenli liman
+          const weeklyReturn = drift + shock + beta * marketSentiment + eventMod;
+          // mean-reversion küçük düzeltme: fiyattan çok uzaklaştıysa geri çek
+          const distance = (inv.price - inv.basePrice) / inv.basePrice;
+          const reversion = -distance * 0.015; // %1.5 geri çekme
+          const finalReturn = weeklyReturn + reversion;
+          const newPrice = Math.max(Math.round(inv.basePrice * 0.32), Math.round(inv.price * (1 + finalReturn)));
+          const clamped = Math.max(5000, newPrice);
+          const changePct = ((clamped - inv.price) / inv.price) * 100;
+          inv.history.push(clamped);
+          if (inv.history.length > 20) inv.history.shift();
+          inv.price = clamped;
+          inv.lastChange = Math.round(changePct * 10) / 10;
+          // temettü / kira / kupon — haftalık nakit akışı (sadece elde varsa)
+          if ((inv.owned || 0) > 0 && inv.dividendYield > 0) {
+            const weeklyPayout = Math.round(inv.price * inv.owned * (inv.dividendYield / 52));
+            if (weeklyPayout > 0) {
+              totalDividend += weeklyPayout;
+              inv.dividendsEarned = (inv.dividendsEarned || 0) + weeklyPayout;
+            }
+          }
+          return inv;
+        });
+        if (totalDividend > 0) {
+          newState.budget += totalDividend;
+          newState.news = [`💵 Yatırım temettü/kupon/kira geliri: +$${totalDividend.toLocaleString()}`, ...newState.news.slice(0, 4)];
+        }
+        if (event) {
+          newState.news = [`📰 Piyasa: ${event.label}`, ...newState.news.slice(0, 4)];
+        }
+      }
+
+      /* — Kredi taksitleri (her hafta) — */
+      {
+        const credits: any[] = (newState as any).activeCredits || [];
+        if (credits.length > 0) {
+          let totalDue = 0;
+          let missedShark = 0;
+          let missedBank = 0;
+          const nextCredits: any[] = [];
+          credits.forEach((loan: any) => {
+            const due = loan.weeklyPayment;
+            const canPay = newState.budget >= due;
+            // her hafta tahsilat (negatife düşebilir — gerçekte kredi kartı gibi)
+            newState.budget -= due;
+            loan.paidAmount = (loan.paidAmount || 0) + due;
+            loan.weeksLeft = (loan.weeksLeft || loan.weeksTotal) - 1;
+            totalDue += due;
+            if (!canPay) {
+              if (loan.type === 'shark') missedShark++;
+              else missedBank++;
+            }
+            if (loan.weeksLeft > 0) {
+              nextCredits.push({ ...loan });
+            } else {
+              // kredi bitti — skor toparlar
+              (newState as any).creditScore = Math.min(850, Math.max(300, ((newState as any).creditScore ?? 620) + (loan.type === 'shark' ? 28 : 18)));
+              newState.news = [`✅ ${loan.name} tamamen ödendi! Kredi skoru yükseldi.`, ...newState.news.slice(0,4)];
+            }
+          });
+          (newState as any).activeCredits = nextCredits;
+          if (totalDue > 0) {
+            newState.news = [`🏦 Kredi taksiti: -$${totalDue.toLocaleString()} (${credits.length} kredi)`, ...newState.news.slice(0,4)];
+          }
+          // gecikme cezaları
+          if (missedBank > 0) {
+            newState.boardConfidence = Math.max(0, newState.boardConfidence - 6 * missedBank);
+            (newState as any).creditScore = Math.max(300, ((newState as any).creditScore ?? 620) - 18 * missedBank);
+            newState.news = [`⚠️ Banka taksiti ödenemedi! Yönetim güveni -${6*missedBank}, skor düştü. Bütçe: $${newState.budget.toLocaleString()}`, ...newState.news.slice(0,4)];
+            newState.boardMessages = [`👔 Yönetim: "Kredi ödemesini aksattın, mali disiplin şart!"`, ...newState.boardMessages.slice(0,5)];
+          }
+          if (missedShark > 0) {
+            // tefeci çok sert
+            newState.boardConfidence = Math.max(0, newState.boardConfidence - 10 * missedShark);
+            newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 5 * missedShark);
+            newState.team11 = newState.team11.map(pl => ({ ...pl, morale: Math.max(0, pl.morale - 4 * missedShark) }));
+            newState.bench = newState.bench.map(pl => ({ ...pl, morale: Math.max(0, pl.morale - 4 * missedShark) }));
+            (newState as any).creditScore = Math.max(300, ((newState as any).creditScore ?? 620) - 28 * missedShark);
+            // puan silme — tefeci mafyası federasyona şikayet etmiş gibi
+            const userTeam = newState.league.find(tm => tm.isUser);
+            if (userTeam && userTeam.p > 0) {
+              const pts = Math.min(userTeam.p, missedShark); // her gecikme 1 puan
+              userTeam.p = Math.max(0, userTeam.p - pts);
+              newState.news = [`💀 Tefeci kapıya dayandı! -$${totalDue.toLocaleString()} ödenemedi → -${pts} puan silindi! Moraller çöktü.`, ...newState.news.slice(0,4)];
+              newState.boardMessages = [`🚨 Tefeci tehdidi: "Parayı getirmezseniz kulübün lisansı yanar!" -${pts} puan silindi!`, ...newState.boardMessages.slice(0,5)];
+            } else {
+              newState.news = [`💀 Tefeci tahsilatı gecikti! Takım morali -${4*missedShark}, güven -10.`, ...newState.news.slice(0,4)];
+            }
+          }
+          // iflas kontrol: bütçe çok ekside ve 2+ kredi
+          if (newState.budget < -500000 && nextCredits.length >= 2) {
+            newState.boardMessages = [`📉 Mali kriz: Bütçe $${newState.budget.toLocaleString()} — acil satış yap veya iflas kapıda!`, ...newState.boardMessages.slice(0,5)];
+          }
+        }
+      }
 
       /* — İyileşme — */
       const medicalLvl = prev.skills?.medical ?? 0;
@@ -1462,6 +1739,148 @@ export const useGameState = () => {
         newState.boardMessages = [...loanReminders, ...newState.boardMessages.slice(0, 5)];
       }
 
+      /* — Ultras istekleri: deadline + galibiyet/maglubiyet etkisi + yeni istek şansı — */
+      {
+        const reqs: any[] = (newState as any).ultrasRequests || [];
+        const remaining: any[] = [];
+        reqs.forEach((r: any) => {
+          const expired = (newState.season > r.deadlineSeason) || (newState.season === r.deadlineSeason && newState.week > r.deadlineWeek);
+          if (expired) {
+            (newState as any).ultrasHappiness = Math.max(0, ((newState as any).ultrasHappiness||65) - 8);
+            newState.fanHappiness = Math.max(0, (newState.fanHappiness||60) - 5);
+            newState.news = [`📢 Ultras öfkeli: "${r.text}" yerine getirilmedi → taraftar -5, ultras -8`, ...newState.news.slice(0,4)];
+          } else {
+            remaining.push(r);
+          }
+        });
+        (newState as any).ultrasRequests = remaining;
+        // galibiyet/maglubiyet ultras'a yansır + felsefe bonusu
+        const phil: any = (newState as any).clubPhilosophy;
+        if (userWon) {
+          const bonus = phil === 'trophy' ? 5 : phil === 'money' ? 4 : 3;
+          (newState as any).ultrasHappiness = Math.min(100, ((newState as any).ultrasHappiness||65) + bonus);
+        } else if (userLost) {
+          (newState as any).ultrasHappiness = Math.max(0, ((newState as any).ultrasHappiness||65) - 3);
+        } else {
+          (newState as any).ultrasHappiness = Math.max(0, Math.min(100, ((newState as any).ultrasHappiness||65) + 0));
+        }
+        // haftada %20 ihtimalle yeni istek (kupa haftası değilse)
+        if (remaining.length < 2 && !isCup && Math.random() < 0.20) {
+          const pool = [
+            { kind: 'youth', text: 'Bu ay bir altyapı oyuncusunu A takıma al!', reward: 'Sadakat +12', penalty: '-8' },
+            { kind: 'star', text: 'Yıldız transferi istiyoruz — OVR 78+ birini al', reward: 'Doluluk +8%', penalty: '-10 taraftar' },
+            { kind: 'derby', text: 'Sıradaki iç saha maçını kazan!', reward: 'Moral +8', penalty: '-5 güven' },
+            { kind: 'cleanSheet', text: '2 maçta gol yemeyin', reward: 'Savunma +2', penalty: '-10' },
+          ];
+          const pick = pool[Math.floor(Math.random()*pool.length)];
+          const req: any = {
+            id: `ur-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+            kind: pick.kind,
+            text: pick.text,
+            deadlineWeek: (newState.week||1) + 3 + Math.floor(Math.random()*2),
+            deadlineSeason: newState.season||1,
+            reward: pick.reward,
+            penalty: pick.penalty,
+          };
+          (newState as any).ultrasRequests = [...remaining, req];
+          newState.news = [`📢 Ultras: "${pick.text}" — ${req.deadlineWeek - (newState.week||1)} hafta süren var!`, ...newState.news.slice(0,4)];
+        }
+        // Mild surprise — %5 ihtimalle hafif drama (ortalama görsel, hafif olay)
+        if (!isCup && Math.random() < 0.05) {
+          const roll = Math.random();
+          if (roll < 0.35) {
+            // Soyunma odası kavgası
+            const a = [...newState.team11, ...newState.bench][Math.floor(Math.random()*Math.min(11,newState.team11.length))];
+            const b = [...newState.team11, ...newState.bench].find(pl=> pl.id!==a.id) || a;
+            newState.teamChemistry = Math.max(0,(newState.teamChemistry||55)-2);
+            newState.team11 = newState.team11.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-4)} : pl);
+            newState.bench = newState.bench.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-4)} : pl);
+            newState.news = [`🎭 Hafif gerginlik: ${a.name} — ${b.name} tartışması, tatlıya bağlandı. Kimya -2, moral -4`, ...newState.news.slice(0,4)];
+          } else if (roll < 0.65) {
+            // Yıldız resti — wantsOut drama
+            const candidates = [...newState.team11, ...newState.bench].filter(pl=> pl.ovr>=76 && !pl.wantsOut);
+            if (candidates.length) {
+              const star = candidates[Math.floor(Math.random()*candidates.length)];
+              const bump = (pl:any)=> pl.id===star.id ? { ...pl, wantsOut: true, morale: Math.max(0, pl.morale-10)} : pl;
+              newState.team11 = newState.team11.map(bump);
+              newState.bench = newState.bench.map(bump);
+              (newState as any).ultrasHappiness = Math.max(0,((newState as any).ultrasHappiness||65)-3);
+              newState.news = [`📰 Hafif dedikodu: ${star.name} menajeriyle görüştü — "daha fazla süre istiyor" (moral -5)`, ...newState.news.slice(0,4)];
+              newState.boardMessages = [`📢 ${star.name} ayrılmak istiyor! Ofis → Sözleşmeler'den ikna et.`, ...newState.boardMessages.slice(0,4)];
+            }
+          } else {
+            // Sakatlık şoku — antrenmanda ekstra sakatlık
+            const vic = [...newState.team11].filter(pl=> !pl.injured)[Math.floor(Math.random()*newState.team11.length)];
+            if (vic) {
+              const weeks = 1 + Math.floor(Math.random()*2);
+              const inj = (pl:any)=> pl.id===vic.id ? { ...pl, injured: true, injuryWeeks: weeks, energy: Math.max(0, pl.energy-20)} : pl;
+              newState.team11 = newState.team11.map(inj);
+              newState.news = [`🎭 Drama: Antrenmanda şok sakatlık — ${vic.name} ${weeks} hafta yok!`, ...newState.news.slice(0,4)];
+            }
+          }
+        }
+        // felsefe haftalık pasif bonus
+        if (phil === 'youth' && Math.random() < 0.18) {
+          // genç bir oyuncu +1 gelişim şansı
+          const youthCandidates = [...newState.team11, ...newState.bench].filter(pl=> pl.age <= 22 && pl.ovr < pl.potential);
+          if (youthCandidates.length) {
+            const lucky = youthCandidates[Math.floor(Math.random()*youthCandidates.length)];
+            const bump = (pl:any)=> pl.id===lucky.id ? { ...pl, ovr: Math.min(pl.potential, pl.ovr+1)} : pl;
+            newState.team11 = newState.team11.map(bump);
+            newState.bench = newState.bench.map(bump);
+          }
+        }
+        if (phil === 'money' && !isCup) {
+          // hafif ekstra sponsor geliri simülasyonu: haftalık küçük bonus
+          if (Math.random() < 0.25) {
+            const bonus = 8000 + Math.floor(Math.random()*12000);
+            newState.budget += bonus;
+          }
+        }
+      }
+
+      /* — Scout görevleri haftalık ilerleme — */
+      {
+        const missions: any[] = (newState as any).scoutMissions || [];
+        const reports: any[] = (newState as any).scoutReports || [];
+        const nextMissions: any[] = [];
+        const regionMap: Record<string, any> = {
+          balkans: { ovr: [60,69], pot: [74,84], roles: ['OS','SB','STP'], trait: 'teknik' },
+          west_eu: { ovr: [64,74], pot: [78,88], roles: ['OS','STP','SB'], trait: 'taktik' },
+          south_america: { ovr: [65,74], pot: [82,92], roles: ['FW','OS','SB'], trait: 'flair' },
+          africa: { ovr: [62,71], pot: [77,89], roles: ['FW','SB','STP'], trait: 'hız' },
+          east_eu: { ovr: [61,70], pot: [76,86], roles: ['STP','SB','KL'], trait: 'fizik' },
+          asia: { ovr: [59,68], pot: [73,85], roles: ['OS','SB','FW'], trait: 'çalışkan' },
+        };
+        missions.forEach((m:any)=> {
+          const left = (m.weeksLeft||1)-1;
+          if (left <= 0) {
+            // rapor üret
+            const cfg = regionMap[m.regionId] || regionMap.balkans;
+            const count = 1 + (Math.random()<0.42?1:0) + (Math.random()<0.10?1:0); // 1-3
+            const players: any[] = [];
+            for (let i=0;i<count;i++) {
+              const role = cfg.roles[Math.floor(Math.random()*cfg.roles.length)];
+              const ovr = cfg.ovr[0] + Math.floor(Math.random()*(cfg.ovr[1]-cfg.ovr[0]+1));
+              const pot = Math.max(ovr+4, cfg.pot[0] + Math.floor(Math.random()*(cfg.pot[1]-cfg.pot[0]+1)));
+              const age = 16 + Math.floor(Math.random()*3);
+              const rc = (()=>{ try{ return randomCountry(); } catch { return {country:'Bilinmiyor', flag:'🌍'}; } })();
+              const id = Date.now()+Math.floor(Math.random()*100000)+i;
+              const name = `${FIRST_NAMES[Math.floor(Math.random()*FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random()*LAST_NAMES.length)]}`;
+              const val = Math.round(ovr* 11500 + (pot-ovr)*7500 + Math.random()*4000);
+              players.push({ id, name, ovr, role, age, potential: Math.min(99,pot), value: val, wage: Math.max(800, Math.round(ovr*280)), contract: 3, energy: 100, morale: 75+Math.floor(Math.random()*15), goals:0, assists:0, injured:false, injuryWeeks:0, yellowCards:0, redCard:false, suspension:0, matchesPlayed:0, form:5+Math.floor(Math.random()*3), country: rc.country, flag: rc.flag, potentialOriginal: pot });
+            }
+            const report: any = { id: `rep-${Date.now()}-${Math.random().toString(36).slice(2,4)}`, regionId: m.regionId, regionName: m.regionName, players, generatedWeek: newState.week, generatedSeason: newState.season };
+            reports.push(report);
+            newState.news = [`📬 İzci döndü (${m.regionName}): ${players.length} genç bulundu! Tesisler → Scout`, ...newState.news.slice(0,4)];
+          } else {
+            nextMissions.push({ ...m, weeksLeft: left });
+          }
+        });
+        (newState as any).scoutMissions = nextMissions;
+        (newState as any).scoutReports = reports;
+      }
+
       /* — Görevler, XP ve yetenek etkileri — */
       if (!isCup && (newState.clubStats.penaltyWins === undefined)) newState.clubStats.penaltyWins = 0;
       if (penaltyWinner === 'user') {
@@ -1638,32 +2057,536 @@ export const useGameState = () => {
     });
   }, []);
 
-  const buyInvestment = useCallback((investmentId: number) => {
+  const buyInvestment = useCallback((investmentId: number, quantity: number = 1) => {
     setGameState(prev => {
       if (!prev) return null;
       const inv = prev.investments.find(i => i.id === investmentId);
-      if (!inv || prev.budget < inv.price) return prev;
-
+      if (!inv) return prev;
+      const qty = Math.max(1, Math.floor(quantity));
+      const fee = investmentFeeRate(inv.type);
+      const unitCost = Math.round(inv.price * (1 + fee));
+      const totalCost = unitCost * qty;
+      if (prev.budget < totalCost) return prev;
+      const oldOwned = inv.owned || 0;
+      const oldAvg = (inv as any).avgCost ?? inv.price;
+      const newOwned = oldOwned + qty;
+      const newAvg = Math.round((oldOwned * oldAvg + totalCost) / newOwned);
       return {
         ...prev,
-        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned + 1 } : i)),
-        budget: prev.budget - inv.price
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: newOwned, avgCost: newAvg } : i)),
+        budget: prev.budget - totalCost,
+        news: [`📈 ${inv.name} — ${qty} lot alındı @ $${inv.price.toLocaleString()} (komisyon %${(fee*100).toFixed(1)})`, ...prev.news.slice(0, 4)]
       };
     });
   }, []);
 
-  const sellInvestment = useCallback((investmentId: number) => {
+  const sellInvestment = useCallback((investmentId: number, quantity: number = 1) => {
     setGameState(prev => {
       if (!prev) return null;
       const inv = prev.investments.find(i => i.id === investmentId);
-      if (!inv || inv.owned <= 0) return prev;
-
-      const sellPrice = Math.floor(inv.price * (1 + inv.lastChange / 100));
+      if (!inv || (inv.owned || 0) <= 0) return prev;
+      const qty = Math.min(Math.max(1, Math.floor(quantity)), inv.owned);
+      const fee = investmentFeeRate(inv.type);
+      const unitProceeds = Math.round(inv.price * (1 - fee));
+      const avg = (inv as any).avgCost ?? inv.price;
+      let totalProceeds = 0;
+      let totalTax = 0;
+      for (let k = 0; k < qty; k++) {
+        const profit = unitProceeds - avg;
+        const tax = profit > 0 ? Math.round(profit * 0.10) : 0; // %10 stopaj sadece kâra
+        totalProceeds += unitProceeds - tax;
+        totalTax += tax;
+      }
+      const newOwned = inv.owned - qty;
       return {
         ...prev,
-        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned - 1 } : i)),
-        budget: prev.budget + sellPrice
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: newOwned, avgCost: newOwned === 0 ? i.price : (i as any).avgCost } : i)),
+        budget: prev.budget + totalProceeds,
+        news: [`💰 ${inv.name} — ${qty} lot satıldı @ $${inv.price.toLocaleString()} → net $${totalProceeds.toLocaleString()}${totalTax ? ` (vergi $${totalTax.toLocaleString()})` : ''}`, ...prev.news.slice(0, 4)]
       };
+    });
+  }, []);
+
+  /* ══════════ KREDİ & TEFECİ ══════════ */
+  const takeCredit = useCallback((packageId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const pkg: any = CREDIT_PACKAGES.find(c => c.id === packageId);
+      if (!pkg) return prev;
+      const active = (prev as any).activeCredits || [];
+      if (active.length >= 3) return prev; // max 3 aynı anda
+      // banka için yönetim güveni şartı
+      if (pkg.type === 'bank') {
+        const need = pkg.id === 'bank_quick' ? 35 : pkg.id === 'bank_standard' ? 40 : 50;
+        if ((prev.boardConfidence || 50) < need) return prev;
+      }
+      // aynı paketten en fazla 1 tane
+      if (active.some((c: any) => c.packageId === packageId)) return prev;
+      const loan = {
+        id: `cr-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+        packageId: pkg.id,
+        name: pkg.name,
+        principal: pkg.amount,
+        totalRepayment: pkg.totalRepayment,
+        weeklyPayment: pkg.weeklyPayment,
+        weeksTotal: pkg.weeks,
+        weeksLeft: pkg.weeks,
+        paidAmount: 0,
+        interestRate: pkg.interestRate,
+        type: pkg.type,
+        takenWeek: prev.week,
+        takenSeason: prev.season,
+      };
+      const creditScoreDelta = pkg.type === 'shark' ? -35 : -12;
+      return {
+        ...prev,
+        budget: prev.budget + pkg.amount,
+        activeCredits: [...active, loan],
+        creditScore: Math.max(300, Math.min(850, (prev.creditScore ?? 620) + creditScoreDelta)),
+        news: [pkg.type === 'shark' ? `🕶️ Tefeciden $${pkg.amount.toLocaleString()} alındı! Haftalık $${pkg.weeklyPayment.toLocaleString()} x${pkg.weeks} = $${pkg.totalRepayment.toLocaleString()} (%${Math.round(pkg.interestRate*100)} faiz). Dikkat: gecikme = puan silme!` : `🏦 ${pkg.name} onaylandı: +$${pkg.amount.toLocaleString()} (haftalık $${pkg.weeklyPayment.toLocaleString()} x${pkg.weeks})`, ...prev.news.slice(0,4)],
+        boardMessages: pkg.type === 'shark' ? [`⚠️ Tefeciden borç alındı — yönetim tedirgin: "Bu işin sonu kötü bitebilir."`, ...prev.boardMessages.slice(0,5)] : prev.boardMessages,
+      };
+    });
+  }, []);
+
+  const repayCreditEarly = useCallback((creditId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const active: any[] = (prev as any).activeCredits || [];
+      const loan = active.find(c => c.id === creditId);
+      if (!loan) return prev;
+      const remaining = loan.totalRepayment - loan.paidAmount;
+      // erken kapatmada %5 ıskonto
+      const discount = Math.round(remaining * 0.05);
+      const payNow = remaining - discount;
+      if (prev.budget < payNow) return prev;
+      return {
+        ...prev,
+        budget: prev.budget - payNow,
+        activeCredits: active.filter(c => c.id !== creditId),
+        creditScore: Math.min(850, (prev.creditScore ?? 620) + (loan.type === 'shark' ? 22 : 15)),
+        news: [`✅ ${loan.name} erken kapatıldı: $${payNow.toLocaleString()} ödendi (iskonto $${discount.toLocaleString()})`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const setClubPhilosophy = useCallback((philosophy: import('../types/game').ClubPhilosophy) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      if (prev.clubPhilosophy === philosophy) return prev;
+      // bonuslar
+      let bonusMsg = '';
+      let updates: any = { clubPhilosophy: philosophy };
+      if (philosophy === 'youth') {
+        updates = { ...updates, academyLevel: Math.min(5, (prev.academyLevel||1)+1), ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+8) };
+        bonusMsg = '🌱 Altyapı Fabrikası seçildi! Akademi +1 seviye, ultras coşkulu!';
+      } else if (philosophy === 'money') {
+        updates = { ...updates, budget: prev.budget + 250000, ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+5) };
+        bonusMsg = '💰 Para Makinesi seçildi! +$250k sıcak para, sponsorlar memnun!';
+      } else if (philosophy === 'trophy') {
+        updates = { ...updates, teamChemistry: Math.min(100, (prev.teamChemistry||55)+6), ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+6) };
+        bonusMsg = '🏆 Kupa Avcısı seçildi! Takım kimyası +6, stadyum inliyor!';
+      }
+      return { ...prev, ...updates, news: [bonusMsg, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const generateUltrasRequests = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // zaten 2 aktif varsa üretme
+      if ((prev.ultrasRequests||[]).length >= 2) return prev;
+      // rastgele 1-2 istek
+      const templates: any[] = [
+        { kind: 'youth', text: 'Bu ay bir altyapı oyuncusunu A takıma al!', reward: 'Sadakat +12, kimya +2', penalty: '-8 taraftar', check: 'youth' },
+        { kind: 'star', text: 'Yıldız transferi istiyoruz — OVR 78+ birini al', reward: 'Tribün doluluk +8%', penalty: '-10 taraftar' },
+        { kind: 'derby', text: 'Sıradaki iç saha maçını kazan!', reward: 'Moral +8 tüm takım', penalty: '-5 güven' },
+        { kind: 'cleanSheet', text: '2 maçta gol yemeyin', reward: 'Savunma +2', penalty: '-10 ultras' },
+      ];
+      const pick = templates[Math.floor(Math.random()*templates.length)];
+      const req: any = {
+        id: `ur-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+        kind: pick.kind,
+        text: pick.text,
+        deadlineWeek: (prev.week||1) + 3 + Math.floor(Math.random()*3),
+        deadlineSeason: prev.season||1,
+        reward: pick.reward,
+        penalty: pick.penalty,
+      };
+      return { ...prev, ultrasRequests: [...(prev.ultrasRequests||[]), req], news: [`📢 Ultras: "${pick.text}" — 3 hafta süren var!`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const completeUltrasRequest = useCallback((requestId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const req = (prev.ultrasRequests||[]).find((r:any)=> r.id===requestId);
+      if (!req) return prev;
+      let bonus: any = {};
+      if (req.kind === 'youth') bonus = { teamChemistry: Math.min(100,(prev.teamChemistry||55)+2), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+12), fanHappiness: Math.min(100,(prev.fanHappiness||60)+3) };
+      else if (req.kind === 'star') bonus = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+8), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+10) };
+      else if (req.kind === 'derby') bonus = { team11: prev.team11.map(pl=>({ ...pl, morale: Math.min(100, pl.morale+8)})), bench: prev.bench.map(pl=>({ ...pl, morale: Math.min(100, pl.morale+8)})), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+10) };
+      else if (req.kind === 'cleanSheet') bonus = { ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+9) };
+      return { ...prev, ...bonus, ultrasRequests: (prev.ultrasRequests||[]).filter((r:any)=> r.id!==requestId), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+5), news: [`✅ Ultras isteği tamamlandı: "${req.text}" → ${req.reward}`, ...prev.news.slice(0,4)], boardMessages: [`📢 Ultras memnun: "${req.text}" yerine getirildi!`, ...prev.boardMessages.slice(0,5)] };
+    });
+  }, []);
+
+  const dismissUltrasRequest = useCallback((requestId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, ultrasRequests: (prev.ultrasRequests||[]).filter((r:any)=> r.id!==requestId), ultrasHappiness: Math.max(0,(prev.ultrasHappiness||65)-6), news: [`❌ Ultras isteği görmezden gelindi — ultras -6`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const generatePressConference = useCallback((opponent: string, wasWin: boolean, wasDraw: boolean) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const qs: any[] = (() => {
+        if (wasWin) return [
+          { id: 'q1', question: 'Galibiyetin anahtarı neydi?', answers: [
+            { tone: 'humble', label: 'Çocuklar çok çalıştı, ben sadece yön verdim', effect: 'Takım morali +5, kimya +2' },
+            { tone: 'confident', label: 'Planım tıkır tıkır işledi — biz daha iyiyiz', effect: 'Taraftar +6, board +3' },
+            { tone: 'aggressive', label: 'Hakem de rakip de yetmedi!', effect: 'Ultras +7, kart riski +15%' },
+          ]},
+          { id: 'q2', question: 'Bir oyuncunuzu öne çıkarır mısınız?', answers: [
+            { tone: 'humble', label: 'Hepsi yıldızdı, tek isim haksızlık olur', effect: 'Genel moral +3' },
+            { tone: 'confident', label: 'Gol kralımız yine konuştu', effect: 'Golcü +10, diğerleri -2' },
+            { tone: 'neutral', label: 'Taraftar muhteşemdi', effect: 'Fan +8, ultras +5' },
+          ]},
+        ];
+        if (wasDraw) return [
+          { id: 'q1', question: 'Beraberliği nasıl değerlendiriyorsunuz?', answers: [
+            { tone: 'humble', label: 'Bir puan da puandır', effect: 'Kimya +1' },
+            { tone: 'aggressive', label: 'Hakem iki puanımızı çaldı!', effect: 'Ultras +5, board -2' },
+            { tone: 'confident', label: 'Üstün olan bizdik', effect: 'Fan +3' },
+          ]},
+          { id: 'q2', question: 'Sıradaki maç için mesajınız?', answers: [
+            { tone: 'confident', label: 'Eze eze kazanacağız', effect: 'Moral +4' },
+            { tone: 'humble', label: 'Adım adım, her maç final', effect: 'Kimya +2' },
+            { tone: 'neutral', label: 'Taraftar yanımızda olsun', effect: 'Fan +4' },
+          ]},
+        ];
+        return [
+          { id: 'q1', question: 'Mağlubiyetin sebebi neydi?', answers: [
+            { tone: 'humble', label: 'Sorumluluk bende', effect: 'Board +3, saygı +4' },
+            { tone: 'aggressive', label: 'Oyuncularım sahada yoktu!', effect: 'Moral -8, board -5' },
+            { tone: 'confident', label: 'Kaza oldu, telafi edeceğiz', effect: 'Moral -2' },
+          ]},
+          { id: 'q2', question: 'Eleştirilere ne diyorsunuz?', answers: [
+            { tone: 'humble', label: 'Haklılar, daha çok çalışmalıyız', effect: 'Fan +2' },
+            { tone: 'aggressive', label: 'Koltuğumdan memnun olmayan gitsin!', effect: 'Board -7, ultras +6' },
+            { tone: 'neutral', label: 'Sahada konuşacağız', effect: 'Moral +2' },
+          ]},
+        ];
+      })();
+      // Drama: 3. soru — transfer dedikodusu / yıldız krizi (ultra drama mod)
+      if (Math.random() < 0.55) {
+        const hasOffers = (prev.transferOffers||[]).length > 0;
+        const wantsOut = [...(prev.team11||[]), ...(prev.bench||[])].find((p:any)=> p.wantsOut);
+        if (wantsOut) {
+          qs.push({ id: 'q3', question: `${wantsOut.name} ayrılmak istiyor — ne diyorsunuz?`, answers: [
+            { tone: 'humble', label: `O bizim evladımız, konuşup ikna edeceğim`, effect: 'Yıldız moral +6, kimya +1' },
+            { tone: 'confident', label: `Kimse kulüpten büyük değil`, effect: 'Takım +3, yıldız -5 ama taraftar +5' },
+            { tone: 'aggressive', label: `Gitsin! Parasını getirsin yeter`, effect: 'Board +4, ultras -4, yıldız -10' },
+          ]});
+        } else if (hasOffers) {
+          const offer = (prev.transferOffers||[])[0];
+          qs.push({ id: 'q3', question: `${offer?.playerName || 'Bir oyuncunuza'} teklif var — satar mısınız?`, answers: [
+            { tone: 'humble', label: `Oyuncumla konuşacağım, o karar verecek`, effect: 'Oyuncu moral +3' },
+            { tone: 'confident', label: `Doğru fiyat gelirse herkes satılık`, effect: 'Board +3, fan -2' },
+            { tone: 'aggressive', label: `Bu rakamlar komik, kapıyı kapatıyoruz!`, effect: 'Ultras +4, board -1' },
+          ]});
+        } else if (Math.random() < 0.4) {
+          qs.push({ id: 'q3', question: `Taraftar şampiyonluk bekliyor — sözünüz nedir?`, answers: [
+            { tone: 'humble', label: `Maç maç bakıyoruz, söz vermek kolay`, effect: 'Board +2' },
+            { tone: 'confident', label: `Bu şehir şampiyonluğu hak ediyor — getireceğiz!`, effect: 'Fan +10, baskı artar' },
+            { tone: 'aggressive', label: `Bizi izlemeye devam edin, ezeceğiz!`, effect: 'Ultras +6, baskı +2' },
+          ]});
+        }
+      }
+      const conf: any = { id: `press-${Date.now()}`, opponent, wasWin, wasDraw, questions: qs, answered: 0 };
+      return { ...prev, pendingPress: conf, news: [`🎙️ Basın toplantısı: ${opponent} maçı sonrası ${qs.length} soru seni bekliyor!`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const answerPressQuestion = useCallback((tone: string) => {
+    setGameState(prev => {
+      if (!prev || !(prev as any).pendingPress) return prev;
+      const press: any = (prev as any).pendingPress;
+      const currentQ = press.questions[press.answered];
+      if (!currentQ) return prev;
+      const ans = currentQ.answers.find((a:any)=> a.tone===tone) || currentQ.answers[0];
+      let updates: any = {};
+      let msg = `🎙️ Basın: "${ans.label}" → ${ans.effect}`;
+      // Drama: 3. soru özel — wantsOut oyuncusunu etkile
+      const isStarCrisis = currentQ.id==='q3' && currentQ.question.includes('ayrılmak istiyor');
+      if (isStarCrisis) {
+        const starName = currentQ.question.split(' ayrılmak')[0].trim();
+        const bump = (pl:any)=> pl.name===starName ? { ...pl, morale: tone==='humble' ? Math.min(100, pl.morale+6) : tone==='confident' ? Math.max(0, pl.morale-3) : Math.max(0, pl.morale-10), wantsOut: tone==='aggressive' ? true : tone==='humble' ? false : pl.wantsOut } : pl;
+        updates.team11 = (prev.team11||[]).map(bump);
+        updates.bench = (prev.bench||[]).map(bump);
+        if (tone==='humble') msg += ' | Yıldız ikna oldu!';
+        else if (tone==='aggressive') msg += ' | Yıldız resti gördü!';
+      }
+      if (tone === 'humble') {
+        updates = { teamChemistry: Math.min(100,(prev.teamChemistry||55)+1), boardConfidence: Math.min(100,(prev.boardConfidence||60)+2), team11: prev.team11.map(p=> ({...p, morale: Math.min(100,p.morale+2)})), bench: prev.bench.map(p=> ({...p, morale: Math.min(100,p.morale+2)})) };
+        updates.fanHappiness = Math.min(100,(prev.fanHappiness||60)+2);
+      } else if (tone === 'confident') {
+        updates = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+4), boardConfidence: Math.min(100,(prev.boardConfidence||60)+2), team11: prev.team11.map(p=> ({...p, morale: Math.min(100,p.morale+3)})), bench: prev.bench.map(p=> ({...p, morale: Math.max(0,p.morale-1)})) };
+        updates.ultrasHappiness = Math.min(100,((prev as any).ultrasHappiness||65)+2);
+      } else if (tone === 'aggressive') {
+        updates = { ultrasHappiness: Math.min(100,((prev as any).ultrasHappiness||65)+5), fanHappiness: Math.min(100,(prev.fanHappiness||60)+1), boardConfidence: Math.max(0,(prev.boardConfidence||60)-3), team11: prev.team11.map(p=> ({...p, morale: Math.max(0,p.morale-2)})) };
+        if (Math.random() < 0.3) {
+          updates.boardConfidence = Math.max(0,(updates.boardConfidence?? prev.boardConfidence)-2);
+          msg += " | Drama: Yönetim kaşlarını çattı!";
+        }
+      } else {
+        updates = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+3) };
+        updates.ultrasHappiness = Math.min(100,((prev as any).ultrasHappiness||65)+3);
+      }
+      const nextAnswered = press.answered + 1;
+      const isDone = nextAnswered >= press.questions.length;
+      const nextPress = isDone ? null : { ...press, answered: nextAnswered };
+      let socialFeed: any = prev.socialFeed || [];
+      if (isDone && Math.random() < 0.6) {
+        const hot = tone==='aggressive' ? '🔥 Basın toplantısında ortalık karıştı! Taraftar ikiye bölündü.' : tone==='confident' ? '🎙️ Hocadan iddialı sözler — taraftar coşkulu!' : '🎙️ Alçakgönüllü demeçler takdir topladı.';
+        socialFeed = [{ id: `press-social-${Date.now()}`, author: 'FutbolX', handle: '@futbolx', text: hot, likes: 40 + Math.floor(Math.random()*80), liked: false, comments: [], time: 'az önce', isUser: false }, ...socialFeed].slice(0,30);
+      }
+      return { ...prev, ...updates, pendingPress: nextPress, socialFeed, news: [msg, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const dismissPress = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, pendingPress: null, boardConfidence: Math.max(0,(prev.boardConfidence||60)-2), news: ['🎙️ Basın toplantısı atlandı — yönetim memnun değil (-2)', ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const sendScout = useCallback((regionId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // @ts-ignore
+      const regions: any[] = (() => { try { return require('../data/constants').SCOUT_REGIONS; } catch { return []; } })();
+      // fallback inline if import fails
+      const fallback: any[] = [
+        { id: 'balkans', name: 'Balkanlar', cost: 45000, weeks: 2 },
+        { id: 'west_eu', name: 'Batı Avrupa', cost: 85000, weeks: 3 },
+        { id: 'south_america', name: 'Güney Amerika', cost: 135000, weeks: 3 },
+        { id: 'africa', name: 'Afrika', cost: 70000, weeks: 2 },
+        { id: 'east_eu', name: 'Doğu Avrupa', cost: 65000, weeks: 3 },
+        { id: 'asia', name: 'Doğu Asya', cost: 50000, weeks: 2 },
+      ];
+      const list = regions.length ? regions : fallback;
+      const region: any = list.find((r:any)=> r.id===regionId);
+      if (!region) return prev;
+      if (prev.budget < region.cost) return prev;
+      // max 3 aynı anda
+      if ((prev.scoutMissions||[]).length >= 3) return prev;
+      const mission: any = {
+        id: `scout-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+        regionId: region.id,
+        regionName: region.name,
+        weeksLeft: region.weeks,
+        totalWeeks: region.weeks,
+        cost: region.cost,
+        startedWeek: prev.week,
+        startedSeason: prev.season,
+      };
+      return {
+        ...prev,
+        budget: prev.budget - region.cost,
+        scoutMissions: [...(prev.scoutMissions||[]), mission],
+        news: [`🧭 İzci gönderildi: ${region.flag||'🌍'} ${region.name} — ${region.weeks} hafta, $${region.cost.toLocaleString()}`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const claimScoutReport = useCallback((reportId: string, playerId?: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const report = (prev.scoutReports||[]).find((r:any)=> r.id===reportId);
+      if (!report) return prev;
+      if (playerId) {
+        const player = (report.players||[]).find((p:any)=> p.id===playerId);
+        if (!player) return prev;
+        return {
+          ...prev,
+          academyPlayers: [...prev.academyPlayers, { ...player, id: Date.now()+Math.floor(Math.random()*1000) }],
+          scoutReports: (prev.scoutReports||[]).map((r:any)=> r.id===reportId ? { ...r, players: r.players.filter((p:any)=> p.id!==playerId)} : r).filter((r:any)=> r.players.length>0),
+          news: [`🌟 ${player.name} (${player.ovr} OVR, pot ${player.potential}) altyapıya katıldı! (${report.regionName})`, ...prev.news.slice(0,4)],
+        };
+      } else {
+        // hepsini al
+        const toAcademy = (report.players||[]).map((p:any)=> ({ ...p, id: Date.now()+Math.floor(Math.random()*10000)+p.id%1000 }));
+        return {
+          ...prev,
+          academyPlayers: [...prev.academyPlayers, ...toAcademy],
+          scoutReports: (prev.scoutReports||[]).filter((r:any)=> r.id!==reportId),
+          news: [`🌟 ${report.regionName} raporu: ${toAcademy.length} genç altyapıya katıldı!`, ...prev.news.slice(0,4)],
+        };
+      }
+    });
+  }, []);
+
+  const dismissScoutReport = useCallback((reportId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, scoutReports: (prev.scoutReports||[]).filter((r:any)=> r.id!==reportId), news: [`🗑️ İzci raporu silindi.`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const cancelScoutMission = useCallback((missionId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const m = (prev.scoutMissions||[]).find((x:any)=> x.id===missionId);
+      if (!m) return prev;
+      const refund = Math.round(m.cost*0.4);
+      return { ...prev, scoutMissions: (prev.scoutMissions||[]).filter((x:any)=> x.id!==missionId), budget: prev.budget + refund, news: [`↩️ İzci görevi iptal: ${m.regionName} • $${refund.toLocaleString()} iade`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const buyDevice = useCallback((deviceId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // catalog lookup (inline fallback)
+      const catalog: any[] = [
+        { id: 'phone_mini', name: 'Akıllı Mini 12', brand: 'Meyve', category: 'phone', price: 18000, quality: 42, camera: 45, performance: 40, icon: '📱', desc: 'Giriş seviye' },
+        { id: 'phone_mid', name: 'Galaksi S24', brand: 'Semsun', category: 'phone', price: 42000, quality: 68, camera: 72, performance: 65, icon: '📱', desc: 'Orta-üst' },
+        { id: 'phone_pro', name: 'Meyve 15 Pro Max', brand: 'Meyve', category: 'phone', price: 78000, quality: 88, camera: 90, performance: 88, icon: '📱', desc: 'Amiral' },
+        { id: 'phone_fold', name: 'Z Kat 5', brand: 'Semsun', category: 'phone', price: 65000, quality: 75, camera: 70, performance: 78, icon: '📱', desc: 'Katlanabilir' },
+        { id: 'pc_air', name: 'HafifBook Air M2', brand: 'Meyve', category: 'computer', price: 38000, quality: 62, camera: 50, performance: 60, icon: '💻', desc: 'Taşınabilir' },
+        { id: 'pc_gaming_mid', name: 'Canavar T7 V21', brand: 'Canavar', category: 'computer', price: 55000, quality: 74, camera: 55, performance: 78, icon: '💻', desc: 'Oyuncu laptop' },
+        { id: 'cam_vlog', name: 'VlogCam ZV-1', brand: 'Sonyx', category: 'camera', price: 28000, quality: 80, camera: 85, performance: 55, icon: '📷', desc: 'Vlog canavarı' },
+        { id: 'cam_pro', name: 'A7S III', brand: 'Sonyx', category: 'camera', price: 95000, quality: 95, camera: 96, performance: 70, icon: '📷', desc: 'Sinema' },
+        { id: 'tablet_pro', name: 'Tab Pro 12.9', brand: 'Meyve', category: 'tablet', price: 35000, quality: 60, camera: 65, performance: 62, icon: '📲', desc: 'Çizim & kurgu' },
+        { id: 'console_x', name: 'Kutu X', brand: 'MikroYum', category: 'console', price: 15000, quality: 45, camera: 40, performance: 50, icon: '🎮', desc: 'Oyun yayını' },
+      ];
+      const dev: any = catalog.find((d:any)=> d.id===deviceId);
+      if (!dev) return prev;
+      if (prev.budget < dev.price) return prev;
+      if ((prev.devices||[]).some((d:any)=> d.id===deviceId)) return prev;
+      return { ...prev, budget: prev.budget - dev.price, devices: [...(prev.devices||[]), dev], activeDeviceId: dev.id, news: [`📱 ${dev.brand} ${dev.name} satın alındı! Kalite ${dev.quality}/100`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const setActiveDevice = useCallback((deviceId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      if (!(prev.devices||[]).some((d:any)=> d.id===deviceId)) return prev;
+      return { ...prev, activeDeviceId: deviceId, news: [`📱 Aktif cihaz: ${(prev.devices||[]).find((d:any)=> d.id===deviceId)?.name}`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const sellDevice = useCallback((deviceId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const dev: any = (prev.devices||[]).find((d:any)=> d.id===deviceId);
+      if (!dev) return prev;
+      if ((prev.devices||[]).length <= 1) return prev;
+      const refund = Math.round(dev.price*0.55);
+      const remaining = (prev.devices||[]).filter((d:any)=> d.id!==deviceId);
+      return { ...prev, budget: prev.budget + refund, devices: remaining, activeDeviceId: prev.activeDeviceId===deviceId ? remaining[0]?.id : prev.activeDeviceId, news: [`💸 ${dev.name} satıldı +$${refund.toLocaleString()}`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const buyPCComponent = useCallback((compId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // find component in catalog
+      const all: any[] = [
+        { id: 'cpu_i3', name: 'i3-13100F', brand: 'Intel', type: 'cpu', price: 3800, tier: 'giriş', specs: '4C/8T • 4.5GHz', performance: 42, icon: '🧠', power: 65 },
+        { id: 'cpu_i5', name: 'i5-14400F', brand: 'Intel', type: 'cpu', price: 7200, tier: 'orta', specs: '10C/16T • 4.7GHz', performance: 68, icon: '🧠', power: 95 },
+        { id: 'cpu_i7', name: 'i7-14700K', brand: 'Intel', type: 'cpu', price: 14500, tier: 'üst', specs: '20C/28T • 5.6GHz', performance: 88, icon: '🧠', power: 125 },
+        { id: 'cpu_r5', name: 'Ryzen 5 7600', brand: 'AMD', type: 'cpu', price: 6800, tier: 'orta', specs: '6C/12T • 5.1GHz', performance: 66, icon: '🧠', power: 65 },
+        { id: 'cpu_r7', name: 'Ryzen 7 7800X3D', brand: 'AMD', type: 'cpu', price: 12800, tier: 'efsane', specs: '8C/16T • 5.0GHz 3D', performance: 92, icon: '🧠', power: 80 },
+        { id: 'cpu_r9', name: 'Ryzen 9 7950X', brand: 'AMD', type: 'cpu', price: 18500, tier: 'efsane', specs: '16C/32T • 5.7GHz', performance: 95, icon: '🧠', power: 120 },
+        { id: 'gpu_4060', name: 'RTX 4060 8GB', brand: 'NVIDIA', type: 'gpu', price: 11500, tier: 'orta', specs: 'DLSS 3 • 1080p kralı', performance: 62, icon: '🎮', power: 115 },
+        { id: 'gpu_4070', name: 'RTX 4070 12GB', brand: 'NVIDIA', type: 'gpu', price: 19800, tier: 'üst', specs: 'DLSS 3 • 1440p', performance: 78, icon: '🎮', power: 200 },
+        { id: 'gpu_4080', name: 'RTX 4080 16GB', brand: 'NVIDIA', type: 'gpu', price: 38000, tier: 'efsane', specs: '4K • AV1', performance: 92, icon: '🎮', power: 320 },
+        { id: 'gpu_4090', name: 'RTX 4090 24GB', brand: 'NVIDIA', type: 'gpu', price: 62000, tier: 'efsane', specs: '4K canavar • 450W', performance: 100, icon: '🎮', power: 450 },
+        { id: 'gpu_7600', name: 'RX 7600 8GB', brand: 'AMD', type: 'gpu', price: 8500, tier: 'giriş', specs: '1080p • FSR', performance: 55, icon: '🎮', power: 165 },
+        { id: 'gpu_7800', name: 'RX 7800 XT 16GB', brand: 'AMD', type: 'gpu', price: 16500, tier: 'orta', specs: '1440p • 16GB', performance: 72, icon: '🎮', power: 263 },
+        { id: 'ram_16', name: '16GB DDR5 5600', brand: 'Corsair', type: 'ram', price: 2200, tier: 'orta', specs: '2x8GB CL36', performance: 60, icon: '💾', power: 10 },
+        { id: 'ram_32', name: '32GB DDR5 6000', brand: 'G.Skill', type: 'ram', price: 4200, tier: 'üst', specs: '2x16GB CL30 Expo', performance: 78, icon: '💾', power: 12 },
+        { id: 'ram_64', name: '64GB DDR5 6000', brand: 'Kingston', type: 'ram', price: 7800, tier: 'efsane', specs: '2x32GB CL32', performance: 90, icon: '💾', power: 15 },
+        { id: 'mb_b660', name: 'B660M-HDV', brand: 'ASRock', type: 'motherboard', price: 2800, tier: 'giriş', specs: 'mATX • DDR5', performance: 45, icon: '🔌', power: 20 },
+        { id: 'mb_b760', name: 'B760 Gaming X', brand: 'Gigabyte', type: 'motherboard', price: 4800, tier: 'orta', specs: 'ATX • WiFi', performance: 68, icon: '🔌', power: 25 },
+        { id: 'mb_z790', name: 'Z790-E ROG', brand: 'ASUS', type: 'motherboard', price: 9500, tier: 'efsane', specs: 'ATX • WiFi 6E • OC', performance: 92, icon: '🔌', power: 30 },
+        { id: 'ssd_1tb', name: '1TB NVMe Gen4', brand: 'Samsung 990', type: 'storage', price: 2800, tier: 'orta', specs: '7450 MB/s', performance: 70, icon: '💿', power: 6 },
+        { id: 'ssd_2tb', name: '2TB NVMe Gen4', brand: 'WD Black', type: 'storage', price: 5200, tier: 'üst', specs: '7300 MB/s', performance: 85, icon: '💿', power: 7 },
+        { id: 'ssd_4tb', name: '4TB NVMe Gen4', brand: 'Seagate', type: 'storage', price: 9800, tier: 'efsane', specs: '7250 MB/s • 4TB', performance: 95, icon: '💿', power: 8 },
+        { id: 'psu_650', name: '650W 80+ Bronze', brand: 'FSP', type: 'psu', price: 1800, tier: 'giriş', specs: 'Bronze • 650W', performance: 50, icon: '🔋', power: 650 },
+        { id: 'psu_750g', name: '750W 80+ Gold', brand: 'Corsair RM750', type: 'psu', price: 3200, tier: 'orta', specs: 'Gold • Full Mod', performance: 75, icon: '🔋', power: 750 },
+        { id: 'psu_1000', name: '1000W 80+ Gold', brand: 'MSI MPG', type: 'psu', price: 5200, tier: 'efsane', specs: 'ATX 3.0 • PCIe5', performance: 95, icon: '🔋', power: 1000 },
+        { id: 'case_mini', name: 'Matrexx 40', brand: 'DeepCool', type: 'case', price: 1200, tier: 'giriş', specs: 'mATX • Mesh', performance: 40, icon: '🖥️', power: 0 },
+        { id: 'case_mid', name: 'H7 Flow', brand: 'NZXT', type: 'case', price: 3400, tier: 'orta', specs: 'ATX • AirFlow', performance: 72, icon: '🖥️', power: 0 },
+        { id: 'case_prem', name: 'O11 Dynamic EVO', brand: 'Lian Li', type: 'case', price: 6200, tier: 'efsane', specs: 'Premium • Cam', performance: 92, icon: '🖥️', power: 0 },
+        { id: 'cool_air', name: 'AK400', brand: 'DeepCool', type: 'cooling', price: 900, tier: 'giriş', specs: 'Hava • 4 heatpipe', performance: 45, icon: '❄️', power: 5 },
+        { id: 'cool_aio240', name: '240mm AIO', brand: 'Corsair H100', type: 'cooling', price: 2800, tier: 'orta', specs: '240mm Sıvı', performance: 75, icon: '❄️', power: 12 },
+        { id: 'cool_aio360', name: '360mm AIO', brand: 'NZXT Kraken', type: 'cooling', price: 5200, tier: 'efsane', specs: '360mm • LCD', performance: 95, icon: '❄️', power: 18 },
+        { id: 'mon_1080', name: '24" 1080p 144Hz', brand: 'AOC', type: 'monitor', price: 3200, tier: 'giriş', specs: 'IPS 144Hz', performance: 45, icon: '🖥️', power: 25 },
+        { id: 'mon_1440', name: '27" 1440p 165Hz', brand: 'LG UltraGear', type: 'monitor', price: 6800, tier: 'orta', specs: 'IPS 165Hz', performance: 72, icon: '🖥️', power: 35 },
+        { id: 'mon_4k', name: '32" 4K 144Hz', brand: 'Samsung Odyssey', type: 'monitor', price: 14500, tier: 'efsane', specs: '4K 144Hz HDR', performance: 95, icon: '🖥️', power: 55 },
+      ];
+      const comp: any = all.find((c:any)=> c.id===compId);
+      if (!comp) return prev;
+      if (prev.budget < comp.price) return prev;
+      // add to inventory
+      return { ...prev, budget: prev.budget - comp.price, pcInventory: [...(prev.pcInventory||[]), comp], news: [`🛒 ${comp.brand} ${comp.name} sepete eklendi!`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const setPCPart = useCallback((type: string, compId: string | null) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      if (!compId) {
+        const next: any = { ...(prev.pcBuild||{}) };
+        delete next[type];
+        return { ...prev, pcBuild: next };
+      }
+      const comp: any = (prev.pcInventory||[]).find((c:any)=> c.id===compId && c.type===type);
+      if (!comp) return prev;
+      // simple compatibility: check PSU watt
+      if (type!=='psu') {
+        const psu = (prev.pcBuild as any)?.psu;
+        const totalPower = (comp.power||0) + Object.values(prev.pcBuild||{}).reduce((a:any,b:any)=> a + ((b as any)?.power||0), 0);
+        if (psu && totalPower > (psu.power||0)) {
+          // allow but warn via news - still set
+        }
+      }
+      return { ...prev, pcBuild: { ...(prev.pcBuild||{}), [type]: comp } };
+    });
+  }, []);
+
+  const sellPCComponent = useCallback((compId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const comp: any = (prev.pcInventory||[]).find((c:any)=> c.id===compId);
+      if (!comp) return prev;
+      const refund = Math.round(comp.price*0.60);
+      // remove from build if equipped
+      let build: any = { ...(prev.pcBuild||{}) };
+      for (const k in build) if ((build as any)[k]?.id===compId) delete (build as any)[k];
+      return { ...prev, budget: prev.budget + refund, pcInventory: (prev.pcInventory||[]).filter((c:any)=> c.id!==compId), pcBuild: build, news: [`💸 ${comp.name} satıldı +$${refund.toLocaleString()}`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const assemblePC = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const build: any = prev.pcBuild||{};
+      const required = ['cpu','gpu','ram','motherboard','storage','psu','case'];
+      const missing = required.filter(r=> !build[r]);
+      if (missing.length) return prev;
+      // calculate quality and performance
+      const parts: any[] = Object.values(build);
+      const avgPerf = Math.round(parts.reduce((a:any,b:any)=> a + (b.performance||0),0)/parts.length);
+      const totalPrice = parts.reduce((a:any,b:any)=> a + (b.price||0),0);
+      // create a device representing the built PC
+      const pcDevice: any = { id: `pc_custom_${Date.now()}`, name: `Toplama PC • ${build.cpu?.name} + ${build.gpu?.name}`, brand: 'Özel Toplama', category: 'computer', price: totalPrice, quality: Math.min(98, 55+avgPerf*0.45), camera: 60, performance: Math.min(98, avgPerf), icon: '🖥️', desc: `${parts.length} parça • ${avgPerf}/100` };
+      // add to devices and set active
+      return { ...prev, devices: [...(prev.devices||[]), pcDevice], activeDeviceId: pcDevice.id, news: [`🖥️ PC toplandı! ${pcDevice.name} — Kalite ${pcDevice.quality}/100`, ...prev.news.slice(0,4)] };
     });
   }, []);
 
@@ -1901,6 +2824,65 @@ export const useGameState = () => {
     });
   }, []);
 
+  const upgradeTribune = useCallback((side: 'north'|'south'|'east'|'west') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? { design: { seatColor: '#1d4ed8', accentColor: '#f8fafc', roof: 'none', stands: 'classic', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: true }, capacityBonus: 0, ticketMultiplier: 1, vip: false, cosmetics: [], tribunes: { north: 1, south: 1, east: 1, west: 1 } } as any;
+      const tribunes: any = stadium.tribunes || { north: 1, south: 1, east: 1, west: 1 };
+      const lvl = tribunes[side] ?? 1;
+      if (lvl >= 5) return prev;
+      const baseSeats: Record<string, number> = { north: 2200, south: 2200, east: 3200, west: 3200 };
+      const pricePerLevel: Record<string, number> = { north: 650000, south: 650000, east: 850000, west: 900000 };
+      const cost = Math.round(pricePerLevel[side] * (0.9 + lvl*0.35)); // her seviye %35 pahalanır
+      if (prev.budget < cost) return prev;
+      const nextTribunes = { ...tribunes, [side]: lvl+1 };
+      const addedSeats = baseSeats[side];
+      return {
+        ...prev,
+        budget: prev.budget - cost,
+        stadium: { ...stadium, tribunes: nextTribunes },
+        fanHappiness: Math.min(100, (prev.fanHappiness||60)+2),
+        news: [`🏗️ ${side==='north'?'Kuzey':side==='south'?'Güney':side==='east'?'Doğu':'Batı'} tribünü seviye ${lvl+1} oldu! +${addedSeats.toLocaleString()} koltuk`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const hostStadiumEvent = useCallback((eventId: 'concert'|'fair') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const income = eventId==='concert' ? 180000 : 90000;
+      const moraleHit = eventId==='concert' ? -3 : 0;
+      // Mild surprise only: small fan +/-
+      return {
+        ...prev,
+        budget: prev.budget + income,
+        stadium: { ...(prev.stadium||{} as any), lastEventIncome: income } as any,
+        team11: prev.team11.map(p=> ({...p, morale: Math.max(0, p.morale + moraleHit)})),
+        news: [eventId==='concert' ? `🎤 Stadyumda konser! +$${income.toLocaleString()} gelir, çim biraz yoruldu (-3 moral)` : `🏢 Stadyumda fuar! +$${income.toLocaleString()} risksiz gelir`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const setTacticsSlider = useCallback((id: string, value: number) => {
+    const v = Math.max(0, Math.min(100, Math.round(value)));
+    setGameState(prev => {
+      if (!prev) return null;
+      const tac: any = { ...prev.tactics, [id]: v };
+      // tempoValue -> tempo string senkron (mild, ortalama)
+      if (id==='tempoValue') {
+        if (v < 33) tac.tempo = 'slow';
+        else if (v > 66) tac.tempo = 'fast';
+        else tac.tempo = 'normal';
+      }
+      if (id==='pressingIntensity') {
+        if (v < 33) tac.pressing = 'low';
+        else if (v > 66) tac.pressing = 'high';
+        else tac.pressing = 'medium';
+      }
+      return { ...prev, tactics: tac };
+    });
+  }, []);
+
   /* ══════════════ MENAJER HAYATI ══════════════ */
 
   /** Aktiviteyi uygular: statlar, XP, masraf, haftalık hak ve geçmiş güncellenir */
@@ -2088,8 +3070,9 @@ export const useGameState = () => {
   }, []);
 
   /* ══════════════ SOSYAL MEDYA (FutbolX) ══════════════ */
-  const addSocialPost = useCallback((content: string, image?: string) => {
+  const addSocialPost = useCallback((content: string, image?: string, platform: string = 'instagram') => {
     if (!content || content.trim().length < 3) return;
+    const safePlatform: any = (platform === 'tiktok' || platform === 'youtube' || platform === 'instagram') ? platform : 'instagram';
     setGameState(prev => {
       if (!prev) return null;
       const trimmed = content.slice(0, 280);
@@ -2098,8 +3081,24 @@ export const useGameState = () => {
       let bonusFame = 1;
       let bonusFan = 1;
       let tags: string[] = ['#SüperLig'];
+      // Cihaz kalitesi — platforma göre ağırlık değişir, ama hep mild
+      const activeDev: any = (prev.devices||[]).find((d:any)=> d.id===prev.activeDeviceId) || (prev.devices||[])[0];
+      const devQuality = activeDev?.quality ?? 42;
+      const devCamera = activeDev?.camera ?? 45;
+      const devPerf = activeDev?.performance ?? 40;
+      const devBonus = Math.round((devQuality - 42) / 12); // 0..4
+      // platform ağırlığı: instagram kamera, tiktok perf, youtube ikisi
+      let platformBonus = 0;
+      if (safePlatform === 'instagram') platformBonus = Math.round(devCamera * 0.9 + devBonus*70);
+      else if (safePlatform === 'tiktok') platformBonus = Math.round(devPerf * 1.1 + devBonus*85);
+      else platformBonus = Math.round((devCamera + devPerf)/2 * 1.0 + devBonus*95 + devQuality);
       if (low.includes('transfer')) { tags.push('#Transfer'); bonusFame+=1; }
       if (low.includes('#maç')||low.includes('maç')||low.includes('galib')) { tags.push('#MaçGünü'); bonusFan+=1; }
+      if (safePlatform === 'tiktok') tags.push('#keşfet');
+      if (safePlatform === 'youtube') tags.push('#YouTube');
+      const baseLikes = safePlatform==='youtube' ? 420 : safePlatform==='tiktok' ? 380 : 340;
+      const viewsMult = safePlatform==='youtube' ? 28 : safePlatform==='tiktok' ? 35 : 18;
+      const likesVal = Math.floor(baseLikes + Math.random()*900 + (prev.life?.stats.fame||40)*10 + platformBonus);
       const post: any = {
         id: `user-${Date.now()}`,
         author: prev.teamName,
@@ -2109,7 +3108,7 @@ export const useGameState = () => {
         type: 'user',
         week: prev.week,
         season: prev.season,
-        likes: Math.floor(340 + Math.random()*900 + (prev.life?.stats.fame||40)*10),
+        likes: likesVal,
         retweets: Math.floor(30 + Math.random()*200),
         comments: Math.floor(Math.random()*18),
         liked: false,
@@ -2117,16 +3116,33 @@ export const useGameState = () => {
         verified: true,
         tags,
         timeAgo: 'şimdi',
-        image: image || undefined
+        image: image || undefined,
+        platform: safePlatform,
+        views: Math.floor(likesVal * (viewsMult/10) + Math.random()*5000),
+        videoId: safePlatform==='youtube' ? 'pRpeEdMmmQ0' : undefined
       };
       const life = prev.life ?? defaultLife();
+      // ── Sosyal gelir: platforma göre RPM ──
+      const rpm = safePlatform==='youtube' ? 0.52 : safePlatform==='tiktok' ? 0.31 : 0.24; // $ per 1k views + like bonus
+      const viewRev = Math.floor((post.views||0) * rpm * (0.9 + devQuality/220));
+      const likeRev = Math.floor(post.likes * (safePlatform==='youtube' ? 2.1 : safePlatform==='tiktok' ? 1.4 : 1.1) * (0.8 + devBonus*0.15));
+      const fameMult = 1 + (prev.life?.stats.fame||40)/180;
+      const income = Math.floor((viewRev + likeRev) * fameMult);
+      // marka eşiği: 20k+ takipçide %15 bonus
+      const followersEst = 18400 + ((prev.life?.stats.fame||40)*620) + ((prev.fanHappiness||60)*240) + (prev.week*420);
+      const brandBonus = followersEst > 40000 ? Math.floor(income*0.18) : followersEst > 25000 ? Math.floor(income*0.08) : 0;
+      const totalIncome = income + brandBonus;
       return {
         ...prev,
         socialFeed: [post, ...((prev as any).socialFeed||[])].slice(0, 80),
+        budget: prev.budget + totalIncome,
+        lifetimeSocialEarnings: ((prev as any).lifetimeSocialEarnings||0) + totalIncome,
+        weeklySocialEarnings: ((prev as any).weeklySocialEarnings||0) + totalIncome,
+        clubStats: { ...prev.clubStats, socialEarnings: ((prev.clubStats as any).socialEarnings||0) + totalIncome },
         fanHappiness: Math.min(100, (prev.fanHappiness||60)+bonusFan),
         boardConfidence: Math.min(100, (prev.boardConfidence||50)+0.5),
         life: { ...life, stats: { ...life.stats, fame: Math.min(100, life.stats.fame + bonusFame) } },
-        news: [`📣 Sosyal medyada paylaştın: "${trimmed.slice(0,38)}..."`, ...prev.news.slice(0,4)]
+        news: [`💸 Sosyal gelir: +$${totalIncome.toLocaleString()} (${safePlatform} • ${post.views?.toLocaleString()} izlenme, ${post.likes.toLocaleString()} beğeni${brandBonus?` + marka $${brandBonus.toLocaleString()}`:''}) — "${trimmed.slice(0,32)}..."`, ...prev.news.slice(0,4)]
       };
     });
   }, []);
@@ -2258,6 +3274,19 @@ export const useGameState = () => {
     promoteYouthPlayer,
     buyInvestment,
     sellInvestment,
+    takeCredit,
+    repayCreditEarly,
+    setClubPhilosophy,
+    generateUltrasRequests,
+    completeUltrasRequest,
+    dismissUltrasRequest,
+    generatePressConference,
+    answerPressQuestion,
+    dismissPress,
+    sendScout,
+    claimScoutReport,
+    dismissScoutReport,
+    cancelScoutMission,
     trainPlayer,
     openShopBranch,
     unlockAchievement,
@@ -2276,6 +3305,16 @@ export const useGameState = () => {
     buyCapacityPackage,
     setTicketMultiplier,
     upgradeStadiumLevel,
+    upgradeTribune,
+    hostStadiumEvent,
+    setTacticsSlider,
+    buyDevice,
+    setActiveDevice,
+    sellDevice,
+    buyPCComponent,
+    setPCPart,
+    sellPCComponent,
+    assemblePC,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,

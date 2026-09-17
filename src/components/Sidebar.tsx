@@ -85,23 +85,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Stats Grid */}
+        {/* Stats Grid - premium progress bar eklendi */}
         <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
-            <div className="text-[10px] text-slate-400">Takım Gücü</div>
-            <div className="text-lg font-bold text-emerald-400">⭐ {avgOvr}</div>
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm hover:border-emerald-500/30 hover:bg-slate-700/60 transition-all group">
+            <div className="text-[10px] text-slate-400 group-hover:text-emerald-300 transition-colors">Takım Gücü</div>
+            <div className="text-lg font-black text-emerald-400">⭐ {avgOvr}</div>
+            <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, avgOvr)}%` }} /></div>
           </div>
-          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm hover:border-slate-500/40 transition-all">
             <div className="text-[10px] text-slate-400">Hafta</div>
-            <div className="text-lg font-bold text-white">📅 {gameState.week}/18</div>
+            <div className="text-lg font-black text-white">📅 {gameState.week}/18</div>
+            <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className="h-full bg-cyan-500 transition-all duration-700" style={{ width: `${(gameState.week/18)*100}%` }} /></div>
           </div>
-          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm hover:border-amber-500/30 transition-all">
             <div className="text-[10px] text-slate-400">Enerji</div>
-            <div className={`text-lg font-bold ${getEnergyColor(avgEnergy)}`}>⚡ %{avgEnergy}</div>
+            <div className={`text-lg font-black ${getEnergyColor(avgEnergy)}`}>⚡ %{avgEnergy}</div>
+            <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className={`h-full transition-all duration-700 ${avgEnergy>=70?'bg-emerald-500':avgEnergy>=40?'bg-yellow-500':'bg-red-500'}`} style={{ width: `${avgEnergy}%` }} /></div>
           </div>
-          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm hover:border-violet-500/30 transition-all">
             <div className="text-[10px] text-slate-400">Moral</div>
-            <div className="text-lg font-bold text-white">{getMoraleIcon(avgMorale)} %{avgMorale}</div>
+            <div className="text-lg font-black text-white">{getMoraleIcon(avgMorale)} %{avgMorale}</div>
+            <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className={`h-full transition-all duration-700 ${avgMorale>=70?'bg-emerald-500':avgMorale>=40?'bg-yellow-500':'bg-red-500'}`} style={{ width: `${avgMorale}%` }} /></div>
           </div>
         </div>
 

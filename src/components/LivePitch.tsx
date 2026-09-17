@@ -178,13 +178,15 @@ export const LivePitch: React.FC<LivePitchProps> = ({
         </span>
       </div>
 
-      {/* Saha */}
-      <div className={`relative w-full h-40 lg:h-52 rounded-xl overflow-hidden border-2 border-white/30 ${lastGoal ? 'animate-goal-flash' : ''}`}
+      {/* Saha - büyütüldü: maç simülasyonu artık ekrana uyumlu ve geniş + premium ışık */}
+      <div className={`relative w-full h-64 sm:h-72 lg:h-[380px] xl:h-[440px] rounded-xl overflow-hidden border-2 shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.12)] ${lastGoal ? 'animate-goal-flash border-emerald-400/60 shadow-[0_0_32px_rgba(16,185,129,0.5)]' : 'border-white/30'}`}
         style={{
           background:
             'repeating-linear-gradient(0deg, #15803d 0px, #15803d 22px, #16a34a 22px, #16a34a 44px)',
         }}
       >
+        {/* stadyum ışığı - üstten yansıma */}
+        <div className="absolute inset-0 pointer-events-none opacity-[0.08]" style={{ background: 'radial-gradient(800px circle at 50% 0%, white, transparent 70%)' }} />
         {/* Saha çizgileri */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-1/2 left-0 right-0 h-[2px] bg-white/40" />

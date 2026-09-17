@@ -178,10 +178,295 @@ export const AWAY_PENALTY = 2;
 /** Kulüpten ayrılma sınırı: moral bu değerin altına düşerse oyuncu gitmek ister */
 export const UNHAPPY_MORALE = 30;
 
+/* ══════════ GERÇEKÇİ YATIRIM PİYASASI (v2) ══════════
+   - Her varlık: volatilite, drift, temettü/kira/kupon, beta, risk sınıfı
+   - Fiyatlar haftalık Gaussian + piyasa hissiyatı ile evrilir, grafik history'de izlenir
+   - Temettü/kira/kupon her hafta nakit olarak ödenir (gerçek piyasadaki gibi)
+*/
+function invHistory(base: number): number[] {
+  // 16 haftalık geriye dönük gerçekçi fiyat serisi
+  const h: number[] = [];
+  let p = base * 0.92;
+  for (let i = 0; i < 16; i++) {
+    const drift = 0.002;
+    const vol = 0.035;
+    const shock = (Math.random() * 2 - 1) * vol;
+    p = Math.round(p * (1 + drift + shock));
+    h.push(p);
+  }
+  h[h.length - 1] = base;
+  return h;
+}
+
 export const INITIAL_INVESTMENTS = [
-  { id: 1, name: "Borsa (SP500)", price: 100000, type: "stock", owned: 0, lastChange: 0, icon: "📈" },
-  { id: 2, name: "Dijital Altın", price: 50000, type: "gold", owned: 0, lastChange: 0, icon: "🥇" },
-  { id: 3, name: "Emlak Fonu", price: 250000, type: "realestate", owned: 0, lastChange: 0, icon: "🏠" },
-  { id: 4, name: "Kripto Varlık", price: 75000, type: "crypto", owned: 0, lastChange: 0, icon: "₿" },
-  { id: 5, name: "Tahvil", price: 150000, type: "bond", owned: 0, lastChange: 0, icon: "📜" }
+  {
+    id: 1,
+    name: "BIST 100 Endeks Fonu",
+    price: 118000,
+    basePrice: 118000,
+    type: "stock" as const,
+    owned: 0,
+    lastChange: 0,
+    icon: "📈",
+    history: invHistory(118000),
+    volatility: 0.048,
+    drift: 0.0042,
+    dividendYield: 0.018,
+    risk: "Yüksek" as const,
+    sector: "Borsa İstanbul • Hisse Senedi",
+    description: "Türkiye'nin en büyük 100 şirketine endeksli borsa yatırım fonu. Temettü verir, yüksek getiri potansiyeli ama düzeltmelerde sert düşer. SPK denetimli, T+2 takas.",
+    avgCost: 118000,
+    dividendsEarned: 0,
+    marketBeta: 1.0
+  },
+  {
+    id: 2,
+    name: "Gram Altın (Fiziki)",
+    price: 82000,
+    basePrice: 82000,
+    type: "gold" as const,
+    owned: 0,
+    lastChange: 0,
+    icon: "🥇",
+    history: invHistory(82000),
+    volatility: 0.031,
+    drift: 0.0021,
+    dividendYield: 0,
+    risk: "Orta" as const,
+    sector: "Değerli Metal • Güvenli Liman",
+    description: "Enflasyon ve kriz dönemlerinin güvenli limanı. Borsa düşerken genelde yükselir (negatif beta). Fiziki altın, temettü yok — kazanç sadece fiyat artışından.",
+    avgCost: 82000,
+    dividendsEarned: 0,
+    marketBeta: -0.28
+  },
+  {
+    id: 3,
+    name: "İstanbul GYO Sepeti",
+    price: 235000,
+    basePrice: 235000,
+    type: "realestate" as const,
+    owned: 0,
+    lastChange: 0,
+    icon: "🏘️",
+    history: invHistory(235000),
+    volatility: 0.024,
+    drift: 0.0016,
+    dividendYield: 0.055,
+    risk: "Orta" as const,
+    sector: "GYO • Kira Geliri",
+    description: "İstanbul konut & ticari portföyüne dayalı GYO fonu. Her hafta kira temettüsü öder (%5.5 yıllık). Fiyatı yavaş hareket eder, emlak balonuna dikkat.",
+    avgCost: 235000,
+    dividendsEarned: 0,
+    marketBeta: 0.45
+  },
+  {
+    id: 4,
+    name: "Kripto Sepeti (BTC/ETH)",
+    price: 72000,
+    basePrice: 72000,
+    type: "crypto" as const,
+    owned: 0,
+    lastChange: 0,
+    icon: "₿",
+    history: invHistory(72000),
+    volatility: 0.105,
+    drift: 0.0055,
+    dividendYield: 0,
+    risk: "Çok Yüksek" as const,
+    sector: "Kripto • Volatil",
+    description: "Bitcoin ve Ethereum ağırlıklı sepet. Haftada %±15 dalgalanma normal. Düzenleme haberlerine çok duyarlı, stopaj %0 ama kayıp riski en yüksek.",
+    avgCost: 72000,
+    dividendsEarned: 0,
+    marketBeta: 0.62
+  },
+  {
+    id: 5,
+    name: "Devlet Tahvili (TL 10Y)",
+    price: 145000,
+    basePrice: 145000,
+    type: "bond" as const,
+    owned: 0,
+    lastChange: 0,
+    icon: "📜",
+    history: invHistory(145000),
+    volatility: 0.014,
+    drift: 0.0006,
+    dividendYield: 0.18,
+    risk: "Düşük" as const,
+    sector: "Sabit Getiri • Hazine",
+    description: "Hazine ihraçlı 10 yıllık TL tahvil. Her hafta kupon faizi öder (%18 yıllık). Fiyatı çok oynak değil — faiz artarsa fiyatı düşer, düşerse fırlar.",
+    avgCost: 145000,
+    dividendsEarned: 0,
+    marketBeta: 0.08
+  }
 ];
+
+/* ══════════ KREDİ & TEFECİ PAKETLERİ (24) ══════════
+   Banka: düşük faiz, yönetim güveni şart, gecikmede puan silinmez ama güven düşer
+   Tefeci: anında verir, kimlik sormaz ama faiz can yakar, gecikmede -3 puan + moral çöker
+*/
+export const CREDIT_PACKAGES = [
+  {
+    id: 'bank_quick',
+    name: 'Hızlı Banka Kredisi',
+    amount: 350000,
+    weeks: 5,
+    interestRate: 0.14,
+    weeklyPayment: 79800,
+    totalRepayment: 399000,
+    type: 'bank' as const,
+    icon: '🏦',
+    description: 'Acil nakit: 5 haftada geri öde, düşük faiz. Transferde son gün kurtarıcısı.',
+    requirement: 'Yönetim güveni %35+',
+  },
+  {
+    id: 'bank_standard',
+    name: 'Esnaf Kredisi',
+    amount: 700000,
+    weeks: 6,
+    interestRate: 0.18,
+    weeklyPayment: 137667,
+    totalRepayment: 826000,
+    type: 'bank' as const,
+    icon: '🏛️',
+    description: 'Orta vade, dengeli taksit. Tesis + transferi aynı anda finanse eder.',
+    requirement: 'Yönetim güveni %40+',
+  },
+  {
+    id: 'bank_big',
+    name: 'Kurumsal Kredi',
+    amount: 1200000,
+    weeks: 8,
+    interestRate: 0.25,
+    weeklyPayment: 187500,
+    totalRepayment: 1500000,
+    type: 'bank' as const,
+    icon: '💼',
+    description: 'Büyük oynayanlara: 1.2M anında, 8 taksit. Yıldız transferi için.',
+    requirement: 'Yönetim güveni %50+',
+  },
+  {
+    id: 'shark_flash',
+    name: 'Tefeci — Kara Para',
+    amount: 500000,
+    weeks: 4,
+    interestRate: 0.35,
+    weeklyPayment: 168750,
+    totalRepayment: 675000,
+    type: 'shark' as const,
+    icon: '🕶️',
+    description: 'Soru yok, kefil yok — 4 haftada %35 faiz! Ödeyemezsen puan silinir, takım morali çöker.',
+    requirement: 'Hiçbir şart yok',
+  },
+  {
+    id: 'shark_big',
+    name: 'Tefeci — Büyük Vurgun',
+    amount: 900000,
+    weeks: 5,
+    interestRate: 0.42,
+    weeklyPayment: 255600,
+    totalRepayment: 1278000,
+    type: 'shark' as const,
+    icon: '💀',
+    description: 'En riskli: 900k anında, 5 haftada %42 faiz. Son çare — ya şampiyon olursun ya batarsın.',
+    requirement: 'Hiçbir şart yok',
+  },
+];
+
+/* ══════════ KULÜP FELSEFESİ & ULTRAS (v4.2) ══════════ */
+export const PHILOSOPHIES = [
+  {
+    id: 'youth' as const,
+    name: 'Altyapı Fabrikası',
+    icon: '🌱',
+    color: 'emerald',
+    desc: 'Gençlere yatırım. Akademi + genç gelişimi %25 hızlanır, taraftar sabırlı, bütçe kısıtlı.',
+    bonus: 'Genç gelişimi +25% • Scout yenileme %20 ucuz • Ultras genç oynatmanı ister',
+    fanExpectation: 'İlk 6 yeterli, gençlere şans ver',
+  },
+  {
+    id: 'money' as const,
+    name: 'Para Makinesi',
+    icon: '💰',
+    color: 'amber',
+    desc: 'Ticari başarı. Mağaza + sponsor + yatırım geliri %15 fazla, taraftar şov sever.',
+    bonus: 'Mağaza & sponsor +%15 • Yatırım temettü +%10 • Taraftar doluluk +5%',
+    fanExpectation: 'Her sezon kâr et, şov transferi yap',
+  },
+  {
+    id: 'trophy' as const,
+    name: 'Kupa Avcısı',
+    icon: '🏆',
+    color: 'violet',
+    desc: 'Sadece şampiyonluk. Maç gücü +3, yönetim sabırsız, her kupa sonrası dev ödül.',
+    bonus: 'Maçlarda +3 OVR • Kupa primi x1.5 • Moral +5 galibiyette',
+    fanExpectation: 'İlk 3 şart, kupa = efsane',
+  },
+];
+
+export const ULTRAS_TEMPLATES = [
+  { kind: 'youth' as const, text: 'Bu ay bir altyapı oyuncusunu A takıma al!', reward: 'Sadakat +12, kimya +2', penalty: '-8 taraftar, -6 ultras' },
+  { kind: 'youth' as const, text: 'Gençlere süre ver — bir U23 oyuncuyu ilk 11 başlat', reward: 'Genç gelişimi +1 OVR', penalty: 'Ultras ıslıklar' },
+  { kind: 'star' as const, text: 'Yıldız transferi istiyoruz — OVR 78+ birini al', reward: 'Tribün doluluk +8%', penalty: 'Taraftar -10' },
+  { kind: 'derby' as const, text: 'Derbiyi kazan — sıradaki iç saha maçını al', reward: 'Moral +8 tüm takım', penalty: 'Yönetim güven -5' },
+  { kind: 'cleanSheet' as const, text: '2 maçta gol yemeyin — savunmayı toparlayın', reward: 'Savunma +2 sonraki maç', penalty: 'Ultras -10' },
+  { kind: 'derby' as const, text: 'Deplasmanda yenilmeyin — en az beraberlik', reward: 'Deplasman primi +$100k', penalty: 'Fan -7' },
+];
+
+export const PRESS_QUESTIONS: Record<string, { q: string; answers: { tone: string; label: string; effect: string }[] }[]> = {
+  win: [
+    { q: "Galibiyetin anahtarı neydi?", answers: [
+      { tone: 'humble', label: "Çocuklar çok çalıştı, ben sadece yön verdim", effect: "Takım morali +5, kimya +2" },
+      { tone: 'confident', label: "Planım tıkır tıkır işledi — biz daha iyiyiz", effect: "Taraftar +6, board +3 ama rakip bileniyor" },
+      { tone: 'aggressive', label: "Hakem de rakip de yetmedi!", effect: "Ultras +7, ama kart riski haftaya +15%" },
+    ]},
+    { q: "Bir oyuncunuzu öne çıkarır mısınız?", answers: [
+      { tone: 'humble', label: "Hepsi yıldızdı, tek isim haksızlık olur", effect: "Takım geneli moral +3" },
+      { tone: 'confident', label: "Gol kralımız yine konuştu — ona güveniyorum", effect: "Golcü moral +10, diğerleri -2" },
+      { tone: 'neutral', label: "Taraftar muhteşemdi, galibiyet onların", effect: "Fan +8, ultras +5" },
+    ]},
+  ],
+  draw: [
+    { q: "Beraberliği nasıl değerlendiriyorsunuz?", answers: [
+      { tone: 'humble', label: "Bir puan da puandır, ders çıkardık", effect: "Moral sabit, kimya +1" },
+      { tone: 'aggressive', label: "Hakem iki puanımızı çaldı!", effect: "Ultras +5, board -2" },
+      { tone: 'confident', label: "Üstün olan bizdik, gol gecikti", effect: "Fan +3" },
+    ]},
+    { q: "Sıradaki maç için mesajınız?", answers: [
+      { tone: 'confident', label: "Eze eze kazanacağız", effect: "Takım morali +4, baskı artar" },
+      { tone: 'humble', label: "Adım adım, her maç final", effect: "Kimya +2" },
+      { tone: 'neutral', label: "Taraftar yanımızda olsun yeter", effect: "Fan +4" },
+    ]},
+  ],
+  loss: [
+    { q: "Mağlubiyetin sebebi neydi?", answers: [
+      { tone: 'humble', label: "Sorumluluk bende, daha iyi hazırlanacağız", effect: "Board +3, takım saygı +4" },
+      { tone: 'aggressive', label: "Oyuncularım sahada yoktu!", effect: "Takım moral -8, board -5 ama ultras +3" },
+      { tone: 'confident', label: "Kaza oldu, telafi edeceğiz", effect: "Moral -2, fan -2" },
+    ]},
+    { q: "Eleştirilere ne diyorsunuz?", answers: [
+      { tone: 'humble', label: "Haklılar, daha çok çalışmalıyız", effect: "Fan +2, kimya +1" },
+      { tone: 'aggressive', label: "Koltuğumdan memnun olmayan istifa etsin!", effect: "Board -7, ultras +6" },
+      { tone: 'neutral', label: "Sahada konuşacağız", effect: "Moral +2" },
+    ]},
+  ],
+};
+
+export const SCOUT_REGIONS = [
+  { id: 'balkans', name: 'Balkanlar', flag: '🇹🇷', desc: 'Ucuz, hızlı — teknik, mücadeleci gençler', cost: 42000, weeks: 2, ovrRange: [60, 68], potRange: [74, 84], trait: 'Teknik + Mücadele' },
+  { id: 'west_eu', name: 'Batı Avrupa', flag: '🇩🇪', desc: 'Dengeli, pahalı değil — taktik zekâ', cost: 78000, weeks: 3, ovrRange: [64, 73], potRange: [78, 87], trait: 'Taktik + Pas' },
+  { id: 'south_america', name: 'Güney Amerika', flag: '🇧🇷', desc: 'Pahalı, yetenek tavanı yüksek — flair', cost: 125000, weeks: 3, ovrRange: [65, 73], potRange: [81, 91], trait: 'Flair + Dripling' },
+  { id: 'africa', name: 'Afrika', flag: '🇳🇬', desc: 'Hız + güç, orta maliyet', cost: 62000, weeks: 2, ovrRange: [62, 70], potRange: [77, 88], trait: 'Hız + Güç' },
+  { id: 'east_eu', name: 'Doğu Avrupa', flag: '🇵🇱', desc: 'Fizik + disiplin, orta süre', cost: 58000, weeks: 3, ovrRange: [61, 69], potRange: [76, 85], trait: 'Fizik + Disiplin' },
+  { id: 'asia', name: 'Doğu Asya', flag: '🇯🇵', desc: 'Çalışkan, düşük maliyet, sürpriz potansiyel', cost: 40000, weeks: 2, ovrRange: [59, 67], potRange: [73, 84], trait: 'Çalışkan + Sürpriz' },
+];
+
+export const TACTICS_SLIDERS = [
+  { id: 'defensiveLine' as const, label: 'Savunma Çizgisi', icon: '🛡️', min: 0, max: 100, def: 50, desc: '0 derin kapanır, 100 önde basar', left: 'Derin', right: 'Yüksek' },
+  { id: 'width' as const, label: 'Genişlik', icon: '↔️', min: 0, max: 100, def: 50, desc: '0 dar & kompakt, 100 geniş & kanat', left: 'Dar', right: 'Geniş' },
+  { id: 'creativity' as const, label: 'Yaratıcılık', icon: '🎨', min: 0, max: 100, def: 50, desc: '0 disiplinli, 100 özgür & riskli', left: 'Disiplin', right: 'Özgür' },
+  { id: 'pressingIntensity' as const, label: 'Pres Şiddeti', icon: '🔥', min: 0, max: 100, def: 50, desc: '0 gevşek, 100 boğucu pres', left: 'Gevşek', right: 'Boğucu' },
+  { id: 'tempoValue' as const, label: 'Tempo', icon: '⚡', min: 0, max: 100, def: 50, desc: '0 yavaş & pas, 100 dikine & hızlı', left: 'Yavaş', right: 'Hızlı' },
+];
+
+
