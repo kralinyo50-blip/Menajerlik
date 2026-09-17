@@ -353,6 +353,9 @@ export const useGameState = () => {
       ultrasHappiness: 65,
       ultrasRequests: [],
       museum: [],
+      pendingPress: null,
+      scoutMissions: [],
+      scoutReports: [],
       life: defaultLife(),
       socialFeed: []
     };
@@ -394,6 +397,9 @@ export const useGameState = () => {
     if ((state as any).ultrasHappiness == null) (state as any).ultrasHappiness = 65;
     if (!(state as any).ultrasRequests) (state as any).ultrasRequests = [];
     if (!(state as any).museum) (state as any).museum = [];
+    if (!(state as any).scoutMissions) (state as any).scoutMissions = [];
+    if (!(state as any).scoutReports) (state as any).scoutReports = [];
+    if ((state as any).pendingPress === undefined) (state as any).pendingPress = null;
     setGameState(state);
   }, []);
 
@@ -701,6 +707,9 @@ export const useGameState = () => {
     if ((loaded as any).ultrasHappiness == null) (loaded as any).ultrasHappiness = 65;
     if (!(loaded as any).ultrasRequests) (loaded as any).ultrasRequests = [];
     if (!(loaded as any).museum) (loaded as any).museum = [];
+    if (!(loaded as any).scoutMissions) (loaded as any).scoutMissions = [];
+    if (!(loaded as any).scoutReports) (loaded as any).scoutReports = [];
+    if ((loaded as any).pendingPress === undefined) (loaded as any).pendingPress = null;
     setGameState(loaded);
     return true;
   }, []);
@@ -1757,6 +1766,48 @@ export const useGameState = () => {
         }
       }
 
+      /* — Scout görevleri haftalık ilerleme — */
+      {
+        const missions: any[] = (newState as any).scoutMissions || [];
+        const reports: any[] = (newState as any).scoutReports || [];
+        const nextMissions: any[] = [];
+        const regionMap: Record<string, any> = {
+          balkans: { ovr: [60,69], pot: [74,84], roles: ['OS','SB','STP'], trait: 'teknik' },
+          west_eu: { ovr: [64,74], pot: [78,88], roles: ['OS','STP','SB'], trait: 'taktik' },
+          south_america: { ovr: [65,74], pot: [82,92], roles: ['FW','OS','SB'], trait: 'flair' },
+          africa: { ovr: [62,71], pot: [77,89], roles: ['FW','SB','STP'], trait: 'hız' },
+          east_eu: { ovr: [61,70], pot: [76,86], roles: ['STP','SB','KL'], trait: 'fizik' },
+          asia: { ovr: [59,68], pot: [73,85], roles: ['OS','SB','FW'], trait: 'çalışkan' },
+        };
+        missions.forEach((m:any)=> {
+          const left = (m.weeksLeft||1)-1;
+          if (left <= 0) {
+            // rapor üret
+            const cfg = regionMap[m.regionId] || regionMap.balkans;
+            const count = 1 + (Math.random()<0.45?1:0) + (Math.random()<0.15?1:0); // 1-3
+            const players: any[] = [];
+            for (let i=0;i<count;i++) {
+              const role = cfg.roles[Math.floor(Math.random()*cfg.roles.length)];
+              const ovr = cfg.ovr[0] + Math.floor(Math.random()*(cfg.ovr[1]-cfg.ovr[0]+1));
+              const pot = Math.max(ovr+4, cfg.pot[0] + Math.floor(Math.random()*(cfg.pot[1]-cfg.pot[0]+1)));
+              const age = 16 + Math.floor(Math.random()*3);
+              const rc = (()=>{ try{ return randomCountry(); } catch { return {country:'Bilinmiyor', flag:'🌍'}; } })();
+              const id = Date.now()+Math.floor(Math.random()*100000)+i;
+              const name = `${FIRST_NAMES[Math.floor(Math.random()*FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random()*LAST_NAMES.length)]}`;
+              const val = Math.round(ovr* 12000 + (pot-ovr)*8000 + Math.random()*5000);
+              players.push({ id, name, ovr, role, age, potential: Math.min(99,pot), value: val, wage: Math.max(800, Math.round(ovr*280)), contract: 3, energy: 100, morale: 75+Math.floor(Math.random()*15), goals:0, assists:0, injured:false, injuryWeeks:0, yellowCards:0, redCard:false, suspension:0, matchesPlayed:0, form:5+Math.floor(Math.random()*3), country: rc.country, flag: rc.flag, potentialOriginal: pot });
+            }
+            const report: any = { id: `rep-${Date.now()}-${Math.random().toString(36).slice(2,4)}`, regionId: m.regionId, regionName: m.regionName, players, generatedWeek: newState.week, generatedSeason: newState.season };
+            reports.push(report);
+            newState.news = [`📬 İzci döndü (${m.regionName}): ${players.length} genç bulundu! Tesisler → Scout`, ...newState.news.slice(0,4)];
+          } else {
+            nextMissions.push({ ...m, weeksLeft: left });
+          }
+        });
+        (newState as any).scoutMissions = nextMissions;
+        (newState as any).scoutReports = reports;
+      }
+
       /* — Görevler, XP ve yetenek etkileri — */
       if (!isCup && (newState.clubStats.penaltyWins === undefined)) newState.clubStats.penaltyWins = 0;
       if (penaltyWinner === 'user') {
@@ -2236,6 +2287,89 @@ export const useGameState = () => {
     setGameState(prev => {
       if (!prev) return null;
       return { ...prev, pendingPress: null, boardConfidence: Math.max(0,(prev.boardConfidence||60)-2), news: ['🎙️ Basın toplantısı atlandı — yönetim memnun değil (-2)', ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const sendScout = useCallback((regionId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // @ts-ignore
+      const regions: any[] = (() => { try { return require('../data/constants').SCOUT_REGIONS; } catch { return []; } })();
+      // fallback inline if import fails
+      const fallback: any[] = [
+        { id: 'balkans', name: 'Balkanlar', cost: 45000, weeks: 2 },
+        { id: 'west_eu', name: 'Batı Avrupa', cost: 85000, weeks: 3 },
+        { id: 'south_america', name: 'Güney Amerika', cost: 135000, weeks: 3 },
+        { id: 'africa', name: 'Afrika', cost: 70000, weeks: 2 },
+        { id: 'east_eu', name: 'Doğu Avrupa', cost: 65000, weeks: 3 },
+        { id: 'asia', name: 'Doğu Asya', cost: 50000, weeks: 2 },
+      ];
+      const list = regions.length ? regions : fallback;
+      const region: any = list.find((r:any)=> r.id===regionId);
+      if (!region) return prev;
+      if (prev.budget < region.cost) return prev;
+      // max 3 aynı anda
+      if ((prev.scoutMissions||[]).length >= 3) return prev;
+      const mission: any = {
+        id: `scout-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+        regionId: region.id,
+        regionName: region.name,
+        weeksLeft: region.weeks,
+        totalWeeks: region.weeks,
+        cost: region.cost,
+        startedWeek: prev.week,
+        startedSeason: prev.season,
+      };
+      return {
+        ...prev,
+        budget: prev.budget - region.cost,
+        scoutMissions: [...(prev.scoutMissions||[]), mission],
+        news: [`🧭 İzci gönderildi: ${region.flag||'🌍'} ${region.name} — ${region.weeks} hafta, $${region.cost.toLocaleString()}`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const claimScoutReport = useCallback((reportId: string, playerId?: number) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const report = (prev.scoutReports||[]).find((r:any)=> r.id===reportId);
+      if (!report) return prev;
+      if (playerId) {
+        const player = (report.players||[]).find((p:any)=> p.id===playerId);
+        if (!player) return prev;
+        return {
+          ...prev,
+          academyPlayers: [...prev.academyPlayers, { ...player, id: Date.now()+Math.floor(Math.random()*1000) }],
+          scoutReports: (prev.scoutReports||[]).map((r:any)=> r.id===reportId ? { ...r, players: r.players.filter((p:any)=> p.id!==playerId)} : r).filter((r:any)=> r.players.length>0),
+          news: [`🌟 ${player.name} (${player.ovr} OVR, pot ${player.potential}) altyapıya katıldı! (${report.regionName})`, ...prev.news.slice(0,4)],
+        };
+      } else {
+        // hepsini al
+        const toAcademy = (report.players||[]).map((p:any)=> ({ ...p, id: Date.now()+Math.floor(Math.random()*10000)+p.id%1000 }));
+        return {
+          ...prev,
+          academyPlayers: [...prev.academyPlayers, ...toAcademy],
+          scoutReports: (prev.scoutReports||[]).filter((r:any)=> r.id!==reportId),
+          news: [`🌟 ${report.regionName} raporu: ${toAcademy.length} genç altyapıya katıldı!`, ...prev.news.slice(0,4)],
+        };
+      }
+    });
+  }, []);
+
+  const dismissScoutReport = useCallback((reportId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, scoutReports: (prev.scoutReports||[]).filter((r:any)=> r.id!==reportId), news: [`🗑️ İzci raporu silindi.`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const cancelScoutMission = useCallback((missionId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const m = (prev.scoutMissions||[]).find((x:any)=> x.id===missionId);
+      if (!m) return prev;
+      const refund = Math.round(m.cost*0.4);
+      return { ...prev, scoutMissions: (prev.scoutMissions||[]).filter((x:any)=> x.id!==missionId), budget: prev.budget + refund, news: [`↩️ İzci görevi iptal: ${m.regionName} • $${refund.toLocaleString()} iade`, ...prev.news.slice(0,4)] };
     });
   }, []);
 
@@ -2839,6 +2973,10 @@ export const useGameState = () => {
     generatePressConference,
     answerPressQuestion,
     dismissPress,
+    sendScout,
+    claimScoutReport,
+    dismissScoutReport,
+    cancelScoutMission,
     trainPlayer,
     openShopBranch,
     unlockAchievement,

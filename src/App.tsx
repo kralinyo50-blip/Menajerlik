@@ -106,6 +106,10 @@ function App() {
     generateUltrasRequests,
     completeUltrasRequest,
     dismissUltrasRequest,
+    sendScout,
+    claimScoutReport,
+    dismissScoutReport,
+    cancelScoutMission,
     trainPlayer,
     openShopBranch,
     completeTutorial,
@@ -1242,6 +1246,10 @@ function App() {
                 onHireStaff={hireStaff}
                 onDiscoverYouth={discoverYouthPlayer}
                 onPromoteYouth={promoteYouthPlayer}
+                onSendScout={sendScout}
+                onClaimScoutReport={claimScoutReport}
+                onDismissScoutReport={dismissScoutReport}
+                onCancelScoutMission={cancelScoutMission}
               />
             )}
             {activeTab === 'shop' && <ShopTab gameState={gameState} onPurchase={handleShopPurchase} />}

@@ -262,6 +262,37 @@ export interface PressConference {
   answered: number;
 }
 
+export type ScoutRegionId = 'balkans' | 'west_eu' | 'south_america' | 'africa' | 'east_eu' | 'asia';
+export interface ScoutRegion {
+  id: ScoutRegionId;
+  name: string;
+  flag: string;
+  desc: string;
+  cost: number;
+  weeks: number;
+  ovrRange: [number, number];
+  potRange: [number, number];
+  trait: string;
+}
+export interface ScoutMission {
+  id: string;
+  regionId: ScoutRegionId;
+  regionName: string;
+  weeksLeft: number;
+  totalWeeks: number;
+  cost: number;
+  startedWeek: number;
+  startedSeason: number;
+}
+export interface ScoutReport {
+  id: string;
+  regionId: ScoutRegionId;
+  regionName: string;
+  players: Player[];
+  generatedWeek: number;
+  generatedSeason: number;
+}
+
 export interface Sponsor {
   name: string;
   income: number;
@@ -539,6 +570,8 @@ export interface GameState {
   ultrasRequests: UltrasRequest[];
   museum: MuseumEntry[];
   pendingPress?: PressConference | null;
+  scoutMissions: ScoutMission[];
+  scoutReports: ScoutReport[];
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──
