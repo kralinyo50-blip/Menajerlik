@@ -298,7 +298,12 @@ export const useGameState = () => {
         formation: '4-3-3',
         style: 'balanced',
         pressing: 'medium',
-        tempo: 'normal'
+        tempo: 'normal',
+        defensiveLine: 50,
+        width: 50,
+        creativity: 50,
+        pressingIntensity: 50,
+        tempoValue: 50,
       },
       investments: INITIAL_INVESTMENTS.map(i => ({ ...i, history: [...(i.history as number[])] })),
       activeCredits: [],
@@ -400,6 +405,19 @@ export const useGameState = () => {
     if (!(state as any).scoutMissions) (state as any).scoutMissions = [];
     if (!(state as any).scoutReports) (state as any).scoutReports = [];
     if ((state as any).pendingPress === undefined) (state as any).pendingPress = null;
+    if (!(state as any).stadium?.tribunes) {
+      const baseStadium = (state as any).stadium || {};
+      baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
+      (state as any).stadium = baseStadium;
+    }
+    if ((state as any).tactics) {
+      const tac: any = (state as any).tactics;
+      if (tac.defensiveLine == null) tac.defensiveLine = 50;
+      if (tac.width == null) tac.width = 50;
+      if (tac.creativity == null) tac.creativity = 50;
+      if (tac.pressingIntensity == null) tac.pressingIntensity = 50;
+      if (tac.tempoValue == null) tac.tempoValue = 50;
+    }
     setGameState(state);
   }, []);
 
@@ -710,6 +728,19 @@ export const useGameState = () => {
     if (!(loaded as any).scoutMissions) (loaded as any).scoutMissions = [];
     if (!(loaded as any).scoutReports) (loaded as any).scoutReports = [];
     if ((loaded as any).pendingPress === undefined) (loaded as any).pendingPress = null;
+    if (!(loaded as any).stadium?.tribunes) {
+      const baseStadium = (loaded as any).stadium || {};
+      baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
+      (loaded as any).stadium = baseStadium;
+    }
+    if ((loaded as any).tactics) {
+      const tac: any = (loaded as any).tactics;
+      if (tac.defensiveLine == null) tac.defensiveLine = 50;
+      if (tac.width == null) tac.width = 50;
+      if (tac.creativity == null) tac.creativity = 50;
+      if (tac.pressingIntensity == null) tac.pressingIntensity = 50;
+      if (tac.tempoValue == null) tac.tempoValue = 50;
+    }
     setGameState(loaded);
     return true;
   }, []);
@@ -1712,17 +1743,17 @@ export const useGameState = () => {
           (newState as any).ultrasRequests = [...remaining, req];
           newState.news = [`📢 Ultras: "${pick.text}" — ${req.deadlineWeek - (newState.week||1)} hafta süren var!`, ...newState.news.slice(0,4)];
         }
-        // Drama modu — %12 ihtimalle soyunma odası / kriz olayı (more_drama)
-        if (!isCup && Math.random() < 0.10) {
+        // Mild surprise — %5 ihtimalle hafif drama (ortalama görsel, hafif olay)
+        if (!isCup && Math.random() < 0.05) {
           const roll = Math.random();
           if (roll < 0.35) {
             // Soyunma odası kavgası
             const a = [...newState.team11, ...newState.bench][Math.floor(Math.random()*Math.min(11,newState.team11.length))];
             const b = [...newState.team11, ...newState.bench].find(pl=> pl.id!==a.id) || a;
-            newState.teamChemistry = Math.max(0,(newState.teamChemistry||55)-4);
-            newState.team11 = newState.team11.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-7)} : pl);
-            newState.bench = newState.bench.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-7)} : pl);
-            newState.news = [`🎭 Drama: Soyunma odasında ${a.name} — ${b.name} tartışması! Kimya -4, moral -7`, ...newState.news.slice(0,4)];
+            newState.teamChemistry = Math.max(0,(newState.teamChemistry||55)-2);
+            newState.team11 = newState.team11.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-4)} : pl);
+            newState.bench = newState.bench.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-4)} : pl);
+            newState.news = [`🎭 Hafif gerginlik: ${a.name} — ${b.name} tartışması, tatlıya bağlandı. Kimya -2, moral -4`, ...newState.news.slice(0,4)];
           } else if (roll < 0.65) {
             // Yıldız resti — wantsOut drama
             const candidates = [...newState.team11, ...newState.bench].filter(pl=> pl.ovr>=76 && !pl.wantsOut);
@@ -1731,8 +1762,8 @@ export const useGameState = () => {
               const bump = (pl:any)=> pl.id===star.id ? { ...pl, wantsOut: true, morale: Math.max(0, pl.morale-10)} : pl;
               newState.team11 = newState.team11.map(bump);
               newState.bench = newState.bench.map(bump);
-              (newState as any).ultrasHappiness = Math.max(0,((newState as any).ultrasHappiness||65)-6);
-              newState.news = [`🎭 Drama: ${star.name} menajeriyle görüştü — "ayrılmak istiyorum" (wantsOut)! Ultras -6`, ...newState.news.slice(0,4)];
+              (newState as any).ultrasHappiness = Math.max(0,((newState as any).ultrasHappiness||65)-3);
+              newState.news = [`📰 Hafif dedikodu: ${star.name} menajeriyle görüştü — "daha fazla süre istiyor" (moral -5)`, ...newState.news.slice(0,4)];
               newState.boardMessages = [`📢 ${star.name} ayrılmak istiyor! Ofis → Sözleşmeler'den ikna et.`, ...newState.boardMessages.slice(0,4)];
             }
           } else {
@@ -2607,6 +2638,65 @@ export const useGameState = () => {
     });
   }, []);
 
+  const upgradeTribune = useCallback((side: 'north'|'south'|'east'|'west') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? { design: { seatColor: '#1d4ed8', accentColor: '#f8fafc', roof: 'none', stands: 'classic', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: true }, capacityBonus: 0, ticketMultiplier: 1, vip: false, cosmetics: [], tribunes: { north: 1, south: 1, east: 1, west: 1 } } as any;
+      const tribunes: any = stadium.tribunes || { north: 1, south: 1, east: 1, west: 1 };
+      const lvl = tribunes[side] ?? 1;
+      if (lvl >= 5) return prev;
+      const baseSeats: Record<string, number> = { north: 2200, south: 2200, east: 3200, west: 3200 };
+      const pricePerLevel: Record<string, number> = { north: 650000, south: 650000, east: 850000, west: 900000 };
+      const cost = Math.round(pricePerLevel[side] * (0.9 + lvl*0.35)); // her seviye %35 pahalanır
+      if (prev.budget < cost) return prev;
+      const nextTribunes = { ...tribunes, [side]: lvl+1 };
+      const addedSeats = baseSeats[side];
+      return {
+        ...prev,
+        budget: prev.budget - cost,
+        stadium: { ...stadium, tribunes: nextTribunes },
+        fanHappiness: Math.min(100, (prev.fanHappiness||60)+2),
+        news: [`🏗️ ${side==='north'?'Kuzey':side==='south'?'Güney':side==='east'?'Doğu':'Batı'} tribünü seviye ${lvl+1} oldu! +${addedSeats.toLocaleString()} koltuk`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const hostStadiumEvent = useCallback((eventId: 'concert'|'fair') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const income = eventId==='concert' ? 180000 : 90000;
+      const moraleHit = eventId==='concert' ? -3 : 0;
+      // Mild surprise only: small fan +/-
+      return {
+        ...prev,
+        budget: prev.budget + income,
+        stadium: { ...(prev.stadium||{} as any), lastEventIncome: income } as any,
+        team11: prev.team11.map(p=> ({...p, morale: Math.max(0, p.morale + moraleHit)})),
+        news: [eventId==='concert' ? `🎤 Stadyumda konser! +$${income.toLocaleString()} gelir, çim biraz yoruldu (-3 moral)` : `🏢 Stadyumda fuar! +$${income.toLocaleString()} risksiz gelir`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const setTacticsSlider = useCallback((id: string, value: number) => {
+    const v = Math.max(0, Math.min(100, Math.round(value)));
+    setGameState(prev => {
+      if (!prev) return null;
+      const tac: any = { ...prev.tactics, [id]: v };
+      // tempoValue -> tempo string senkron (mild, ortalama)
+      if (id==='tempoValue') {
+        if (v < 33) tac.tempo = 'slow';
+        else if (v > 66) tac.tempo = 'fast';
+        else tac.tempo = 'normal';
+      }
+      if (id==='pressingIntensity') {
+        if (v < 33) tac.pressing = 'low';
+        else if (v > 66) tac.pressing = 'high';
+        else tac.pressing = 'medium';
+      }
+      return { ...prev, tactics: tac };
+    });
+  }, []);
+
   /* ══════════════ MENAJER HAYATI ══════════════ */
 
   /** Aktiviteyi uygular: statlar, XP, masraf, haftalık hak ve geçmiş güncellenir */
@@ -2995,6 +3085,9 @@ export const useGameState = () => {
     buyCapacityPackage,
     setTicketMultiplier,
     upgradeStadiumLevel,
+    upgradeTribune,
+    hostStadiumEvent,
+    setTacticsSlider,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,

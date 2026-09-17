@@ -128,6 +128,28 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     if (gameState.tactics.pressing === 'low') { defenseBonus += 5; }
     if (gameState.tactics.tempo === 'fast') { attackBonus += 7; defenseBonus -= 2; }
     if (gameState.tactics.tempo === 'slow') { defenseBonus += 7; }
+    // 5 kaydırıcı — mild dengeli (ortalama görsel, gerçekçi)
+    const tac: any = gameState.tactics as any;
+    const dl = tac.defensiveLine ?? 50;
+    const wd = tac.width ?? 50;
+    const cr = tac.creativity ?? 50;
+    const pi = tac.pressingIntensity ?? 50;
+    const tv = tac.tempoValue ?? 50;
+    // defensiveLine: yüksek = önde basar, riskli
+    attackBonus += (dl - 50) * 0.08;
+    defenseBonus += (50 - dl) * 0.06;
+    // width: geniş = kanat hücumu
+    attackBonus += (wd - 50) * 0.05;
+    defenseBonus += (50 - wd) * 0.04;
+    // creativity: yaratıcı = hücum + ama top kaybı
+    attackBonus += (cr - 50) * 0.07;
+    defenseBonus += (50 - cr) * 0.05;
+    // pressingIntensity: string ile zaten var ama slider ince ayar
+    attackBonus += (pi - 50) * 0.06;
+    defenseBonus += (50 - pi) * 0.03;
+    // tempoValue
+    attackBonus += (tv - 50) * 0.07;
+    defenseBonus += (50 - tv) * 0.05;
 
     // Ev sahibi avantajı / deplasman
     if (isHome) { attackBonus += HOME_ADVANTAGE; defenseBonus += HOME_ADVANTAGE; }

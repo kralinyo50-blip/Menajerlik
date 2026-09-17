@@ -33,6 +33,10 @@ export interface StadiumState {
   vip: boolean;
   /** Satın alınmış kozmetikler: 'roof:glass', 'stands:bowl', 'color:#f43f5e' … */
   cosmetics: string[];
+  /** Tribün seviyeleri (1-5) — Stadyum İmparatorluğu */
+  tribunes?: { north: number; south: number; east: number; west: number };
+  /** Son stadyum etkinliği geliri */
+  lastEventIncome?: number;
 }
 
 /* ══════════ MENAJERİN KENDİ HAYATI (v4.0) ══════════ */
@@ -314,6 +318,12 @@ export interface Tactics {
   style: 'balanced' | 'attack' | 'defense' | 'possession';
   pressing: 'low' | 'medium' | 'high';
   tempo: 'slow' | 'normal' | 'fast';
+  /** 5 kaydırıcı — 0-100, ortalama görselde sade bar */
+  defensiveLine?: number; // 0 derin, 100 yüksek
+  width?: number; // 0 dar, 100 geniş
+  creativity?: number; // 0 disiplinli, 100 yaratıcı
+  pressingIntensity?: number; // 0 gevşek, 100 şiddetli pres
+  tempoValue?: number; // 0 yavaş, 100 hızlı (tempo string ile senkron)
 }
 
 export interface CupMatch {

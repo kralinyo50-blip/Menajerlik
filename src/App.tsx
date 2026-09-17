@@ -125,6 +125,9 @@ function App() {
     buyCapacityPackage,
     setTicketMultiplier,
     upgradeStadiumLevel,
+    upgradeTribune,
+    hostStadiumEvent,
+    setTacticsSlider,
     refreshLoanList,
     takeLoan,
     exerciseLoanOption,
@@ -1206,6 +1209,8 @@ function App() {
                 onBuyCapacity={buyCapacityPackage}
                 onSetTicketMultiplier={setTicketMultiplier}
                 onUpgradeStadiumLevel={upgradeStadiumLevel}
+                onUpgradeTribune={upgradeTribune}
+                onHostEvent={hostStadiumEvent}
               />
             )}
             {activeTab === 'squad' && (
@@ -1232,7 +1237,7 @@ function App() {
               />
             )}
             {activeTab === 'tactics' && (
-              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} />
+              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} />
             )}
             {activeTab === 'training' && (
               <TrainingTab gameState={gameState} onTrainPlayer={trainPlayer} />

@@ -3,7 +3,7 @@ import { GameState, RoofStyle, StandStyle, PitchPattern, StadiumDesign } from '.
 import { Stadium3D } from '../Stadium3D';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
-  ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked
+  ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked, TRIBUNES, STADIUM_EVENTS
 } from '../../data/stadium';
 import { formatMoney } from '../../utils/pricing';
 import { previewHomeMatch, stadiumCapacity } from '../../utils/stadium';
@@ -15,16 +15,18 @@ interface StadiumTabProps {
   onBuyCapacity: (id: string) => void;
   onSetTicketMultiplier: (multiplier: number) => void;
   onUpgradeStadiumLevel: (cost: number) => void;
+  onUpgradeTribune?: (side: 'north'|'south'|'east'|'west') => void;
+  onHostEvent?: (eventId: 'concert'|'fair') => void;
 }
 
-type SubTab = 'design' | 'capacity' | 'tickets' | 'shop';
+type SubTab = 'design' | 'capacity' | 'tribunes' | 'tickets' | 'shop';
 
 const SubTabButton: React.FC<{ id: SubTab; icon: string; label: string }> = ({ id, icon, label }) => (
   <span className="flex items-center gap-1.5" data-tab={id}>{icon} {label}</span>
 );
 
 export const StadiumTab: React.FC<StadiumTabProps> = ({
-  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel
+  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent
 }) => {
   const [sub, setSub] = useState<SubTab>('design');
   const [night, setNight] = useState(true);
@@ -261,6 +263,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
           {([
             ['design', '🎨', 'Renkler & Mimari'],
             ['capacity', '🏗️', 'Kapasite & Büyüme'],
+            ['tribunes', '🏟️', 'Tribünler & Etkinlik'],
             ['tickets', '🎟️', 'Bilet Fiyatı'],
             ['shop', '🛍️', 'Kozmetik Mağazası'],
           ] as [SubTab, string, string][]).map(([id, icon, label]) => (
@@ -572,6 +575,60 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                 VIP loca (+%12 bilet, +$4/seyirci harcama), cam çatı (+%4) ve kase tribün (+%3) geliri artırır; çatı kötü havada seyirci kaybını azaltır.
                 {isPreview && <span className="text-amber-300"> • Ön izleme gelir tahmini üstte.</span>}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TRİBÜNLER & ETKİNLİK — İmparatorluk */}
+        {sub === 'tribunes' && (
+          <div className="space-y-4">
+            <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
+              <h3 className="text-sm font-bold text-emerald-400 mb-1">🏟️ Tribünler — Seviye 1-5 (ortalama görsel, hafif etki)</h3>
+              <p className="text-[11px] text-slate-400 mb-3">Her seviye tribün +koltuk ve +doluluk getirir. Kuzey/Güney kale arkası, Doğu/Batı maraton — her biri ayrı büyür.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {TRIBUNES.map(tri=>{
+                  const lvl = (gameState.stadium as any)?.tribunes?.[tri.id] ?? 1;
+                  const isMax = lvl >= 5;
+                  const basePrice: Record<string, number> = { north: 650000, south: 650000, east: 850000, west: 900000 };
+                  const cost = Math.round((basePrice[tri.id]||650000) * (0.9 + lvl*0.35));
+                  const seats = tri.baseSeats;
+                  return (
+                    <div key={tri.id} className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{tri.icon}</span>
+                          <div>
+                            <div className="text-white font-bold text-sm">{tri.name}</div>
+                            <div className="text-[11px] text-slate-400">{tri.desc}</div>
+                          </div>
+                        </div>
+                        <span className="text-xs bg-slate-800 px-2 py-1 rounded-full text-white font-black">Seviye {lvl}/5</span>
+                      </div>
+                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/30 mb-2">
+                        <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full" style={{width: `${(lvl/5)*100}%`}} />
+                      </div>
+                      <div className="text-[11px] text-slate-300 mb-2">+{seats.toLocaleString()} koltuk / seviye • Toplam: {(stadiumCapacity(gameState)- (gameState.stadiumLvl*5000+2000) - (gameState.stadium?.capacityBonus||0)).toLocaleString()} tribün koltuğu</div>
+                      <button disabled={isMax || gameState.budget < cost} onClick={()=> onUpgradeTribune?.(tri.id as any)} className={`w-full py-2 rounded-lg text-xs font-bold ${isMax?'bg-slate-700 text-slate-400 cursor-not-allowed': gameState.budget>=cost?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-slate-700 text-slate-400 cursor-not-allowed'}`}>
+                        {isMax ? 'Maks seviye (5/5)' : `Yükselt Seviye ${lvl+1} — ${cost.toLocaleString()} $`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[11px] text-slate-400 mt-3">Kapasite formülü: temel (lvl*5000+2000) + ek paketler + tribünler. Tribünler mild etki: her seviye +~%3 seyirci çekimi.</div>
+            </div>
+            <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
+              <h3 className="text-sm font-bold text-amber-400 mb-3">🎤 Stadyum Etkinlikleri — Hafta içi gelir (mild)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {STADIUM_EVENTS.map(ev=>(
+                  <button key={ev.id} onClick={()=> onHostEvent?.(ev.id as any)} disabled={gameState.budget < 0} className="bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/30 rounded-xl p-3 text-left transition-colors">
+                    <div className="text-white font-bold text-sm">{ev.icon} {ev.label} — +${(ev.income as number).toLocaleString()}</div>
+                    <div className="text-[11px] text-slate-400">{ev.desc}</div>
+                    <div className="text-[10px] text-emerald-300 mt-1">Hemen + gelir, konser biraz moral -3 (çim yorgun)</div>
+                  </button>
+                ))}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-2">Mild mod: sadece küçük bonus, çılgın protesto yok. Etkinlik her hafta yapılabilir.</div>
             </div>
           </div>
         )}

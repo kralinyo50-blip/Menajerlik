@@ -1,13 +1,15 @@
 import React from 'react';
 import { GameState, Tactics } from '../../types/game';
+import { TACTICS_SLIDERS } from '../../data/constants';
 
 interface TacticsTabProps {
   gameState: GameState;
   onUpdateTactics: (tactics: Partial<Tactics>) => void;
   onApplyFormation: (formation: string) => void;
+  onSetSlider?: (id: string, value: number) => void;
 }
 
-export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTactics, onApplyFormation }) => {
+export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTactics, onApplyFormation, onSetSlider }) => {
   const formations = [
     { id: '4-3-3', name: '4-3-3', desc: 'Standart Saldırı', icon: '⚡' },
     { id: '4-4-2', name: '4-4-2', desc: 'Dengeli Oyun', icon: '⚖️' },
@@ -146,6 +148,39 @@ export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTacti
                 <div className="text-xs text-slate-400 leading-relaxed">{t.desc}</div>
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 5 Kaydırıcı — Ortalama görsel, sade bar, mild etki */}
+        <div>
+          <h3 className="text-lg font-black tracking-tight text-white mb-1">🎚️ Taktik Kaydırıcılar — 5 Detay</h3>
+          <p className="text-xs text-slate-400 mb-4">Her kaydırıcı maça %±4 etki eder — ortalama görsel, dengeli ve hafif. 50 = nötr.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {TACTICS_SLIDERS.map(sl=>{
+              const val = (gameState.tactics as any)[sl.id] ?? sl.def;
+              return (
+                <div key={sl.id} className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{sl.icon}</span>
+                      <div>
+                        <div className="text-white font-bold text-sm leading-none">{sl.label}</div>
+                        <div className="text-[11px] text-slate-400">{sl.desc}</div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-black bg-slate-700 px-2 py-1 rounded-full text-white">{val}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span>{sl.left}</span>
+                    <input type="range" min={sl.min} max={sl.max} value={val} onChange={e=> onSetSlider?.(sl.id, Number(e.target.value))} className="flex-1 accent-emerald-500" />
+                    <span>{sl.right}</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-700 rounded-full mt-2 overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full" style={{width: `${val}%`}} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

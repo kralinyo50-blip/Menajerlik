@@ -5,7 +5,16 @@ import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES } from '../data/stadiu
 export function stadiumCapacity(state: { stadiumLvl: number; stadium?: StadiumState }): number {
   const base = state.stadiumLvl * 5000 + 2000;
   const bonus = state.stadium?.capacityBonus ?? 0;
-  return Math.min(MAX_CAPACITY, base + bonus);
+  const tri = state.stadium?.tribunes;
+  let tribuneBonus = 0;
+  if (tri) {
+    const baseSeats: Record<string, number> = { north: 2200, south: 2200, east: 3200, west: 3200 };
+    (['north','south','east','west'] as const).forEach(k=> {
+      const lvl = (tri as any)[k] ?? 1;
+      tribuneBonus += Math.max(0, lvl-1) * (baseSeats[k] ?? 2200);
+    });
+  }
+  return Math.min(MAX_CAPACITY, base + bonus + tribuneBonus);
 }
 
 /** Yeni stadyum seviyesine geçildiğinde seviye başına ek kapasite (bilgi amaçlı) */

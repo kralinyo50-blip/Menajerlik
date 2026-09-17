@@ -461,3 +461,12 @@ export const SCOUT_REGIONS = [
   { id: 'asia', name: 'Doğu Asya', flag: '🇯🇵', desc: 'Çalışkan, düşük maliyet, sürpriz potansiyel', cost: 40000, weeks: 2, ovrRange: [59, 67], potRange: [73, 84], trait: 'Çalışkan + Sürpriz' },
 ];
 
+export const TACTICS_SLIDERS = [
+  { id: 'defensiveLine' as const, label: 'Savunma Çizgisi', icon: '🛡️', min: 0, max: 100, def: 50, desc: '0 derin kapanır, 100 önde basar', left: 'Derin', right: 'Yüksek' },
+  { id: 'width' as const, label: 'Genişlik', icon: '↔️', min: 0, max: 100, def: 50, desc: '0 dar & kompakt, 100 geniş & kanat', left: 'Dar', right: 'Geniş' },
+  { id: 'creativity' as const, label: 'Yaratıcılık', icon: '🎨', min: 0, max: 100, def: 50, desc: '0 disiplinli, 100 özgür & riskli', left: 'Disiplin', right: 'Özgür' },
+  { id: 'pressingIntensity' as const, label: 'Pres Şiddeti', icon: '🔥', min: 0, max: 100, def: 50, desc: '0 gevşek, 100 boğucu pres', left: 'Gevşek', right: 'Boğucu' },
+  { id: 'tempoValue' as const, label: 'Tempo', icon: '⚡', min: 0, max: 100, def: 50, desc: '0 yavaş & pas, 100 dikine & hızlı', left: 'Yavaş', right: 'Hızlı' },
+];
+
+
