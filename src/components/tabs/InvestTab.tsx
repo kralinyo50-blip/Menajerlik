@@ -26,12 +26,12 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
         <div className="bg-gradient-to-r from-emerald-500/20 to-blue-500/20 rounded-2xl p-6 border border-emerald-500/30">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
                 📈 Finansal Yatırım Merkezi
               </h2>
               <p className="text-slate-400 mt-1">Kulüp bütçesini değerlendirerek pasif gelir elde edin</p>
             </div>
-            <div className="bg-slate-800/50 px-4 py-2 rounded-xl">
+            <div className="bg-slate-800/50 px-4 py-2 rounded-2xl">
               <span className="text-amber-300 text-sm">Bütçe:</span>
               <span className="text-amber-400 font-bold ml-2">${gameState.budget.toLocaleString()}</span>
             </div>
@@ -40,17 +40,17 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
 
         {/* Portfolio Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
             <div className="text-sm text-slate-400">Toplam Portföy Değeri</div>
-            <div className="text-2xl font-bold text-white">${totalPortfolioValue.toLocaleString()}</div>
+            <div className="text-2xl font-black tracking-tight text-white">${totalPortfolioValue.toLocaleString()}</div>
           </div>
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
             <div className="text-sm text-slate-400">Gerçekleşmemiş Kar/Zarar</div>
             <div className={`text-2xl font-bold ${totalUnrealizedGain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {totalUnrealizedGain >= 0 ? '+' : ''}${Math.floor(totalUnrealizedGain).toLocaleString()}
             </div>
           </div>
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+          <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
             <div className="text-sm text-slate-400">Aktif Yatırım Sayısı</div>
             <div className="text-2xl font-bold text-blue-400">
               {gameState.investments.filter(i => i.owned > 0).length}
@@ -59,7 +59,7 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
         </div>
 
         {/* Warning */}
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3">
           <span className="text-2xl">⚠️</span>
           <div className="text-sm text-amber-200">
             <strong>Risk Uyarısı:</strong> Yatırımlar değer kaybedebilir. Her maç sonrasında piyasa değerleri değişir. 
@@ -76,7 +76,7 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
                   <span className="text-3xl">{inv.icon}</span>
                   <div>
                     <h3 className="font-bold text-white">{inv.name}</h3>
-                    <div className="text-xs text-slate-400 capitalize">{inv.type}</div>
+                    <div className="text-xs text-slate-400 leading-relaxed capitalize">{inv.type}</div>
                   </div>
                 </div>
                 {inv.owned > 0 && (
@@ -87,7 +87,7 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
               </div>
 
               <div className="mb-4">
-                <div className="text-2xl font-bold text-white">${inv.price.toLocaleString()}</div>
+                <div className="text-2xl font-black tracking-tight text-white">${inv.price.toLocaleString()}</div>
                 <div className={`text-sm font-medium ${inv.lastChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {inv.lastChange >= 0 ? '▲' : '▼'} %{Math.abs(inv.lastChange)} haftalık
                 </div>
@@ -137,7 +137,7 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
         </div>
 
         {/* Tips */}
-        <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700/50">
+        <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50">
           <h3 className="font-bold text-blue-400 mb-4">💡 Yatırım İpuçları</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-300">
             <div className="flex items-start gap-2">

@@ -22,7 +22,7 @@ interface OfficeTabProps {
 const Section: React.FC<{ title: string; icon: string; children: React.ReactNode; accent?: string }> = ({
   title, icon, children, accent = 'text-emerald-400'
 }) => (
-  <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+  <div className="bg-slate-800/70 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-6 shadow-2xl hover:shadow-emerald-500/5 transition-all duration-500">
     <h3 className={`text-sm font-bold mb-3 ${accent} flex items-center gap-2`}>
       <span>{icon}</span> {title}
     </h3>
@@ -50,11 +50,11 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
     : confidence >= 30 ? 'Yönetim temkinli' : confidence >= 15 ? 'Yönetim rahatsız' : 'Koltuğun tehlikede!';
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full relative overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-2xl font-bold text-white">🏢 Menajer Ofisi</h2>
+            <h2 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">🏢 Menajer Ofisi</h2>
             <p className="text-slate-400 text-sm">
               Yönetim, sözleşmeler, transfer teklifleri ve görevler • Sezon {gameState.season}
             </p>
@@ -70,30 +70,30 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
             <span className="text-slate-300">Güven: <span className="font-bold text-white">%{confidence}</span></span>
             <span className={confidence >= 35 ? 'text-slate-400' : 'text-red-400 font-bold'}>{confidenceText}</span>
           </div>
-          <div className="w-full h-2.5 bg-slate-700 rounded-full overflow-hidden mb-3">
-            <div className={`h-full ${confidenceColor} transition-all`} style={{ width: `${Math.max(2, confidence)}%` }} />
+          <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden mb-3 p-1 border border-slate-700/50">
+            <div className={`h-full ${confidenceColor} rounded-full transition-all duration-700 shadow-sm`} style={{ width: `${Math.max(2, confidence)}%` }} />
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px] mb-3">
-            <div className="bg-slate-700/30 rounded-lg p-2">
+            <div className="bg-slate-800/50 backdrop-blur rounded-xl p-3 border border-slate-700/40 shadow-sm">
               <div className="text-slate-400">Sezon Hedefi</div>
               <div className="text-white font-medium">{gameState.seasonObjective}</div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-2">
+            <div className="bg-slate-800/50 backdrop-blur rounded-xl p-3 border border-slate-700/40 shadow-sm">
               <div className="text-slate-400">Taraftar</div>
               <div className={`font-medium ${gameState.fanHappiness >= 60 ? 'text-emerald-400' : 'text-orange-400'}`}>%{gameState.fanHappiness}</div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-2">
+            <div className="bg-slate-800/50 backdrop-blur rounded-xl p-3 border border-slate-700/40 shadow-sm">
               <div className="text-slate-400">Takım Kimyası</div>
               <div className={`font-medium ${gameState.teamChemistry >= 60 ? 'text-blue-400' : 'text-slate-300'}`}>%{gameState.teamChemistry}</div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-2">
+            <div className="bg-slate-800/50 backdrop-blur rounded-xl p-3 border border-slate-700/40 shadow-sm">
               <div className="text-slate-400">İtibar</div>
               <div className="text-purple-400 font-medium">{gameState.managerRep}</div>
             </div>
           </div>
 
           {(gameState.boardMessages || []).length === 0 ? (
-            <p className="text-xs text-slate-400">Gelen kutusu boş.</p>
+            <p className="text-xs text-slate-400 leading-relaxed">Gelen kutusu boş.</p>
           ) : (
             <div className="space-y-2">
               {gameState.boardMessages.map((msg, i) => (
@@ -115,14 +115,14 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
         {/* Transfer offers */}
         <Section title={`Gelen Transfer Teklifleri (${offers.length})`} icon="📨" accent="text-amber-400">
           {offers.length === 0 ? (
-            <p className="text-xs text-slate-400">Şu an masada teklif yok. Oyuncuların iyi oynadıkça teklifler artar.</p>
+            <p className="text-xs text-slate-400 leading-relaxed">Şu an masada teklif yok. Oyuncuların iyi oynadıkça teklifler artar.</p>
           ) : (
             <div className="space-y-2">
               {offers.map(o => {
                 const player = allPlayers.find(p => p.id === o.playerId);
                 const weeksLeft = Math.max(0, o.expiresWeek - gameState.week);
                 return (
-                  <div key={o.id} className="bg-slate-700/40 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                  <div key={o.id} className="bg-slate-700/50 backdrop-blur rounded-xl p-3.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-[180px]">
                       <div className="text-white font-bold text-sm">{o.playerName} <span className="text-slate-400 text-xs">OVR {o.playerOvr}</span></div>
                       <div className="text-[11px] text-slate-300">{o.fromLogo} {o.fromClub}</div>
@@ -181,9 +181,10 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
                 const newWage = renewalWage(p, renewYears);
                 const affordable = gameState.budget >= cost;
                 return (
-                  <div key={p.id} className="bg-slate-700/40 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                  <div key={p.id} className="bg-slate-700/50 backdrop-blur rounded-xl p-3.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-white font-bold text-sm">
+                      <div className="text-white font-bold text-sm flex items-center gap-1">
+                        <span title={p.country}>{p.flag ?? '🇹🇷'}</span>
                         {p.name} <span className="text-slate-400 text-xs">{ROLE_NAMES[p.role]} • OVR {p.ovr}</span>
                         {risk === 'expired' && <span className="ml-2 text-[10px] bg-red-600/40 text-red-200 px-2 py-0.5 rounded">SÖZLEŞME BİTTİ</span>}
                         {risk === 'risky' && <span className="ml-2 text-[10px] bg-amber-600/40 text-amber-100 px-2 py-0.5 rounded">SON YIL</span>}
@@ -223,11 +224,11 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Section title={`Kiralık Gelenler (${allPlayers.filter(p => p.loanFrom).length})`} icon="🔄" accent="text-cyan-400">
             {allPlayers.filter(p => p.loanFrom).length === 0 ? (
-              <p className="text-xs text-slate-400">Kiralık oyuncun yok. Transfer → Kiralık sekmesinden fırsatları incele.</p>
+              <p className="text-xs text-slate-400 leading-relaxed">Kiralık oyuncun yok. Transfer → Kiralık sekmesinden fırsatları incele.</p>
             ) : (
               <div className="space-y-2">
                 {allPlayers.filter(p => p.loanFrom).map(p => (
-                  <div key={p.id} className="bg-slate-700/40 rounded-xl p-3">
+                  <div key={p.id} className="bg-slate-700/50 backdrop-blur rounded-xl p-3.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all">
                     <div className="text-white font-bold text-sm">
                       {p.name.replace(/^[^\w]+\s/, '')}
                       <span className="text-slate-400 text-xs ml-2">
@@ -271,7 +272,7 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
 
           <Section title={`Kiralık Gidenler (${(gameState.outgoingLoans || []).length})`} icon="📤" accent="text-amber-400">
             {(gameState.outgoingLoans || []).length === 0 ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 leading-relaxed">
                 Genç oyuncularını kiralığa göndererek gelişmelerini sağlayabilirsin (Kadro → oyuncu kartı).
               </p>
             ) : (
@@ -280,7 +281,7 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
                   const weeks = Math.max(0, gameState.week - loan.startWeek);
                   const projected = loan.player.ovr + Math.max(0, Math.round(weeks / 6));
                   return (
-                    <div key={loan.id} className="bg-slate-700/40 rounded-xl p-3">
+                    <div key={loan.id} className="bg-slate-700/50 backdrop-blur rounded-xl p-3.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all">
                       <div className="text-white font-bold text-sm">
                         {loan.playerName}
                         <span className="text-slate-400 text-xs ml-2">{ROLE_NAMES[loan.playerRole]} • {loan.playerAge} yaş</span>

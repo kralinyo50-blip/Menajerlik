@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { GameState, LifeActivityId, LifeStats } from '../types/game';
 import { ActivityVariant, LifeActivity } from '../data/life';
-import { computeOutcome } from '../utils/life';
+import { computeOutcome, getLifeTime } from '../utils/life';
 import { LifeScene3D } from './LifeScene3D';
 import { sfx } from '../utils/sound';
 
@@ -37,12 +37,14 @@ export const LifeActivityModal: React.FC<LifeActivityModalProps> = ({ activity, 
   const [variant, setVariant] = useState<ActivityVariant>(activity.variants[0]);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ summary: string; xp: number; cost: number; fatigued: boolean } | null>(null);
-  const [outfitPicked, setOutfitPicked] = useState(false);
+  const [pickedOutfit, setPickedOutfit] = useState<'club' | 'black' | null>(null);
   const rafRef = useRef(0);
   const startRef = useRef(0);
 
   const preview = useMemo(() => computeOutcome(gameState, activity.id, variant.id), [gameState, activity.id, variant.id]);
   const needsOutfit = activity.scene === 'gym';
+  const outfitPicked = !!pickedOutfit;
+  const timeInfo = useMemo(() => getLifeTime(gameState), [gameState.week, gameState.season]);
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
@@ -95,16 +97,23 @@ export const LifeActivityModal: React.FC<LifeActivityModalProps> = ({ activity, 
           <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
         </div>
 
-        {/* 3D sahne */}
+        {/* 3D sahne — variant değişiminde sahne tamamen yenilenmeli */}
         <div className="p-3">
           <LifeScene3D
+            key={`${activity.id}-${variant.id}-${pickedOutfit ?? ''}`}
             activityId={activity.id}
             variantId={variant.id}
             clubColor={gameState.stadium?.design?.seatColor}
             clubLogo={gameState.teamLogo}
             height={300}
             cinematic={phase === 'active'}
-            badge={phase === 'active' ? `${Math.round(progress)}%` : undefined}
+            badge={phase === 'active' ? `${Math.round(progress)}%` : variant.label}
+            skin={gameState.life.appearance?.skin}
+            hair={gameState.life.appearance?.hair}
+            outfit={activity.scene === 'gym' ? (pickedOutfit ?? gameState.life.appearance?.outfit) : gameState.life.appearance?.outfit}
+            timeOfDay={timeInfo.timeOfDay}
+            season={timeInfo.season}
+            lowPerf={gameState.life.lowPerf}
           />
         </div>
 
@@ -120,14 +129,14 @@ export const LifeActivityModal: React.FC<LifeActivityModalProps> = ({ activity, 
                 </div>
                 <div className="flex justify-center gap-2">
                   <button
-                    onClick={() => { setOutfitPicked(true); sfx.click?.(); }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                    onClick={() => { setPickedOutfit('club'); sfx.click?.(); }}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold ${pickedOutfit === 'club' ? 'bg-emerald-600 text-white ring-2 ring-emerald-400' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
                   >
                     🎽 Kulüp kıyafeti
                   </button>
                   <button
-                    onClick={() => { setOutfitPicked(true); sfx.click?.(); }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white"
+                    onClick={() => { setPickedOutfit('black'); sfx.click?.(); }}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold ${pickedOutfit === 'black' ? 'bg-slate-900 text-white ring-2 ring-slate-400' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
                   >
                     ⚫ Siyah antrenman
                   </button>

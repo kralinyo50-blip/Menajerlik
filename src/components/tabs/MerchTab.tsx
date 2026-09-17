@@ -74,10 +74,10 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-4">
         {/* Header */}
-        <div className="bg-gradient-to-r from-pink-500/20 to-orange-500/20 rounded-xl p-4 border border-pink-500/30">
+        <div className="bg-gradient-to-r from-pink-500/20 to-orange-500/20 rounded-2xl p-4 border border-pink-500/30">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">👕 Forma Satış & Şube Mağazalar</h2>
+              <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">👕 Forma Satış & Şube Mağazalar</h2>
               <p className="text-slate-400 text-xs mt-1">81 ilde mağaza açarak forma satışından gelir elde et</p>
             </div>
             <div className="flex gap-3">
@@ -95,7 +95,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
 
         {/* Top Players = Top Sellers */}
         {topPlayers.length > 0 && (
-          <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+          <div className="bg-slate-800/50 rounded-2xl p-3 border border-slate-700/50">
             <div className="text-xs text-pink-400 font-bold mb-2">🔥 En Çok Satan Formalar</div>
             <div className="flex gap-3 overflow-x-auto">
               {topPlayers.map((p, i) => (
@@ -146,7 +146,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
                   <button
                     key={city.id}
                     onClick={() => { setSelectedCity(city); setStep('city'); setSelectedDistrict(''); }}
-                    className={`p-3 rounded-xl border transition-all text-left hover:scale-[1.02] ${
+                    className={`p-3 rounded-2xl border transition-all text-left hover:scale-[1.02] ${
                       hasBranch ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-500'
                     }`}
                   >
@@ -192,10 +192,10 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
           <div>
             <button onClick={() => setStep('map')} className="text-slate-400 hover:text-white text-sm mb-3 flex items-center gap-1">← Geri</button>
             
-            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-4">
+            <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="text-xl font-bold text-white">{selectedCity.name}</h3>
+                  <h3 className="text-xl font-black tracking-tight text-white">{selectedCity.name}</h3>
                   <p className="text-slate-400 text-xs">{selectedCity.region} • Nüfus: {selectedCity.population.toLocaleString()}</p>
                 </div>
                 <div className="text-3xl">🏙️</div>
@@ -211,7 +211,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
                     key={district}
                     onClick={() => { if (!taken) { setSelectedDistrict(district); setStep('design'); } }}
                     disabled={taken}
-                    className={`p-3 rounded-xl border-2 transition-all text-left ${
+                    className={`p-3 rounded-2xl border-2 transition-all text-left ${
                       taken
                         ? 'bg-emerald-500/10 border-emerald-500/30 cursor-not-allowed'
                         : 'bg-slate-800/50 border-slate-700/50 hover:border-amber-500 cursor-pointer'
@@ -235,8 +235,8 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
           <div>
             <button onClick={() => setStep('city')} className="text-slate-400 hover:text-white text-sm mb-3 flex items-center gap-1">← Geri</button>
 
-            <div className="bg-slate-800/50 rounded-xl p-3 mb-4 border border-slate-700/50">
-              <div className="text-xs text-slate-400">📍 {selectedCity.name} / {selectedDistrict}</div>
+            <div className="bg-slate-800/50 rounded-2xl p-3 mb-4 border border-slate-700/50">
+              <div className="text-xs text-slate-400 leading-relaxed">📍 {selectedCity.name} / {selectedDistrict}</div>
             </div>
 
             <h4 className="text-sm font-bold text-white mb-3">Mağaza Tipi Seçin</h4>
@@ -250,7 +250,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
                   <button
                     key={shopType.type}
                     onClick={() => setSelectedShopType(shopType.type)}
-                    className={`rounded-xl border-2 overflow-hidden transition-all text-left ${
+                    className={`rounded-2xl border-2 overflow-hidden transition-all text-left ${
                       isSelected
                         ? 'border-amber-500 shadow-lg shadow-amber-500/20'
                         : affordable
@@ -283,7 +283,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
             </div>
 
             {/* Preview & Confirm */}
-            <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-xl p-4 border border-amber-500/30 mb-4">
+            <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-2xl p-4 border border-amber-500/30 mb-4">
               <h4 className="font-bold text-white mb-3">📋 Mağaza Özeti</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Konum:</span> <span className="text-white">{selectedCity.name} / {selectedDistrict}</span></div>
@@ -300,7 +300,7 @@ export const MerchTab: React.FC<MerchTabProps> = ({ gameState, onOpenShop }) => 
             <button
               onClick={handleOpenShop}
               disabled={!canAfford}
-              className={`w-full py-3 rounded-xl font-bold transition-all ${
+              className={`w-full py-3 rounded-2xl font-bold transition-all ${
                 canAfford
                   ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'
                   : 'bg-slate-600 text-slate-400 cursor-not-allowed'

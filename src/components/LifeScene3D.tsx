@@ -15,6 +15,12 @@ interface LifeScene3DProps {
   className?: string;
   /** Sahne üzerinde gösterilecek küçük etiket */
   badge?: string;
+  skin?: string;
+  hair?: string;
+  outfit?: 'club' | 'black';
+  timeOfDay?: 'morning' | 'day' | 'evening' | 'night';
+  season?: 'spring' | 'summer' | 'autumn' | 'winter';
+  lowPerf?: boolean;
 }
 
 /**
@@ -22,14 +28,15 @@ interface LifeScene3DProps {
  * Sürükle = döndür, tekerlek = yakınlaştır, çift tık = sıfırla.
  */
 export const LifeScene3D: React.FC<LifeScene3DProps> = ({
-  activityId, variantId, clubColor, clubLogo, height = 340, cinematic = false, className = '', badge
+  activityId, variantId, clubColor, clubLogo, height = 340, cinematic = false, className = '', badge,
+  skin, hair, outfit, timeOfDay, season, lowPerf
 }) => {
   const build = useCallback(
-    () => buildLifeScene(activityId, variantId, { clubColor, clubLogo }) as LifeSceneBuild,
-    [activityId, variantId, clubColor, clubLogo]
+    () => buildLifeScene(activityId, variantId, { clubColor, clubLogo, skin, hair, outfit, timeOfDay, season, lowPerf }) as LifeSceneBuild,
+    [activityId, variantId, clubColor, clubLogo, skin, hair, outfit, timeOfDay, season, lowPerf]
   );
 
-  const { hostRef, ready, failed, resetCamera } = useOrbitThree(build, [activityId, variantId, clubColor, clubLogo, height], {
+  const { hostRef, ready, failed, resetCamera } = useOrbitThree(build, [activityId, variantId, clubColor, clubLogo, skin, hair, outfit, timeOfDay, season, lowPerf, height], {
     height,
     cinematic,
   });
@@ -52,7 +59,7 @@ export const LifeScene3D: React.FC<LifeScene3DProps> = ({
 
   return (
     <div className={`relative ${className}`}>
-      <div ref={hostRef} style={{ height }} className="rounded-2xl overflow-hidden bg-slate-900 border border-slate-700" />
+      <div key={`${activityId}-${variantId}`} ref={hostRef} style={{ height }} className="rounded-2xl overflow-hidden bg-slate-900 border border-slate-700" />
 
       {/* Sahne bilgisi */}
       <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-2 pointer-events-none">

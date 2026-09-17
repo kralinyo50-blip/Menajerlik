@@ -5,6 +5,8 @@ import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
 import { defaultStadium } from '../data/stadium';
 import { defaultLife } from './life';
+import { generateInitialFeed } from '../data/social';
+import { randomCountry } from '../data/countries';
 
 export const SLOT_KEYS = [
   'ManagerPro2026_Save',       // Slot 1 (eski otomatik kayıt)
@@ -95,16 +97,26 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     lastDailyReward: state.lastDailyReward ?? null,
     loanList: state.loanList ?? [],
     outgoingLoans: state.outgoingLoans ?? [],
-    team11: (state.team11 || []).map(p => ({
-      ...p,
-      suspension: p.suspension ?? 0,
-      value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
-    })),
-    bench: (state.bench || []).map(p => ({
-      ...p,
-      suspension: p.suspension ?? 0,
-      value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
-    })),
+    team11: (state.team11 || []).map(p => {
+      const rc = !p.flag ? randomCountry() : null;
+      return {
+        ...p,
+        suspension: p.suspension ?? 0,
+        value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
+        country: p.country ?? rc?.country ?? 'Türkiye',
+        flag: p.flag ?? rc?.flag ?? '🇹🇷',
+      };
+    }),
+    bench: (state.bench || []).map(p => {
+      const rc = !p.flag ? randomCountry() : null;
+      return {
+        ...p,
+        suspension: p.suspension ?? 0,
+        value: p.starTier ? playerValue(p.ovr, p.age, { tier: p.starTier, potential: p.potential }) : p.value,
+        country: p.country ?? rc?.country ?? 'Türkiye',
+        flag: p.flag ?? rc?.flag ?? '🇹🇷',
+      };
+    }),
     clubStats: {
       ...DEFAULT_CLUB_STATS,
       ...(state.clubStats || {}),
@@ -124,6 +136,7 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       design: { ...defaultStadium().design, ...(state.stadium?.design || {}) },
       cosmetics: state.stadium?.cosmetics ?? defaultStadium().cosmetics,
     },
+    socialFeed: (state as any).socialFeed ?? [],
   };
 
   // Eski (2.x/3.0/3.1) kayıtların oyuncu değer ve maaşları yeni piyasa ekonomisine çekilir.
@@ -151,6 +164,21 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       ...createWeeklyMissions(result, 3),
     ];
   }
+  if (!result.socialFeed || (result.socialFeed as any[]).length === 0) {
+    try { result.socialFeed = generateInitialFeed(result as any); } catch { result.socialFeed = [] as any; }
+  }
+  // Bayrak eksik oyunculara bayrak ata (eski kayıtlar)
+  const ensureFlag = (p: Player): Player => {
+    if (p.flag && p.country) return p;
+    const rc = randomCountry();
+    return { ...p, country: p.country ?? rc.country, flag: p.flag ?? rc.flag };
+  };
+  result.team11 = result.team11.map(ensureFlag);
+  result.bench = result.bench.map(ensureFlag);
+  result.marketList = (result.marketList || []).map(ensureFlag);
+  result.academyPlayers = (result.academyPlayers || []).map(ensureFlag);
+  if (result.loanList) result.loanList = result.loanList.map(l => ({ ...l, player: ensureFlag(l.player) }));
+  if ((result as any).outgoingLoans) (result as any).outgoingLoans = (result as any).outgoingLoans.map((l: any) => ({ ...l, player: ensureFlag(l.player) }));
 
   return result;
 }

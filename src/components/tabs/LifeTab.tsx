@@ -3,7 +3,7 @@ import { GameState, LifeActivityId, LifeStats } from '../../types/game';
 import { LIFE_ACTIVITIES, LIFE_SLOTS_PER_WEEK, LIFE_ITEMS, LifeActivity } from '../../data/life';
 import {
   checkActivity, fitnessCap, funCap, lifeOf, lifeSummary, slotsLeft,
-  managerMatchBonus, managerRecoveryBonus, fameIncomeMultiplier, fameNegotiationBonus
+  managerMatchBonus, managerRecoveryBonus, fameIncomeMultiplier, fameNegotiationBonus, getLifeTime
 } from '../../utils/life';
 import { LifeActivityModal } from '../LifeActivityModal';
 import { formatMoney } from '../../utils/pricing';
@@ -12,6 +12,8 @@ interface LifeTabProps {
   gameState: GameState;
   onDoActivity: (activityId: LifeActivityId, variantId: string) => { summary: string; xp: number; cost: number; fatigued: boolean } | null;
   onBuyItem: (itemId: string) => void;
+  onUpdateAppearance?: (patch: { skin?: string; hair?: string; outfit?: 'club' | 'black' }) => void;
+  onToggleLowPerf?: (value: boolean) => void;
 }
 
 const STAT_META: Record<keyof LifeStats, { label: string; icon: string; bar: string; text: string; desc: string }> = {
@@ -21,13 +23,17 @@ const STAT_META: Record<keyof LifeStats, { label: string; icon: string; bar: str
   fame: { label: 'Ün', icon: '⭐', bar: 'from-violet-400 to-fuchsia-500', text: 'text-violet-300', desc: 'Sponsor geliri ve taraftar sevgisi.' },
 };
 
-export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuyItem }) => {
+export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuyItem, onUpdateAppearance, onToggleLowPerf }) => {
   const [openActivity, setOpenActivity] = useState<LifeActivity | null>(null);
   const life = lifeOf(gameState);
   const slots = slotsLeft(life);
   const summary = lifeSummary(gameState);
   const matchBonus = managerMatchBonus(gameState);
   const recovery = managerRecoveryBonus(gameState);
+  const timeInfo = getLifeTime(gameState);
+  const appearance = life.appearance ?? { skin: '#e8b48a', hair: '#2b1d15', outfit: 'club' as const };
+  const SKINS = ['#f5d0a9', '#e8b48a', '#c68642', '#8d5524', '#5d4037'];
+  const HAIRS = ['#2b1d15', '#5a3a1a', '#d4a017', '#9e2b25', '#1a1a1a', '#f0f0f0'];
 
   const effects = [
     { icon: '⚽', label: 'Maç kenarı bonusu', value: matchBonus.label, tone: matchBonus.attack > 0 ? 'good' : matchBonus.attack < 0 ? 'bad' : 'neutral' },
@@ -76,7 +82,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
               const meta = STAT_META[key];
               const cap = key === 'fitness' ? fitnessCap(life) : key === 'fun' ? funCap(life) : 100;
               return (
-                <div key={key} className="bg-slate-800/70 rounded-xl p-3" title={meta.desc}>
+                <div key={key} className="bg-slate-800/70 rounded-2xl p-3" title={meta.desc}>
                   <div className="flex items-center justify-between text-[11px] mb-1">
                     <span className="text-slate-300">{meta.icon} {meta.label}</span>
                     <span className={`font-black ${meta.text}`}>{value}</span>
@@ -95,22 +101,63 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
             })}
           </div>
 
-          <div className={`mt-3 text-[12px] rounded-xl px-3 py-2 ${
+          <div className={`mt-3 text-[12px] rounded-2xl px-3 py-2 ${
             summary.tone === 'good' ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/30'
             : summary.tone === 'bad' ? 'bg-red-500/10 text-red-200 border border-red-500/30'
-            : 'bg-slate-700/40 text-slate-300'
+            : 'bg-slate-800/70 backdrop-blur-xl backdrop-blur border border-slate-700/50 shadow-lg text-slate-300'
           }`}>
             {summary.tone === 'good' ? '😎' : summary.tone === 'bad' ? '⚠️' : '🙂'} {summary.text}
+          </div>
+        </div>
+
+        {/* Kişiselleştirme — görünüm + performans */}
+        <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 shadow-xl p-3">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <h3 className="text-xs font-black text-slate-200">🎨 Menajer Görünümü & Zaman</h3>
+            <span className="text-[10px] px-2 py-1 rounded-full bg-slate-700 text-slate-300">
+              {timeInfo.season === 'spring' ? '🌸 İlkbahar' : timeInfo.season === 'summer' ? '☀️ Yaz' : timeInfo.season === 'autumn' ? '🍂 Sonbahar' : '❄️ Kış'} • {timeInfo.timeOfDay === 'morning' ? '🌅 Sabah' : timeInfo.timeOfDay === 'day' ? '☀️ Gündüz' : timeInfo.timeOfDay === 'evening' ? '🌆 Akşam' : '🌙 Gece'}
+              <span className="text-slate-500 ml-1">• Hafta {gameState.week} oto</span>
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-slate-900/40 rounded-2xl p-2.5">
+              <div className="text-[10px] text-slate-400 font-bold mb-1.5">Ten Rengi</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {SKINS.map(c => (
+                  <button key={c} onClick={() => onUpdateAppearance?.({ skin: c })} className={`w-7 h-7 rounded-full border-2 ${appearance.skin === c ? 'border-emerald-400 ring-2 ring-emerald-400/40' : 'border-slate-600'}`} style={{ background: c }} title={c} />
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-900/40 rounded-2xl p-2.5">
+              <div className="text-[10px] text-slate-400 font-bold mb-1.5">Saç Rengi</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {HAIRS.map(c => (
+                  <button key={c} onClick={() => onUpdateAppearance?.({ hair: c })} className={`w-7 h-7 rounded-full border-2 ${appearance.hair === c ? 'border-emerald-400 ring-2 ring-emerald-400/40' : 'border-slate-600'}`} style={{ background: c }} title={c} />
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-900/40 rounded-2xl p-2.5">
+              <div className="text-[10px] text-slate-400 font-bold mb-1.5">Kıyafet / Performans</div>
+              <div className="flex gap-1.5 mb-2">
+                <button onClick={() => onUpdateAppearance?.({ outfit: 'club' })} className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold ${appearance.outfit === 'club' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}>🎽 Kulüp</button>
+                <button onClick={() => onUpdateAppearance?.({ outfit: 'black' })} className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold ${appearance.outfit === 'black' ? 'bg-slate-900 text-white ring-1 ring-slate-500' : 'bg-slate-700 text-slate-300'}`}>⚫ Siyah</button>
+              </div>
+              <label className="flex items-center justify-between gap-2 bg-slate-800 rounded-lg px-2 py-1.5 cursor-pointer">
+                <span className="text-[11px] text-slate-300">⚡ Düşük performans modu</span>
+                <input type="checkbox" checked={!!life.lowPerf} onChange={e => onToggleLowPerf?.(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+              </label>
+              <div className="text-[9px] text-slate-500 mt-1">Gölge/kaplamaları kapatır — eski PC'lerde akıcı.</div>
+            </div>
           </div>
         </div>
 
         {/* Etkiler */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           {effects.map(effect => (
-            <div key={effect.label} className={`rounded-xl p-3 border text-center ${
+            <div key={effect.label} className={`rounded-2xl p-3 border text-center ${
               effect.tone === 'good' ? 'bg-emerald-500/10 border-emerald-500/30'
               : effect.tone === 'bad' ? 'bg-red-500/10 border-red-500/30'
-              : 'bg-slate-800/60 border-slate-700/60'
+              : 'bg-slate-800/70 backdrop-blur-xl border-slate-700/60'
             }`}>
               <div className="text-[10px] text-slate-400">{effect.icon} {effect.label}</div>
               <div className={`font-black text-sm ${
@@ -133,7 +180,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
                 <div
                   key={activity.id}
                   className={`rounded-2xl p-4 border transition-all ${
-                    check.ok ? 'bg-slate-800/60 border-slate-700/60 hover:border-emerald-500/50'
+                    check.ok ? 'bg-slate-800/70 backdrop-blur-xl border-slate-700/60 hover:border-emerald-500/50'
                     : 'bg-slate-800/40 border-slate-700/40 opacity-80'
                   }`}
                 >
@@ -188,7 +235,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
                   {check.ok ? (
                     <button
                       onClick={() => setOpenActivity(activity)}
-                      className="w-full py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-white transition-all"
+                      className="w-full py-2.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-white transition-all"
                     >
                       ▶️ {activity.label} — 3D sahneye gir
                     </button>
@@ -196,7 +243,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
                     <button
                       onClick={() => onBuyItem(requiredItem.id)}
                       disabled={gameState.budget < requiredItem.price}
-                      className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all ${
+                      className={`w-full py-2.5 rounded-2xl font-bold text-sm transition-all ${
                         gameState.budget >= requiredItem.price
                           ? 'bg-amber-600 hover:bg-amber-500 text-white'
                           : 'bg-slate-700 text-slate-400 cursor-not-allowed'
@@ -205,7 +252,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
                       🔒 {requiredItem.icon} {requiredItem.label} al — {formatMoney(requiredItem.price)}
                     </button>
                   ) : (
-                    <div className="w-full py-2.5 rounded-xl text-center text-[11px] bg-slate-700/60 text-slate-400">
+                    <div className="w-full py-2.5 rounded-2xl text-center text-[11px] bg-slate-700/60 text-slate-400">
                       ⛔ {check.reason}
                     </div>
                   )}
@@ -216,7 +263,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
         </div>
 
         {/* Eşyalar */}
-        <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+        <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
           <h3 className="text-sm font-bold text-cyan-400 mb-1">🛍️ Kişisel Eşyalar</h3>
           <p className="text-[11px] text-slate-400 mb-3">
             Bazı aktiviteler eşya gerektirir; eşyalar ayrıca aktivitelerin verimini artırır.
@@ -226,7 +273,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
               const owned = life.owned.includes(item.id);
               const affordable = gameState.budget >= item.price;
               return (
-                <div key={item.id} className={`rounded-xl p-3 border ${owned ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-700/40 border-slate-700/60'}`}>
+                <div key={item.id} className={`rounded-2xl p-3 border ${owned ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-800/70 backdrop-blur-xl backdrop-blur border border-slate-700/50 shadow-lg border-slate-700/60'}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-2xl">{item.icon}</span>
                     <span className={`text-[11px] font-black ${owned ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -255,7 +302,7 @@ export const LifeTab: React.FC<LifeTabProps> = ({ gameState, onDoActivity, onBuy
 
         {/* Geçmiş */}
         {life.history.length > 0 && (
-          <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+          <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
             <h3 className="text-sm font-bold text-slate-300 mb-3">📜 Son Aktiviteler</h3>
             <div className="space-y-1.5">
               {life.history.slice(0, 8).map((entry, i) => (

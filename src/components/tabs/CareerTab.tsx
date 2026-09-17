@@ -10,14 +10,14 @@ interface CareerTabProps {
 const MISSION_TYPE_LABEL: Record<Mission['type'], { label: string; icon: string; accent: string }> = {
   weekly: { label: 'Haftalık Görevler', icon: '📅', accent: 'text-sky-400' },
   season: { label: 'Sezon Görevleri', icon: '🏁', accent: 'text-amber-400' },
-  career: { label: 'Kariyer Görevleri', icon: '👑', accent: 'text-purple-400' },
+  career: { label: 'Kariyer  <span className="kaan-watermark text-[10px] ml-2 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30">MADE BY KAAN</span> Görevleri', icon: '👑', accent: 'text-purple-400' },
 };
 
 const MissionRow: React.FC<{ mission: Mission; week: number }> = ({ mission, week }) => {
   const pct = Math.min(100, Math.round((mission.progress / mission.target) * 100));
   const weeksLeft = mission.expiresWeek ? mission.expiresWeek - week : null;
   return (
-    <div className={`rounded-xl p-3 border ${mission.completed ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-700/40 border-transparent'}`}>
+    <div className={`rounded-2xl p-3 border ${mission.completed ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-700/40 border-transparent'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-sm font-bold text-white flex items-center gap-1.5">
@@ -59,7 +59,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
   const played = (cs.totalWins || 0) + (cs.totalDraws || 0) + (cs.totalLosses || 0);
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full relative overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-4">
         {/* Menajer profili */}
         <div className="bg-gradient-to-r from-violet-900/50 to-slate-800/60 rounded-2xl border border-violet-500/30 p-4">
@@ -98,7 +98,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
         </div>
 
         {/* Beceri ağacı */}
-        <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+        <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-emerald-400">🧠 Menajer Becerileri</h3>
             {points > 0 && <span className="text-[11px] text-amber-300">Harcanmayı bekleyen {points} puan var!</span>}
@@ -109,7 +109,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
               const maxed = lvl >= skill.max;
               const canBuy = points > 0 && !maxed;
               return (
-                <div key={skill.id} className={`rounded-xl p-3 border ${maxed ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-slate-700/60 bg-slate-700/30'}`}>
+                <div key={skill.id} className={`rounded-2xl p-3 border ${maxed ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-slate-700/60 bg-slate-700/30'}`}>
                   <div className="flex items-center justify-between">
                     <div className="text-2xl">{skill.icon}</div>
                     <div className="flex gap-0.5">
@@ -146,7 +146,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
             const meta = MISSION_TYPE_LABEL[type];
             const doneCount = list.filter(m => m.completed).length;
             return (
-              <div key={type} className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+              <div key={type} className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
                 <h3 className={`text-sm font-bold mb-3 ${meta.accent} flex items-center justify-between`}>
                   <span>{meta.icon} {meta.label}</span>
                   <span className="text-[11px] text-slate-400">{doneCount}/{list.length} tamamlandı</span>
@@ -160,7 +160,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
         </div>
 
         {/* Kariyer istatistikleri */}
-        <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 p-4">
+        <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
           <h3 className="text-sm font-bold text-slate-300 mb-3">📊 Kariyer Kaydı</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-center text-xs">
             {[
@@ -177,7 +177,7 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
               { label: 'Kırmızı Kart', value: cs.redCards || 0, color: 'text-rose-400' },
               { label: 'Kupa', value: `${cs.leagueTitles || 0}L / ${cs.cupWins || 0}K`, color: 'text-amber-300' },
             ].map(stat => (
-              <div key={stat.label} className="bg-slate-700/30 rounded-lg p-2">
+              <div key={stat.label} className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl border border-slate-700/60 shadow-xl backdrop-blur rounded-2xl p-3 border border-slate-700/40 shadow-sm">
                 <div className="text-slate-400 text-[10px]">{stat.label}</div>
                 <div className={`font-black text-base ${stat.color}`}>{stat.value}</div>
               </div>

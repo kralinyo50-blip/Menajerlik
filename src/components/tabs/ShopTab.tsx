@@ -93,12 +93,12 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
         <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-2xl p-6 border border-purple-500/30">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
                 🛒 Kulüp Dükkanı
               </h2>
               <p className="text-slate-400 mt-1">Takımını güçlendir, performansı artır!</p>
             </div>
-            <div className="bg-slate-800/50 px-4 py-2 rounded-xl">
+            <div className="bg-slate-800/50 px-4 py-2 rounded-2xl">
               <span className="text-amber-300 text-sm">Bütçe:</span>
               <span className="text-amber-400 font-bold ml-2">${gameState.budget.toLocaleString()}</span>
             </div>
@@ -107,7 +107,7 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
 
         {/* Success Message */}
         {purchaseSuccess && (
-          <div className="bg-emerald-500/20 border border-emerald-500/50 rounded-xl p-4 text-center animate-pulse">
+          <div className="bg-emerald-500/20 border border-emerald-500/50 rounded-2xl p-4 text-center animate-pulse">
             <span className="text-emerald-400 font-bold">✅ {purchaseSuccess} satın alındı!</span>
           </div>
         )}
@@ -128,7 +128,7 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
                 }`}
               >
                 {/* Product Image or Emoji */}
-                <div className="h-32 bg-slate-700/30 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+                <div className="h-32 bg-slate-700/30 rounded-2xl mb-4 flex items-center justify-center overflow-hidden">
                   {item.image ? (
                     <img 
                       src={item.image} 
@@ -162,7 +162,7 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
                         if (canAfford) handlePurchase(item);
                       }}
                       disabled={!canAfford}
-                      className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${
+                      className={`px-4 py-2 rounded-2xl font-bold text-sm transition-all ${
                         canAfford
                           ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white'
                           : 'bg-slate-600 text-slate-400 cursor-not-allowed'
@@ -179,7 +179,7 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
 
         {/* Special Offers */}
         <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-2xl p-6 border border-amber-500/30">
-          <h3 className="text-lg font-bold text-amber-400 mb-2">🔥 Haftanın Fırsatı</h3>
+          <h3 className="text-lg font-black tracking-tight text-amber-400 mb-2">🔥 Haftanın Fırsatı</h3>
           <p className="text-slate-300 text-sm">
             Her hafta yeni ürünler ve indirimler! Takımını en iyi şekilde destekle.
           </p>
@@ -191,7 +191,7 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700" onClick={e => e.stopPropagation()}>
               <div className="text-center">
                 {/* Product Display */}
-                <div className="h-40 bg-slate-700/30 rounded-xl mb-4 flex items-center justify-center">
+                <div className="h-40 bg-slate-700/30 rounded-2xl mb-4 flex items-center justify-center">
                   {selectedItem.image ? (
                     <img 
                       src={selectedItem.image} 
@@ -203,10 +203,10 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
                   )}
                 </div>
 
-                <h3 className="text-2xl font-bold text-white mb-2">{selectedItem.name}</h3>
+                <h3 className="text-2xl font-black tracking-tight text-white mb-2">{selectedItem.name}</h3>
                 <p className="text-slate-400 mb-4">{selectedItem.description}</p>
 
-                <div className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-xl mb-4">
+                <div className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-2xl mb-4">
                   <span className="font-bold">Etki:</span> {selectedItem.effect}
                 </div>
 
@@ -217,14 +217,14 @@ export const ShopTab: React.FC<ShopTabProps> = ({ gameState, onPurchase }) => {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSelectedItem(null)}
-                    className="flex-1 py-3 bg-slate-600 hover:bg-slate-500 text-white rounded-xl font-medium"
+                    className="flex-1 py-3 bg-slate-600 hover:bg-slate-500 text-white rounded-2xl font-medium"
                   >
                     İptal
                   </button>
                   <button
                     onClick={() => handlePurchase(selectedItem)}
                     disabled={gameState.budget < selectedItem.price}
-                    className={`flex-1 py-3 rounded-xl font-bold ${
+                    className={`flex-1 py-3 rounded-2xl font-bold ${
                       gameState.budget >= selectedItem.price
                         ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white'
                         : 'bg-slate-600 text-slate-400 cursor-not-allowed'

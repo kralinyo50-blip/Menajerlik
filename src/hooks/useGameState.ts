@@ -17,7 +17,7 @@ import {
 } from '../utils/life';
 import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
-  stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan
+  stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier
 } from '../utils/stadium';
 import { StadiumDesign as StadiumDesignType } from '../types/game';
 import {
@@ -35,6 +35,8 @@ import {
   SKILLS, emptySkillTree, grantXp, skillBuyDiscount, skillFatigueReduction, skillInjuryReduction, skillMoraleBonus,
   skillRecoveryBonus, skillSellBonus, skillSponsorBonus, skillYouthBonus
 } from '../utils/progression';
+import { generateInitialFeed, generateMatchFeedPosts, generateTransferPost, generateWeeklyBotPosts } from '../data/social';
+import { randomCountry } from '../data/countries';
 
 /** Renk ücretsiz paletlerden mi yoksa satın alınmış mı? */
 function isColorUnlocked(stadium: GameState['stadium'], hex: string): boolean {
@@ -55,6 +57,7 @@ const calculatePlayerValue = (ovr: number, age: number, potential?: number) =>
 const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number): Player => {
   const ovr = minOvr + Math.floor(Math.random() * Math.max(1, maxOvr - minOvr));
   const age = 18 + Math.floor(Math.random() * 17);
+  const rc = randomCountry();
   return {
     id,
     name: generatePlayerName(),
@@ -75,7 +78,9 @@ const generatePlayer = (role: string, minOvr: number, maxOvr: number, id: number
     redCard: false,
     suspension: 0,
     matchesPlayed: 0,
-    form: 5 + Math.floor(Math.random() * 4)
+    form: 5 + Math.floor(Math.random() * 4),
+    country: rc.country,
+    flag: rc.flag
   };
 };
 
@@ -276,7 +281,8 @@ export const useGameState = () => {
       loanList: [],
       outgoingLoans: [],
       stadium: defaultStadium(),
-      life: defaultLife()
+      life: defaultLife(),
+      socialFeed: []
     };
 
     // Transfer pazarı: generic oyuncular + bilindik yıldızlar
@@ -295,6 +301,9 @@ export const useGameState = () => {
       ...createSeasonMissions(initialState, 3),
       ...createWeeklyMissions(initialState, 3)
     ];
+
+    // Sosyal akış — ilk hafta bot + hoşgeldin
+    initialState.socialFeed = generateInitialFeed(initialState);
 
     setGameState(initialState);
   }, []);
@@ -389,16 +398,50 @@ export const useGameState = () => {
       const price = Math.max(10000, Math.floor(rawPrice * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0))));
       if (prev.budget < price) return prev;
 
-      const newWage = Math.max(player.wage, playerWage(player.ovr, player.starTier));
+      // pazarlıkta vaat edilen maaş/süre korunur (ikna oyunu)
+      const requestedWage = (player as Player).wage;
+      const requestedContract = (player as Player).contract;
+      const newWage = requestedWage && requestedWage > 0 ? requestedWage : Math.max(player.wage, playerWage(player.ovr, player.starTier));
+      const newContract = requestedContract >= 1 && requestedContract <= 5 ? requestedContract : 3;
+      const newMorale = (player as Player).morale ?? 75;
       let result: GameState = {
         ...prev,
-        bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: 3, suspension: 0 }],
+        bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: newContract, morale: newMorale, suspension: 0 }],
         marketList: prev.marketList.filter(p => p.id !== player.id),
         budget: prev.budget - price,
         clubStats: { ...prev.clubStats, transfers: (prev.clubStats.transfers || 0) + 1 },
-        news: [`${player.name} $${price.toLocaleString()} karşılığında transfer edildi!`, ...prev.news.slice(0, 4)]
+        news: [`✍️ ${player.name} $${price.toLocaleString()} karşılığında transfer edildi! (${newContract} yıl, $${newWage.toLocaleString()}/h${newMorale >= 80 ? ' • motive' : newMorale < 65 ? ' • temkinli' : ''})`, ...prev.news.slice(0, 4)]
       };
 
+      // ⭐ İtibar & forma satışı: yıldız oyuncu kulübe para ve heyecan getirir
+      if (player.starTier) {
+        let fameGain = 0, fanGain = 0, boardGain = 0, jerseyBonus = 0;
+        if (player.starTier === 'world') { fameGain = 14; fanGain = 12; boardGain = 7; jerseyBonus = Math.round(price * 0.22); }
+        else if (player.starTier === 'star') { fameGain = 9; fanGain = 8; boardGain = 5; jerseyBonus = Math.round(price * 0.14); }
+        else if (player.starTier === 'turkish') { fameGain = 10; fanGain = 10; boardGain = 6; jerseyBonus = Math.round(price * 0.16); }
+        else if (player.starTier === 'wonderkid') { fameGain = 7; fanGain = 6; boardGain = 4; jerseyBonus = Math.round(price * 0.10); }
+        const life = result.life ?? defaultLife();
+        result = {
+          ...result,
+          life: { ...life, stats: { ...life.stats, fame: Math.min(100, life.stats.fame + fameGain) } },
+          fanHappiness: Math.min(100, (result.fanHappiness ?? 60) + fanGain),
+          boardConfidence: Math.min(100, (result.boardConfidence ?? 50) + boardGain),
+          budget: result.budget + jerseyBonus,
+          news: [
+            `👕 ${player.starTier === 'world' ? 'Dünya yıldızı' : player.starTier === 'star' ? 'Yıldız' : player.starTier === 'turkish' ? 'Milli yıldız' : 'Genç yıldız'} etkisi! ${fameGain} ün, +%${fanGain} taraftar, forma satışından +$${jerseyBonus.toLocaleString()}!`,
+            ...result.news.slice(0, 4)
+          ]
+        };
+      }
+
+      // Sosyal: transfer duyurusu bot feed'e düşer
+      {
+        const tp = generateTransferPost(player.name, player.ovr, prev.teamName, price, player.starTier);
+        tp.week = prev.week;
+        tp.season = prev.season;
+        const currentFeed = (result.socialFeed || (prev as any).socialFeed || []) as any[];
+        result = { ...result, socialFeed: [tp, ...currentFeed].slice(0, 80) };
+      }
       const tryUnlock = (id: string) => {
         const a = result.achievements?.find(x => x.id === id);
         if (a && !a.unlocked) {
@@ -1126,6 +1169,8 @@ export const useGameState = () => {
             const mult = shopMultipliers[branch.shopType] || 1;
             shopIncome += Math.floor(5000 * mult * popFactor * posFactor * starFactor) * 5;
           });
+          // yıldızlar forma sattırır
+          if (shopIncome > 0) shopIncome = Math.floor(shopIncome * starShopMultiplier(newState));
         }
 
         newState.budget += shopIncome;
@@ -1339,6 +1384,13 @@ export const useGameState = () => {
         };
       }
 
+      /* — Sosyal Akış: maç sonucu postları + haftalık bot dedikodu */
+      {
+        const matchPosts = generateMatchFeedPosts(newState, userScore, oppScore, opponent.name, opponent.logo, isHome, newState.week);
+        const weeklyPosts = generateWeeklyBotPosts(newState);
+        const existing = (newState as any).socialFeed || (prev as any).socialFeed || [];
+        (newState as any).socialFeed = [...matchPosts, ...weeklyPosts, ...existing].slice(0, 90);
+      }
       /* — Başarımlar — */
       const unlock = (id: string) => {
         const a = newState.achievements?.find(x => x.id === id);
@@ -1915,6 +1967,27 @@ export const useGameState = () => {
     });
   }, []);
 
+  /** Menajer görünümünü güncelle (ten/saç/kıyafet) */
+  const updateLifeAppearance = useCallback((patch: Partial<import('../types/game').ManagerAppearance>) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const life = prev.life ?? defaultLife();
+      return {
+        ...prev,
+        life: { ...life, appearance: { ...(life.appearance ?? { skin: '#e8b48a', hair: '#2b1d15', outfit: 'club' as const }), ...patch } }
+      };
+    });
+  }, []);
+
+  /** Düşük performans modu (gölge kapatma) */
+  const setLifeLowPerf = useCallback((value: boolean) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const life = prev.life ?? defaultLife();
+      return { ...prev, life: { ...life, lowPerf: value } };
+    });
+  }, []);
+
   const spendSkillPoint = useCallback((skillId: SkillId) => {
     setGameState(prev => {
       if (!prev || (prev.skillPoints || 0) <= 0) return prev;
@@ -2011,6 +2084,79 @@ export const useGameState = () => {
         bench,
         news: ['🧠 En iyi 11 otomatik seçildi (form + enerji + OVR).', ...prev.news.slice(0, 4)]
       };
+    });
+  }, []);
+
+  /* ══════════════ SOSYAL MEDYA (FutbolX) ══════════════ */
+  const addSocialPost = useCallback((content: string, image?: string) => {
+    if (!content || content.trim().length < 3) return;
+    setGameState(prev => {
+      if (!prev) return null;
+      const trimmed = content.slice(0, 280);
+      const handle = `@${prev.teamName.toLowerCase().replace(/\s+/g,'')}`;
+      const low = trimmed.toLowerCase();
+      let bonusFame = 1;
+      let bonusFan = 1;
+      let tags: string[] = ['#SüperLig'];
+      if (low.includes('transfer')) { tags.push('#Transfer'); bonusFame+=1; }
+      if (low.includes('#maç')||low.includes('maç')||low.includes('galib')) { tags.push('#MaçGünü'); bonusFan+=1; }
+      const post: any = {
+        id: `user-${Date.now()}`,
+        author: prev.teamName,
+        handle,
+        logo: prev.teamLogo,
+        content: trimmed,
+        type: 'user',
+        week: prev.week,
+        season: prev.season,
+        likes: Math.floor(340 + Math.random()*900 + (prev.life?.stats.fame||40)*10),
+        retweets: Math.floor(30 + Math.random()*200),
+        comments: Math.floor(Math.random()*18),
+        liked: false,
+        isUser: true,
+        verified: true,
+        tags,
+        timeAgo: 'şimdi',
+        image: image || undefined
+      };
+      const life = prev.life ?? defaultLife();
+      return {
+        ...prev,
+        socialFeed: [post, ...((prev as any).socialFeed||[])].slice(0, 80),
+        fanHappiness: Math.min(100, (prev.fanHappiness||60)+bonusFan),
+        boardConfidence: Math.min(100, (prev.boardConfidence||50)+0.5),
+        life: { ...life, stats: { ...life.stats, fame: Math.min(100, life.stats.fame + bonusFame) } },
+        news: [`📣 Sosyal medyada paylaştın: "${trimmed.slice(0,38)}..."`, ...prev.news.slice(0,4)]
+      };
+    });
+  }, []);
+  const likeSocialPost = useCallback((postId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const feed = ((prev as any).socialFeed || []) as any[];
+      const idx = feed.findIndex((p:any)=>p.id===postId);
+      if (idx===-1) return prev;
+      const p = feed[idx];
+      const liked = !p.liked;
+      const patched = { ...p, liked, likes: p.likes + (liked?1:-1) };
+      const nextFeed = [...feed];
+      nextFeed[idx]=patched;
+      void (prev.life ?? defaultLife());
+      if (liked && p.isUser) {
+        // self like ignore
+      } else if (liked) {
+        // no change
+      }
+      return { ...prev, socialFeed: nextFeed } as any;
+    });
+  }, []);
+  const commentOnPost = useCallback((postId: string, comment: string) => {
+    if (!comment || comment.trim().length<2) return;
+    setGameState(prev => {
+      if (!prev) return null;
+      const feed = ((prev as any).socialFeed || []) as any[];
+      const next = feed.map((p:any)=> p.id===postId ? { ...p, comments: (p.comments||0)+1 } : p);
+      return { ...prev, socialFeed: next, fanHappiness: Math.min(100,(prev.fanHappiness||60)+0.4) } as any;
     });
   }, []);
 
@@ -2123,6 +2269,8 @@ export const useGameState = () => {
     autoPickBestEleven,
     doLifeActivity,
     buyLifeItem,
+    updateLifeAppearance,
+    setLifeLowPerf,
     setStadiumDesign,
     buyStadiumCosmetic,
     buyCapacityPackage,
@@ -2133,7 +2281,10 @@ export const useGameState = () => {
     exerciseLoanOption,
     returnLoanEarly,
     sendOnLoan,
-    recallLoan
+    recallLoan,
+    addSocialPost,
+    likeSocialPost,
+    commentOnPost
   };
 };
 

@@ -1,15 +1,23 @@
 // Game Constants
 
 export const FIRST_NAMES = [
+  // Türk
   "Mert", "Arda", "Can", "Hakan", "Emre", "Burak", "Cenk", "Enes", "Yusuf", 
   "Merih", "Ferdi", "İrfan", "Barış", "Kerem", "Semih", "Salih", "Yunus",
-  "Ozan", "Cengiz", "Okay", "Dorukhan", "Taylan", "Berkan", "Halil", "Muhammed"
+  "Ozan", "Cengiz", "Okay", "Dorukhan", "Taylan", "Berkan", "Halil", "Muhammed",
+  "Ahmet", "Mehmet", "Mustafa", "Ali", "Ayhan", "Uğur", "Tolga", "Volkan", "Selçuk", "Gökhan", "Serdar", "Onur", "Emir", "Efe", "Eren", "Kaan", "Doruk", "Deniz", "Berk", "Batu", "Cem",
+  // Avrupa & Dünya
+  "James", "Lucas", "Mateo", "Leo", "Noah", "Liam", "Ethan", "Mohammed", "Omar", "Youssef", "Khalid", "Diego", "Sergio", "Pablo", "Javier", "Carlos", "Miguel", "João", "Pedro", "Rafael", "André", "Gabriel", "Felipe", "Thiago", "Luka", "Ivan", "Marko", "Nikola", "Stefan", "Andrei", "Viktor", "Dmitri", "Alex", "Jordan", "Kyle", "Ryan", "Jack", "Harry", "Oliver", "Thomas", "Benjamin", "Elias", "Hugo", "Louis", "Antoine", "Kylian", "Jules", "Theo", "Emil", "Oscar", "Sven", "Erik", "Johan", "Noa", "Daan", "Milan", "Lars", "Kasper", "Mohamed", "Amine", "Bilal", "Hakim", "Achraf", "Sadio", "Victor", "Samuel", "Ismail", "Moussa", "Kalidou", "Wilfried", "Nicolas", "Franck", "Didier", "Yaya", "Pierre", "Samuel", "David", "Cristiano", "Lionel", "Neymar", "Vinicius", "Rodrygo", "Endrick", "Lamine", "Gavi", "Pedri",
+  // Kadın isimleri de ekle (farklı kişiler)
+  "Elif", "Zeynep", "Ayşe", "Fatma", "Meryem", "Aylin", "Derya", "Esra", "Melis", "Sıla"
 ];
 
 export const LAST_NAMES = [
   "Yılmaz", "Kaya", "Demir", "Çelik", "Şahin", "Öztürk", "Bulut", "Güneş", 
   "Aydın", "Yıldız", "Sönmez", "Özkan", "Toprak", "Aktaş", "Koç", "Eren",
-  "Arslan", "Karaca", "Özdemir", "Doğan", "Şentürk", "Acar", "Tunç", "Özer"
+  "Arslan", "Karaca", "Özdemir", "Doğan", "Şentürk", "Acar", "Tunç", "Özer",
+  "Aslan", "Koçak", "Korkmaz", "Acar", "Başar", "Erdem", "Kılıç", "Turan", "Güler", "Aksoy", "Polat", "Tuncer", "Çetin", "Kurt", "Özkan", "Aydın", "Yalçın", "Kara", "Uçar", "Şahin", "Yavuz", "Avcı",
+  "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Martinez", "Rodriguez", "Silva", "Santos", "Oliveira", "Souza", "Costa", "Pereira", "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Rossi", "Esposito", "Bianchi", "Romano", "Colombo", "Dubois", "Martin", "Bernard", "Thomas", "Petit", "Andersson", "Johansson", "Karlsson", "Nilsson", "Jensen", "Hansen", "Pedersen", "Olsen", "Van Dijk", "De Jong", "De Bruyne", "Hazard", "Lukaku", "Salah", "Mane", "Aubameyang", "Eto’o", "Drogba", "Yaya", "Touré", "Essien", "Mikel", "Okocha", "Salah", "Ziyech", "Hakimi", "Mahrez", "Benzema", "Mbappé", "Griezmann", "Pogba", "Kanté", "Varane", "Giroud", "Lloris", "Neuer", "Kroos", "Messi", "Ronaldo", "Neymar", "Suárez", "Cavani", "Higuaín", "Aguero", "Di Maria", "Alvarez", "Lautaro", "Dybala"
 ];
 
 export const LOGO_POOL = ['🦁', '🦅', '🐺', '⚡', '🔥', '⚔️', '🛡️', '👑', '🔱', '🏹', '🌪️', '💎', '🐉', '🦈', '🐆', '⭐'];

@@ -54,11 +54,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-4 xl:p-6 border border-slate-700/50 h-full flex flex-col overflow-y-auto">
-        {/* Club Info */}
-        <div className="text-center mb-4 pb-4 border-b border-slate-700/50">
-          <div className="text-5xl xl:text-6xl mb-2 drop-shadow-lg">{gameState.teamLogo}</div>
-          <h2 className="text-lg xl:text-xl font-bold text-emerald-400 truncate">{gameState.teamName}</h2>
+      <div className="bg-slate-800/55 backdrop-blur-xl rounded-2xl p-4 xl:p-6 border border-slate-700/60 shadow-xl shadow-black/20 h-full flex flex-col overflow-y-auto relative premium-border">
+        {/* Club Info — premium */}
+        <div className="text-center mb-4 pb-4 border-b border-slate-700/50 relative">
+          <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/[0.07] via-cyan-500/[0.03] to-transparent rounded-t-2xl pointer-events-none" />
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-32 h-12 bg-amber-500/10 rounded-full blur-2xl" />
+          <div className="text-5xl xl:text-6xl mb-2 drop-shadow-[0_0_18px_rgba(16,185,129,0.35)]">{gameState.teamLogo}</div>
+          <h2 className="text-lg xl:text-xl font-black tracking-tight text-white truncate" style={{fontFamily:'Plus Jakarta Sans, Inter, sans-serif'}}>{gameState.teamName}</h2>
           <div className="text-xs text-slate-400 mt-1">
             Lig {gameState.leagueLevel} • Sezon {gameState.season || 1}
             {gameState.difficulty && (
@@ -69,9 +71,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Budget */}
-        <div className="bg-gradient-to-r from-amber-500/20 to-yellow-500/20 rounded-xl p-3 mb-3 border border-amber-500/30">
-          <div className="text-xs text-amber-300 font-medium mb-1">KULÜP KASASI</div>
+        {/* Budget — premium */}
+        <div className="bg-gradient-to-br from-amber-500/22 via-yellow-500/16 to-orange-500/22 rounded-2xl p-3.5 mb-3 border border-amber-500/30 shadow-lg backdrop-blur shimmer premium-border">
+          <div className="text-[10px] tracking-widest font-black text-amber-300/90 mb-1">KULÜP KASASI</div>
           <div className="text-xl xl:text-2xl font-black text-amber-400">${gameState.budget.toLocaleString()}</div>
           <div className="text-[10px] text-amber-300/70 mt-1">
             Maaş (5 haftada bir): ${(weeklyWages * 5).toLocaleString()}
@@ -85,19 +87,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="bg-slate-700/30 rounded-lg p-2">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
             <div className="text-[10px] text-slate-400">Takım Gücü</div>
             <div className="text-lg font-bold text-emerald-400">⭐ {avgOvr}</div>
           </div>
-          <div className="bg-slate-700/30 rounded-lg p-2">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
             <div className="text-[10px] text-slate-400">Hafta</div>
             <div className="text-lg font-bold text-white">📅 {gameState.week}/18</div>
           </div>
-          <div className="bg-slate-700/30 rounded-lg p-2">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
             <div className="text-[10px] text-slate-400">Enerji</div>
             <div className={`text-lg font-bold ${getEnergyColor(avgEnergy)}`}>⚡ %{avgEnergy}</div>
           </div>
-          <div className="bg-slate-700/30 rounded-lg p-2">
+          <div className="bg-slate-700/40 backdrop-blur rounded-xl p-2.5 border border-slate-600/30 shadow-sm">
             <div className="text-[10px] text-slate-400">Moral</div>
             <div className="text-lg font-bold text-white">{getMoraleIcon(avgMorale)} %{avgMorale}</div>
           </div>
@@ -138,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Next Match */}
-        <div className="bg-gradient-to-r from-slate-700/50 to-slate-600/50 rounded-xl p-4 mb-4 border border-slate-600/50">
+        <div className="bg-gradient-to-br from-slate-800/80 to-slate-700/60 rounded-2xl p-4 mb-4 border border-slate-600/40 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs text-emerald-400 font-medium">SIRADAKİ MAÇI</div>
             {nextMatch && (
@@ -259,12 +261,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
+        {/* Made by Kaan signature */}
+        <div className="mt-3 mb-3 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-900/50 border border-slate-700/40">
+          <span className="text-[10px] text-slate-500">Crafted with</span>
+          <span className="text-[11px]">❤️</span>
+          <span className="kaan-watermark text-[11px]">Made by Kaan</span>
+          <span className="w-1 h-1 rounded-full bg-slate-600" />
+          <span className="text-[9px] text-amber-300/60 font-bold tracking-widest">YAZ 2026</span>
+        </div>
+
         {/* Action Buttons */}
         <div className="mt-auto space-y-2">
           <button
             onClick={onPlayMatch}
             disabled={gameState.week > 18}
-            className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-slate-600 disabled:to-slate-700 text-white font-black rounded-xl shadow-lg shadow-emerald-500/40 transition-all duration-300 disabled:shadow-none animate-cta-ring tracking-wide"
+            className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-slate-600 disabled:to-slate-700 text-white font-black rounded-2xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:shadow-none tracking-wide"
           >
             ⚽ MAÇA ÇIK
             {gameState.week <= 18 && (

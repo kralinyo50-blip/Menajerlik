@@ -94,10 +94,11 @@ export const SquadTab: React.FC<SquadTabProps> = ({
           </div>
           <div className="bg-black/80 backdrop-blur-sm px-2 py-1 rounded-lg mt-1 text-center min-w-[100px]">
             <div className="text-[10px] font-bold text-emerald-400 flex items-center justify-center gap-1">
+              <span title={player.country}>{player.flag ?? '🇹🇷'}</span>
               {player.role}
               <span className={getFormColor(player.form)}>●{player.form ?? 5}</span>
             </div>
-            <div className="text-[9px] text-white truncate max-w-[95px]">{player.name}</div>
+            <div className="text-[9px] text-white truncate max-w-[95px] flex items-center justify-center gap-1">{player.flag ?? '🇹🇷'} {player.name}</div>
             {badge && <div className="text-[8px] text-red-300">{badge.text}</div>}
           </div>
         </div>
@@ -106,7 +107,11 @@ export const SquadTab: React.FC<SquadTabProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-3 lg:gap-4 overflow-hidden">
+    <div className="h-full flex flex-col lg:flex-row gap-3 lg:gap-4 overflow-hidden relative">
+      <div className="pointer-events-none absolute -top-2 right-2 hidden lg:flex items-center gap-1.5 opacity-30">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        <span className="kaan-watermark text-[10px] tracking-[0.16em]">MADE BY KAAN — BÜTÜN YAZ</span>
+      </div>
       {/* Sağlık bandı */}
       <div className="flex-1 min-h-[300px] lg:min-h-0 flex flex-col gap-2">
         {gameState.team11.some(isUnavailable) && (
@@ -145,7 +150,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
       <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 bg-slate-800/50 backdrop-blur-sm rounded-xl lg:rounded-2xl p-3 lg:p-4 border border-slate-700/50 overflow-y-auto max-h-[250px] lg:max-h-none">
         <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-700/50">
           <h3 className="text-lg font-bold text-emerald-400">Yedek Kulübesi</h3>
-          <span className="text-xs text-slate-400">{gameState.bench.length} oyuncu</span>
+          <span className="text-xs text-slate-400 leading-relaxed">{gameState.bench.length} oyuncu</span>
         </div>
 
         {onAutoPick && (
@@ -169,7 +174,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => handleDrop(player, true)}
                 onClick={() => setSelectedPlayer(player)}
-                className={`bg-slate-700/50 hover:bg-slate-600/50 rounded-xl p-3 cursor-pointer transition-all border-l-4 ${
+                className={`bg-slate-700/50 hover:bg-slate-600/50 rounded-2xl p-3.5 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300 cursor-pointer transition-all border-l-4 ${
                   isUnavailable(player) ? 'border-red-500 opacity-70' : 'border-amber-500'
                 }`}
               >
@@ -181,13 +186,14 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-white text-sm truncate flex items-center gap-1">
+                      <span title={player.country}>{player.flag ?? '🇹🇷'}</span>
                       {player.name}
                       {player.starTier && <span className="text-[10px]" title={TIER_INFO[player.starTier].label}>{TIER_INFO[player.starTier].icon}</span>}
                       {gameState.captainId === player.id && <span className="text-[10px]">🎽</span>}
                       {player.wantsOut && <span className="text-[10px]" title="Kulüpten ayrılmak istiyor">😠</span>}
                       {player.loanFrom && <span className="text-[9px] bg-cyan-500/30 text-cyan-200 px-1 rounded" title={`${player.loanFrom} kulübünden kiralık`}>KİRALIK</span>}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 text-xs text-slate-400 leading-relaxed">
                       <span className="text-emerald-400">{ROLE_NAMES[player.role]}</span>
                       <span>•</span>
                       <span className={player.energy < 40 ? 'text-red-400' : player.energy < 70 ? 'text-yellow-400' : 'text-emerald-400'}>
@@ -205,7 +211,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
         </div>
 
         <div className="mt-4 p-3 bg-slate-700/30 rounded-xl">
-          <p className="text-xs text-slate-400 text-center">
+          <p className="text-xs text-slate-400 leading-relaxed text-center">
             💡 Oyuncuları sürükleyerek değiştir • Detay için tıkla
           </p>
         </div>
@@ -221,7 +227,8 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                   {selectedPlayer.ovr}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                    <span title={selectedPlayer.country}>{selectedPlayer.flag ?? '🇹🇷'}</span>
                     {selectedPlayer.name}
                     {gameState.captainId === selectedPlayer.id && <span className="text-sm">🎽</span>}
                   </h3>
@@ -235,7 +242,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
             </div>
 
             {playerStatusBadge(selectedPlayer) && (
-              <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-3 mb-4 text-sm">
+              <div className="bg-red-500/15 border border-red-500/30 rounded-2xl p-3.5 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300 mb-4 text-sm">
                 <span className="text-red-300 font-medium">{playerStatusBadge(selectedPlayer)!.text}</span>
                 {(selectedPlayer.suspension ?? 0) > 0 && (
                   <span className="text-slate-300 text-xs ml-2">→ Gelecek {selectedPlayer.suspension} maçta oynayamaz</span>
@@ -245,21 +252,21 @@ export const SquadTab: React.FC<SquadTabProps> = ({
 
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="bg-slate-700/50 p-3 rounded-xl">
-                <div className="text-xs text-slate-400">Potansiyel</div>
+                <div className="text-xs text-slate-400 leading-relaxed">Potansiyel</div>
                 <div className="text-lg font-bold text-emerald-400">{selectedPlayer.potential}</div>
               </div>
               <div className="bg-slate-700/50 p-3 rounded-xl">
-                <div className="text-xs text-slate-400">Enerji / Moral</div>
+                <div className="text-xs text-slate-400 leading-relaxed">Enerji / Moral</div>
                 <div className={`text-lg font-bold ${selectedPlayer.energy < 40 ? 'text-red-400' : 'text-emerald-400'}`}>
                   %{selectedPlayer.energy} / {getMoraleEmoji(selectedPlayer.morale)}{selectedPlayer.morale}
                 </div>
               </div>
               <div className="bg-slate-700/50 p-3 rounded-xl">
-                <div className="text-xs text-slate-400">Sezon Golleri</div>
+                <div className="text-xs text-slate-400 leading-relaxed">Sezon Golleri</div>
                 <div className="text-lg font-bold text-white">⚽ {selectedPlayer.goals} • 🅰️ {selectedPlayer.assists}</div>
               </div>
               <div className="bg-slate-700/50 p-3 rounded-xl">
-                <div className="text-xs text-slate-400">Maç / Kart</div>
+                <div className="text-xs text-slate-400 leading-relaxed">Maç / Kart</div>
                 <div className="text-lg font-bold text-white">
                   {selectedPlayer.matchesPlayed ?? 0} • 🟨 {selectedPlayer.yellowCards ?? 0}
                 </div>
@@ -281,7 +288,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
 
             {/* Kiralık bilgisi */}
             {selectedPlayer.loanFrom && (
-              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-3 mb-4">
+              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-2xl p-3.5 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300 mb-4">
                 <div className="text-cyan-300 font-bold text-sm mb-1">
                   🔄 {selectedPlayer.loanFrom} kulübünden kiralık
                 </div>
@@ -315,7 +322,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
 
             {/* Kiralığa gönder */}
             {!selectedPlayer.loanFrom && (
-              <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+              <div className="bg-slate-700/50 backdrop-blur rounded-2xl p-3.5 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all mb-4">
                 <div className="text-xs text-amber-300 font-bold mb-2">📤 Kiralığa Gönder (gelişim + gelir)</div>
                 {!loanOffers ? (
                   <button
@@ -355,7 +362,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
 
             {/* Sözleşme yenileme */}
             {!selectedPlayer.loanFrom && (
-            <div className="bg-slate-700/40 rounded-xl p-3 mb-4">
+            <div className="bg-slate-700/50 backdrop-blur rounded-2xl p-3.5 shadow-md hover:shadow-xl hover:scale-[1.01] transition-all duration-300.5 border border-slate-600/30 shadow-md hover:shadow-lg transition-all mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-sky-300 font-bold">📝 Sözleşme Yenile</span>
                 <div className="flex gap-1">

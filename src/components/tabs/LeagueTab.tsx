@@ -27,7 +27,10 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
         {/* Header */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">Lig Tablosu</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-black tracking-tight text-white">Lig Tablosu</h2>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 kaan-watermark">MADE BY KAAN</span>
+            </div>
             <p className="text-slate-400">Lig {gameState.leagueLevel} • Hafta {gameState.week}/18</p>
           </div>
           <div className="flex items-center gap-3">
@@ -104,20 +107,20 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
         </div>
 
         {/* League Table */}
-        <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden">
+        <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 shadow-xl overflow-hidden premium-border">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-900/50">
                 <th className="text-left py-4 px-4 text-xs text-emerald-400 font-bold">#</th>
                 <th className="text-left py-4 px-4 text-xs text-emerald-400 font-bold">KULÜP</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">OVR</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">O</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">G</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">B</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">M</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">AG</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">YG</th>
-                <th className="text-center py-4 px-2 text-xs text-slate-400">AV</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">OVR</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">O</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">G</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">B</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">M</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">AG</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">YG</th>
+                <th className="text-center py-4 px-2 text-xs text-slate-400 leading-relaxed">AV</th>
                 <th className="text-center py-4 px-4 text-xs text-amber-400 font-bold">P</th>
               </tr>
             </thead>
@@ -137,7 +140,7 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
                 if (position === 1) positionBadge = 'bg-amber-500 text-black';
                 else if (position <= 3) positionBadge = 'bg-emerald-500/30 text-emerald-400';
                 else if (position >= 8) positionBadge = 'bg-red-500/30 text-red-400';
-                else positionBadge = 'bg-slate-700/50 text-slate-300';
+                else positionBadge = 'bg-slate-900/80 backdrop-blur-xl text-slate-300';
 
                 // OVR karşılaştırma rengi
                 let ovrColor = 'text-slate-400';
@@ -153,7 +156,7 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
                 return (
                   <tr 
                     key={team.name} 
-                    className={`border-b border-slate-700/30 ${rowBg} ${isUser ? 'font-bold' : ''} hover:bg-slate-700/20 transition-colors`}
+                    className={`border-b border-slate-700/60/30 ${rowBg} ${isUser ? 'font-bold' : ''} hover:bg-slate-700/20 transition-colors`}
                   >
                     <td className="py-4 px-4">
                       <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold ${positionBadge}`}>
@@ -235,14 +238,14 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
 
         {/* Gol Krallığı */}
         <div className="mt-6 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-700/60/50 flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">⚽ Gol Krallığı</h3>
-            <span className="text-xs text-slate-400">Lig geneli</span>
+            <span className="text-xs text-slate-400 leading-relaxed">Lig geneli</span>
           </div>
           {(() => {
             const userScorers = [...gameState.team11, ...gameState.bench]
               .filter(p => p.goals > 0)
-              .map(p => ({ name: p.name, club: gameState.teamName, logo: gameState.teamLogo, goals: p.goals, assists: p.assists, isUser: true }));
+              .map(p => ({ name: `${p.flag ?? '🇹🇷'} ${p.name}`, flag: p.flag, club: gameState.teamName, logo: gameState.teamLogo, goals: p.goals, assists: p.assists, isUser: true }));
             const all = [...userScorers, ...(gameState.leagueScorers || []).map(s => ({ ...s, isUser: false }))]
               .sort((a, b) => b.goals - a.goals || b.assists - a.assists)
               .slice(0, 10);
@@ -254,7 +257,7 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
                 {all.map((s, i) => (
                   <div key={`${s.name}-${i}`} className={`flex items-center justify-between px-4 py-2 text-sm ${s.isUser ? 'bg-emerald-500/10' : ''}`}>
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-5 text-xs text-slate-400">{i + 1}</span>
+                      <span className="w-5 text-xs text-slate-400 leading-relaxed">{i + 1}</span>
                       <span className="text-lg">{s.logo}</span>
                       <div className="min-w-0">
                         <div className={`truncate ${s.isUser ? 'text-emerald-400 font-bold' : 'text-white'}`}>{s.name}</div>
@@ -274,9 +277,9 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({ gameState }) => {
 
         {/* Fikstür */}
         <div className="mt-6 bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-slate-700/60/50 flex items-center justify-between">
             <h3 className="text-sm font-bold text-white">📅 Fikstür ve Sonuçlar</h3>
-            <span className="text-xs text-slate-400">18 hafta • İç saha / Deplasman</span>
+            <span className="text-xs text-slate-400 leading-relaxed">18 hafta • İç saha / Deplasman</span>
           </div>
           <div className="divide-y divide-slate-700/40 max-h-80 overflow-y-auto">
             {gameState.fixture.map(fx => {

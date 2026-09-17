@@ -53,7 +53,7 @@ export function generateFixture(userTeam: Team, bots: Team[]): FixtureEntry[] {
   return fixture;
 }
 
-/** Lig pozisyonuna göre seyirci & bilet geliri hesabı */
+/** Lig pozisyonuna göre seyirci & bilet geliri hesabı — yıldızlar tribünü doldurur */
 export function calculateAttendance(params: {
   stadiumLvl: number;
   leaguePosition: number;
@@ -68,6 +68,8 @@ export function calculateAttendance(params: {
   demandFactor?: number;
   /** Çatı koruması (kötü havada kaybı azaltır: 1 … 0.96) */
   weatherShield?: number;
+  /** Yıldız çekimi: 🌍/⭐/🇹🇷 oyuncular tribünü doldurur (1.0 … 1.32) */
+  starFactor?: number;
 }): number {
   if (!params.isHome) return 0;
 
@@ -85,7 +87,7 @@ export function calculateAttendance(params: {
 
   const attendance = Math.floor(
     capacity * posFactor * fanFactor * rivalFactor * weatherFactor * cupFactor *
-    (params.demandFactor ?? 1) * (params.weatherShield ?? 1)
+    (params.demandFactor ?? 1) * (params.weatherShield ?? 1) * (params.starFactor ?? 1)
   );
   return Math.max(500, Math.min(capacity, attendance));
 }

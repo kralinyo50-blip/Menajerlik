@@ -16,6 +16,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  build: {
+    // singlefile zaten her şeyi inline ediyor — modulepreload linkleri gereksiz ve console warning üretiyor
+    modulePreload: false,
+  },
   server: {
     host: "0.0.0.0",
     port: 5173,

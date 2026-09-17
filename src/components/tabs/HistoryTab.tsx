@@ -20,12 +20,12 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
     .slice(0, 10);
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full relative overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Season header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-2xl font-bold text-white">Kulüp İstatistikleri</h2>
+            <h2 className="text-2xl font-black tracking-tight text-white">Kulüp İstatistikleri</h2>
             <p className="text-slate-400 text-sm">Sezon {gameState.season || 1} • Lig {gameState.leagueLevel}</p>
           </div>
           <div className="flex gap-2 text-xs">
@@ -68,8 +68,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
 
         {/* Match History */}
         <div>
-          <h2 className="text-xl font-bold text-white mb-4">📋 Maç Geçmişi</h2>
-          <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden">
+          <h2 className="text-xl font-black tracking-tight text-white mb-4">📋 Maç Geçmişi</h2>
+          <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 shadow-xl overflow-hidden">
             {gameState.matchHistory.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <span className="text-4xl block mb-2">📅</span>
@@ -97,7 +97,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
                           <span className="text-lg">{gameState.teamLogo}</span>
                           <span className="ml-2 font-medium text-white">{gameState.teamName}</span>
                         </div>
-                        <div className="bg-slate-700/50 px-4 py-2 rounded-xl">
+                        <div className="bg-slate-700/50 px-4 py-2 rounded-2xl">
                           <span className="text-2xl font-black text-white">{match.homeScore}</span>
                           <span className="text-slate-400 mx-2">-</span>
                           <span className="text-2xl font-black text-white">{match.awayScore}</span>
@@ -126,8 +126,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
         {/* Top Scorers */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h2 className="text-xl font-bold text-white mb-4">⚽ Gol Krallığı</h2>
-            <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden">
+            <h2 className="text-xl font-black tracking-tight text-white mb-4">⚽ Gol Krallığı</h2>
+            <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 shadow-xl overflow-hidden">
               {topScorers.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
                   Henüz gol atılmadı
@@ -143,9 +143,9 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
                       </div>
                       <div className="flex-1">
                         <div className="font-medium text-white">{player.name}</div>
-                        <div className="text-xs text-slate-400">{ROLE_NAMES[player.role]}</div>
+                        <div className="text-xs text-slate-400 leading-relaxed">{ROLE_NAMES[player.role]}</div>
                       </div>
-                      <div className="text-xl font-bold text-amber-400">⚽ {player.goals}</div>
+                      <div className="text-xl font-black tracking-tight text-amber-400">⚽ {player.goals}</div>
                     </div>
                   ))}
                 </div>
@@ -154,8 +154,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
           </div>
 
           <div>
-            <h2 className="text-xl font-bold text-white mb-4">🅰️ Asist Krallığı</h2>
-            <div className="bg-slate-800/50 rounded-2xl border border-slate-700/50 overflow-hidden">
+            <h2 className="text-xl font-black tracking-tight text-white mb-4">🅰️ Asist Krallığı</h2>
+            <div className="bg-slate-800/70 backdrop-blur-xl backdrop-blur-xl rounded-2xl border border-slate-700/60 shadow-xl overflow-hidden">
               {topAssisters.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
                   Henüz asist yapılmadı
@@ -171,9 +171,9 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
                       </div>
                       <div className="flex-1">
                         <div className="font-medium text-white">{player.name}</div>
-                        <div className="text-xs text-slate-400">{ROLE_NAMES[player.role]}</div>
+                        <div className="text-xs text-slate-400 leading-relaxed">{ROLE_NAMES[player.role]}</div>
                       </div>
-                      <div className="text-xl font-bold text-blue-400">🅰️ {player.assists}</div>
+                      <div className="text-xl font-black tracking-tight text-blue-400">🅰️ {player.assists}</div>
                     </div>
                   ))}
                 </div>
@@ -185,7 +185,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
         {/* Trophies */}
         {gameState.trophies.length > 0 && (
           <div>
-            <h2 className="text-xl font-bold text-white mb-4">🏆 Kupa Dolabı</h2>
+            <h2 className="text-xl font-black tracking-tight text-white mb-4">🏆 Kupa Dolabı</h2>
             <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 rounded-2xl p-6 border border-amber-500/30">
               <div className="flex flex-wrap gap-4 justify-center">
                 {gameState.trophies.map((trophy, i) => (
@@ -200,6 +200,11 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
             </div>
           </div>
         )}
+      </div>
+          <div className="mt-6 text-center text-[10px] text-slate-500 flex items-center justify-center gap-2 opacity-60">
+        <span className="kaan-watermark text-[10px]">Made by Kaan</span>
+        <span className="w-1 h-1 rounded-full bg-slate-600" />
+        <span>☀️ Bütün Yaz Boyunca Geliştirildi</span>
       </div>
     </div>
   );

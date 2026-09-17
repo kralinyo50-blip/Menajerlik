@@ -9,6 +9,20 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.1.0',
+    date: 'Eylül 2026',
+    tag: 'BÜYÜK',
+    title: 'BÜTÜN YAZ BOYUNCA GELİŞTİRİLDİ ☀️ — Made by Kaan',
+    items: [
+      '☀️ BÜTÜN YAZ BOYUNCA GELİŞTİRİLDİ — Haziran’dan Eylül’e tek tek, ilmek ilmek işlenen bir tutku projesi',
+      '✨ Ultra şık premium tasarım: glassmorphism cam paneller, aurora gradientler, soft gölgeler ve akıcı animasyonlar',
+      '👑 Made by Kaan imzası oyunun her yerine işlendi — girişten lig tablosuna, haber bandından kupa finaline',
+      '🎨 Her piksel elden geçti: sidebar, kartlar, butonlar, 2D saha ve 3D sahneler daha şık ve akıcı',
+      '🚀 Performans ve his iyileşti — daha pürüzsüz geçişler, daha net tipografi, daha premium his',
+      '💛 Bu oyun yazın emeği, kışın hayali — Made by Kaan ❤️',
+    ],
+  },
+  {
     version: '4.0.0',
     date: '16 Eyl 2026',
     tag: 'BÜYÜK',
@@ -148,4 +162,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '4.0.0';
+export const CURRENT_VERSION = '4.1.0';

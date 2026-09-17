@@ -12,7 +12,23 @@ export function defaultLife(): ManagerLife {
     lastActionWeek: 1,
     owned: [],
     history: [],
+    appearance: { skin: '#e8b48a', hair: '#2b1d15', outfit: 'club' },
+    lowPerf: false,
   };
+}
+
+export type LifeTimeOfDay = 'morning' | 'day' | 'evening' | 'night';
+export type LifeSeason = 'spring' | 'summer' | 'autumn' | 'winter';
+
+export function getLifeTime(gameState: GameState): { timeOfDay: LifeTimeOfDay; season: LifeSeason; isNight: boolean } {
+  const seasonIdx = ((gameState.season - 1) % 4 + 4) % 4;
+  const seasons: LifeSeason[] = ['spring', 'summer', 'autumn', 'winter'];
+  const season = seasons[seasonIdx];
+  // Haftaya göre günün saati döner: her hafta farklı atmosfer
+  const t = gameState.week % 4;
+  const times: LifeTimeOfDay[] = ['day', 'evening', 'night', 'morning'];
+  const timeOfDay = times[t];
+  return { timeOfDay, season, isNight: timeOfDay === 'night' || timeOfDay === 'evening' };
 }
 
 export function lifeOf(state: GameState): ManagerLife {
