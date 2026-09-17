@@ -269,6 +269,9 @@ export const useGameState = () => {
       week: 1,
       season: 1,
       budget: diffCfg.startingBudget,
+      lifetimeSocialEarnings: 0,
+      weeklySocialEarnings: 0,
+      lastSocialPayoutWeek: 0,
       stadiumLvl: 1,
       trainingLvl: 1,
       healthLvl: 1,
@@ -281,6 +284,7 @@ export const useGameState = () => {
       academyPlayers: [],
       matchHistory: [],
       clubStats: {
+        socialEarnings: 0,
         totalGoals: 0,
         totalWins: 0,
         totalDraws: 0,
@@ -414,6 +418,10 @@ export const useGameState = () => {
     if (!(state as any).pcBuild) (state as any).pcBuild = {};
     if (!(state as any).pcInventory) (state as any).pcInventory = [];
     if ((state as any).socialFeed) (state as any).socialFeed = (state as any).socialFeed.map((post: any)=> ({ platform: 'instagram', views: post.views ?? Math.floor(post.likes*12), ...post }));
+    if ((state as any).lifetimeSocialEarnings === undefined) (state as any).lifetimeSocialEarnings = 0;
+    if ((state as any).weeklySocialEarnings === undefined) (state as any).weeklySocialEarnings = 0;
+    if ((state as any).lastSocialPayoutWeek === undefined) (state as any).lastSocialPayoutWeek = 0;
+    if ((state as any).clubStats && (state as any).clubStats.socialEarnings === undefined) (state as any).clubStats.socialEarnings = 0;
     if (!(state as any).stadium?.tribunes) {
       const baseStadium = (state as any).stadium || {};
       baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
@@ -751,6 +759,10 @@ export const useGameState = () => {
       if (tac.tempoValue == null) tac.tempoValue = 50;
     }
     if ((loaded as any).socialFeed) (loaded as any).socialFeed = (loaded as any).socialFeed.map((post: any)=> ({ platform: post.platform || 'instagram', views: post.views ?? Math.floor((post.likes||200)*12), ...post }));
+    if ((loaded as any).lifetimeSocialEarnings === undefined) (loaded as any).lifetimeSocialEarnings = 0;
+    if ((loaded as any).weeklySocialEarnings === undefined) (loaded as any).weeklySocialEarnings = 0;
+    if ((loaded as any).lastSocialPayoutWeek === undefined) (loaded as any).lastSocialPayoutWeek = 0;
+    if ((loaded as any).clubStats && (loaded as any).clubStats.socialEarnings === undefined) (loaded as any).clubStats.socialEarnings = 0;
     setGameState(loaded);
     return true;
   }, []);
@@ -1356,6 +1368,26 @@ export const useGameState = () => {
           newState.news = [`${newState.activeSponsor.name} sponsorluğu sona erdi.`, ...newState.news.slice(0, 4)];
           newState.activeSponsor = null;
         }
+      }
+
+      /* — Sosyal pasif gelir (haftalık) — takipçi + etkileşimden otomatik */
+      {
+        const baseFollowers = 18400 + ((newState.life?.stats.fame||40)*620) + ((newState.fanHappiness||60)*240) + (newState.week*420) + ((newState.managerRep||50)*140);
+        const totalFollowers = baseFollowers;
+        const userPosts = (newState.socialFeed||[]).filter((p:any)=> p.isUser).length;
+        const engagement = 0.045 + Math.min(0.065, userPosts*0.005 + ((newState.life?.stats.fame||40)/900)*0.02);
+        const qualityMult = 0.95 + (((newState as any).devices?.find((d:any)=> d.id===(newState as any).activeDeviceId)?.quality||42)/150);
+        const weeklyPassive = Math.floor(totalFollowers * engagement * 1.85 * qualityMult);
+        if (weeklyPassive>900) {
+          newState.budget += weeklyPassive;
+          (newState as any).lifetimeSocialEarnings = (((newState as any).lifetimeSocialEarnings)||0) + weeklyPassive;
+          (newState as any).weeklySocialEarnings = weeklyPassive;
+          (newState.clubStats as any).socialEarnings = (((newState.clubStats as any).socialEarnings)||0) + weeklyPassive;
+          newState.news = [`💰 Sosyal pasif gelir: +$${weeklyPassive.toLocaleString()} (${totalFollowers.toLocaleString()} takipçi • %${Math.round(engagement*100)} etkileşim • ${(() => { const q=((newState as any).devices?.find((d:any)=> d.id===(newState as any).activeDeviceId)?.quality||42); return q>=80?'4K':q>=65?'1080p':'720p'; })()})`, ...newState.news.slice(0,4)];
+        } else if (weeklyPassive>0) {
+          (newState as any).weeklySocialEarnings = weeklyPassive;
+        }
+        (newState as any).lastSocialPayoutWeek = newState.week;
       }
 
       /* — Yatırımlar — gerçekçi simülasyon: drift + volatilite + piyasa betası + olay şoku + temettü */
@@ -3090,13 +3122,27 @@ export const useGameState = () => {
         videoId: safePlatform==='youtube' ? 'pRpeEdMmmQ0' : undefined
       };
       const life = prev.life ?? defaultLife();
+      // ── Sosyal gelir: platforma göre RPM ──
+      const rpm = safePlatform==='youtube' ? 0.52 : safePlatform==='tiktok' ? 0.31 : 0.24; // $ per 1k views + like bonus
+      const viewRev = Math.floor((post.views||0) * rpm * (0.9 + devQuality/220));
+      const likeRev = Math.floor(post.likes * (safePlatform==='youtube' ? 2.1 : safePlatform==='tiktok' ? 1.4 : 1.1) * (0.8 + devBonus*0.15));
+      const fameMult = 1 + (prev.life?.stats.fame||40)/180;
+      const income = Math.floor((viewRev + likeRev) * fameMult);
+      // marka eşiği: 20k+ takipçide %15 bonus
+      const followersEst = 18400 + ((prev.life?.stats.fame||40)*620) + ((prev.fanHappiness||60)*240) + (prev.week*420);
+      const brandBonus = followersEst > 40000 ? Math.floor(income*0.18) : followersEst > 25000 ? Math.floor(income*0.08) : 0;
+      const totalIncome = income + brandBonus;
       return {
         ...prev,
         socialFeed: [post, ...((prev as any).socialFeed||[])].slice(0, 80),
+        budget: prev.budget + totalIncome,
+        lifetimeSocialEarnings: ((prev as any).lifetimeSocialEarnings||0) + totalIncome,
+        weeklySocialEarnings: ((prev as any).weeklySocialEarnings||0) + totalIncome,
+        clubStats: { ...prev.clubStats, socialEarnings: ((prev.clubStats as any).socialEarnings||0) + totalIncome },
         fanHappiness: Math.min(100, (prev.fanHappiness||60)+bonusFan),
         boardConfidence: Math.min(100, (prev.boardConfidence||50)+0.5),
         life: { ...life, stats: { ...life.stats, fame: Math.min(100, life.stats.fame + bonusFame) } },
-        news: [`📣 Sosyal medyada paylaştın: "${trimmed.slice(0,38)}..."`, ...prev.news.slice(0,4)]
+        news: [`💸 Sosyal gelir: +$${totalIncome.toLocaleString()} (${safePlatform} • ${post.views?.toLocaleString()} izlenme, ${post.likes.toLocaleString()} beğeni${brandBonus?` + marka $${brandBonus.toLocaleString()}`:''}) — "${trimmed.slice(0,32)}..."`, ...prev.news.slice(0,4)]
       };
     });
   }, []);

@@ -533,6 +533,9 @@ export interface GameState {
   week: number;
   season: number;
   budget: number;
+  lifetimeSocialEarnings: number;
+  weeklySocialEarnings: number;
+  lastSocialPayoutWeek: number;
   stadiumLvl: number;
   trainingLvl: number;
   healthLvl: number;
@@ -560,7 +563,8 @@ export interface GameState {
     transfers?: number;
     youthPromoted?: number;
     penaltyWins?: number;
-  };
+    socialEarnings: number;
+};
   tactics: Tactics;
   investments: Investment[];
   activeCredits: ActiveCredit[];

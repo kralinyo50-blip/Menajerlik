@@ -213,6 +213,43 @@ export const SocialTab: React.FC<SocialTabProps> = ({ gameState, onCreatePost, o
         <div className="text-[11px] text-slate-400 hidden sm:flex items-center gap-2">📱 Cihaz yükselt: <span className="text-violet-300">Teknoloji → AVM</span> <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /></div>
       </div>
 
+      {/* ── Sosyal Gelir barı ── */}
+      {(() => {
+        const lifetime = (gameState as any).lifetimeSocialEarnings || 0;
+        const weekly = (gameState as any).weeklySocialEarnings || 0;
+        const totalFollowers = followers;
+        const rpmEst = platform==='youtube' ? 0.52 : platform==='tiktok' ? 0.31 : 0.24;
+        const estPerPost = Math.round((platform==='youtube'? 4200: platform==='tiktok'? 3300: 2100) * (0.9 + devQuality/220) * (1 + ((gameState.life?.stats.fame||40)/180)));
+        const brandNote = lifetime > 50000 ? ' • marka bonusu aktif' : lifetime > 20000 ? ' • marka eşiğine yakın' : '';
+        return (
+          <div className="bg-gradient-to-r from-emerald-900/30 via-[#0f0f0f] to-amber-900/20 border-b border-neutral-800 px-3 py-2 flex flex-wrap items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-white">💸</span>
+              <div className="leading-tight">
+                <div className="text-white font-black text-xs flex items-center gap-1.5">Sosyal Gelir <span className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">BÜTÇEYE EKLENİR</span></div>
+                <div className="text-[11px] text-neutral-400">Post başına ~${(estPerPost).toLocaleString()} • Haftalık pasif ${weekly.toLocaleString()} • Toplam ${lifetime.toLocaleString()}{brandNote}</div>
+              </div>
+            </div>
+            <div className="ml-auto flex gap-1.5 flex-wrap">
+              <div className="bg-black border border-emerald-800/50 rounded-lg px-2.5 py-1 text-center min-w-[84px]">
+                <div className="text-[10px] text-neutral-500 font-bold tracking-widest">HAFTALIK</div>
+                <div className="text-emerald-400 font-black text-xs">+${weekly.toLocaleString()}</div>
+                <div className="text-[10px] text-neutral-500">{totalFollowers.toLocaleString()} takipçi</div>
+              </div>
+              <div className="bg-black border border-amber-800/30 rounded-lg px-2.5 py-1 text-center min-w-[84px]">
+                <div className="text-[10px] text-neutral-500 font-bold tracking-widest">TOPLAM</div>
+                <div className="text-amber-400 font-black text-xs">${lifetime.toLocaleString()}</div>
+                <div className="text-[10px] text-neutral-500">RPM {rpmEst.toFixed(2)} • {platform}</div>
+              </div>
+              <div className="hidden sm:flex bg-[#1a1a1a] border border-neutral-800 rounded-lg px-2.5 py-1 flex-col justify-center">
+                <div className="text-[11px] text-white font-bold">Maç sonrası otomatik + bütçe</div>
+                <div className="text-[11px] text-neutral-400">Her post anında bütçene eklenir • Maç haftası pasif gelir yatar</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── PLATFORM CONTENT ── */}
       {platform==='instagram' && (
         <div className="flex-1 flex overflow-hidden">
@@ -331,7 +368,7 @@ export const SocialTab: React.FC<SocialTabProps> = ({ gameState, onCreatePost, o
                           <button className="hover:opacity-60">✈︎</button>
                           <button onClick={()=> setSaved({...saved,[post.id]:!isSaved})} className="ml-auto hover:opacity-60">{isSaved?'🔖':'♡'}</button>
                         </div>
-                        <div className="px-3 pt-2"><div className="text-sm font-semibold text-white">{post.likes.toLocaleString()} beğenme {post.views ? `• ${Math.round((post.views)/1000)}B izlenme` : ''} <span className="text-neutral-500 font-normal">• {qualityLabel}</span></div></div>
+                        <div className="px-3 pt-2"><div className="text-sm font-semibold text-white">{post.likes.toLocaleString()} beğenme {post.views ? `• ${Math.round((post.views)/1000)}B izlenme` : ''} <span className="text-neutral-500 font-normal">• {qualityLabel}</span>{post.isUser && post.views ? (<span className="ml-2 bg-emerald-600 text-white text-[11px] px-1.5 py-0.5 rounded-full">💸 +${Math.floor((post.views||0)*0.32 + post.likes*1.6).toLocaleString()}</span>) : null}</div></div>
                         <div className="px-3 pt-1 text-[14px] leading-[18px]"><span className="font-semibold text-white mr-2">{post.author}</span><span className="text-white">{post.content}</span>{post.tags && post.tags.length>0 && (<span className="ml-1">{post.tags.map(t=> (<span key={t} className="text-[#0095f6] hover:underline cursor-pointer"> {t}</span>))}</span>)}</div>
                         <div className="px-3 pt-1 text-sm">
                           {!showAllComments[post.id] && post.comments>2 && (<button onClick={()=> setShowAllComments({...showAllComments,[post.id]:true})} className="text-neutral-400 text-sm">{post.comments} yorumun tümünü gör</button>)}
@@ -356,7 +393,7 @@ export const SocialTab: React.FC<SocialTabProps> = ({ gameState, onCreatePost, o
           <div className="hidden xl:flex w-[320px] shrink-0 flex-col bg-black border-l border-neutral-800 overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center gap-3"><div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-white font-black">{gameState.teamLogo}</div><div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{gameState.teamName.toLowerCase().replace(/\s+/g,'')}</div><div className="text-xs text-neutral-400">{followersByPlatform.instagram.toLocaleString()} takipçi</div></div><button className="text-xs font-semibold text-[#0095f6]">Geçiş Yap</button></div>
-              <div className="mt-4 bg-[#1a1a1a] rounded-xl p-3 border border-neutral-800"><div className="text-xs font-bold">📊 Bu hafta</div><div className="grid grid-cols-3 gap-2 mt-2 text-center"><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">{feed.filter((p:any)=>p.isUser).length}</div><div className="text-[10px] text-neutral-400">Gönderi</div></div><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">{followers.toLocaleString()}</div><div className="text-[10px] text-neutral-400">Takipçi</div></div><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">%{Math.min(94,42+feed.filter((p:any)=>p.isUser).length*6)}</div><div className="text-[10px] text-neutral-400">Etkileşim</div></div></div><div className="text-[11px] text-neutral-500 mt-2">En iyi saat: 19:00-21:00 • En iyi gün: Derbi sonrası</div></div>
+              <div className="mt-4 bg-[#1a1a1a] rounded-xl p-3 border border-neutral-800"><div className="text-xs font-bold flex items-center gap-1">📊 Bu hafta <span className="ml-auto text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">+${((gameState as any).weeklySocialEarnings||0).toLocaleString()} gelir</span></div><div className="grid grid-cols-3 gap-2 mt-2 text-center"><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">{feed.filter((p:any)=>p.isUser).length}</div><div className="text-[10px] text-neutral-400">Gönderi</div></div><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">{followers.toLocaleString()}</div><div className="text-[10px] text-neutral-400">Takipçi</div></div><div className="bg-black rounded-lg py-2"><div className="font-bold text-sm">%{Math.min(94,42+feed.filter((p:any)=>p.isUser).length*6)}</div><div className="text-[10px] text-neutral-400">Etkileşim</div></div></div><div className="grid grid-cols-2 gap-2 mt-2"><div className="bg-emerald-950/40 border border-emerald-800/30 rounded-lg py-2 text-center"><div className="font-black text-xs text-emerald-400">+${((gameState as any).weeklySocialEarnings||0).toLocaleString()}</div><div className="text-[10px] text-neutral-400">Haftalık pasif</div></div><div className="bg-amber-950/30 border border-amber-800/30 rounded-lg py-2 text-center"><div className="font-black text-xs text-amber-400">${((gameState as any).lifetimeSocialEarnings||0).toLocaleString()}</div><div className="text-[10px] text-neutral-400">Toplam sosyal</div></div></div><div className="text-[11px] text-neutral-500 mt-2">En iyi saat: 19:00-21:00 • En iyi gün: Derbi sonrası • Post = anında bütçeye eklenir</div></div>
               <div className="mt-4"><div className="text-sm font-semibold text-neutral-400 mb-2">Gündem</div><div className="space-y-2">{TRENDING.slice(0,5).map(t=> (<div key={t.tag} className="flex justify-between items-center bg-[#1a1a1a] rounded-lg px-3 py-2 border border-neutral-800"><div><div className="text-sm font-medium">{t.tag}</div><div className="text-xs text-neutral-400">{t.posts}</div></div><button className="text-neutral-500">›</button></div>))}</div></div>
             </div>
           </div>
