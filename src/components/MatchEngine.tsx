@@ -764,10 +764,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const score = { u: userScore, o: oppScore };
 
   return (
-    <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-2 lg:p-4 overflow-y-auto ${goalFlash ? 'animate-goal-flash' : ''}`}>
-      <div className="w-full max-w-3xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/30 my-auto">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between flex-wrap gap-2">
+    <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-0 sm:p-2 lg:p-3 overflow-y-auto overflow-x-hidden ${goalFlash ? 'animate-goal-flash' : ''}`}>
+      <div className="w-full max-w-5xl xl:max-w-6xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-none sm:rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl border-0 sm:border border-emerald-500/30 my-auto flex flex-col max-h-[100dvh] sm:max-h-[96dvh] lg:max-h-[92dvh]">
+        {/* Header + maç ilerleme çubuğu */}
+        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0 relative overflow-hidden">
+          {/* dakika ilerleme */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+            <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${Math.min(100, (minute / (extraTime ? 120 : 90)) * 100)}%` }} />
+          </div>
           <div className="text-white text-xs lg:text-sm font-medium flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 bg-black/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
@@ -808,7 +812,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         </div>
 
         {/* Scoreboard */}
-        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5">
+        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0">
           <div className="flex items-center justify-between max-w-xl mx-auto">
             <div className="text-center flex-1">
               <div className="text-3xl lg:text-4xl mb-1">{gameState.teamLogo}</div>
@@ -848,38 +852,40 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
 
           {(phase !== 'pre') && (
-            <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2 max-w-2xl mx-auto text-center text-xs">
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Top Hakimiyeti</div>
-                <div className="text-white font-bold">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
-                <div className="mt-1 h-1.5 bg-slate-600 rounded-full overflow-hidden flex">
-                  <div className="bg-emerald-500 h-full" style={{ width: `${possession}%` }} />
-                  <div className="bg-red-500 h-full" style={{ width: `${100 - possession}%` }} />
+            <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2 max-w-3xl mx-auto text-center text-xs">
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20 hover:border-emerald-500/30 transition-colors">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">TOP HAKİMİYETİ</div>
+                <div className="text-white font-black text-sm">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
+                <div className="mt-1.5 h-2 bg-slate-800 rounded-full overflow-hidden flex p-0.5">
+                  <div className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full rounded-full transition-all duration-700" style={{ width: `${possession}%` }} />
+                  <div className="bg-gradient-to-r from-red-500 to-red-400 h-full rounded-full transition-all duration-700" style={{ width: `${100 - possession}%` }} />
                 </div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Şutlar</div>
-                <div className="text-white font-bold">{shots.home} - {shots.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">ŞUTLAR</div>
+                <div className="text-white font-black text-lg">{shots.home} <span className="text-slate-500 text-xs">-</span> {shots.away}</div>
+                <div className="text-[10px] text-slate-500">toplam</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Korner</div>
-                <div className="text-white font-bold">{corners.home} - {corners.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">KORNER</div>
+                <div className="text-white font-black text-lg">{corners.home} <span className="text-slate-500 text-xs">-</span> {corners.away}</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Faul</div>
-                <div className="text-white font-bold">{fouls.home} - {fouls.away}</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">FAUL</div>
+                <div className="text-white font-black text-lg">{fouls.home} <span className="text-slate-500 text-xs">-</span> {fouls.away}</div>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-2">
-                <div className="text-slate-400">Değişiklik</div>
-                <div className="text-white font-bold">{substitutions.length}/5</div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">DEĞİŞİKLİK</div>
+                <div className="text-white font-black text-lg">{substitutions.length}<span className="text-slate-500 text-sm">/5</span></div>
+                <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className="h-full bg-blue-500 transition-all" style={{ width: `${(substitutions.length/5)*100}%` }} /></div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Canlı 2D saha */}
+        {/* Canlı 2D saha - büyütüldü, ekrana uyumlu */}
         {phase !== 'pre' && (
-          <div className="px-2 lg:px-4 pt-3">
+          <div className="px-2 lg:px-4 pt-3 flex-shrink-0">
             <LivePitch
               minute={minute}
               possession={possession}
@@ -897,9 +903,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         )}
 
-        {/* Match Console */}
-        <div className="p-2 lg:p-4">
-          <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 h-36 lg:h-52 overflow-y-auto p-3 lg:p-4 font-mono text-xs lg:text-sm">
+        {/* Match Console - büyütüldü */}
+        <div className="p-2 lg:p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 flex-1 min-h-[160px] lg:min-h-[200px] max-h-[42vh] lg:max-h-[300px] overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">
             {events.map((event, i) => (
               <div
                 key={i}
@@ -920,7 +926,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         </div>
 
         {/* Controls */}
-        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap">
+        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap flex-shrink-0">
           {phase === 'pre' && (
             <div className="w-full">
               <div className="text-center text-slate-300 text-xs mb-3">

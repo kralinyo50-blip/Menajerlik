@@ -2,6 +2,9 @@
 @import "tailwindcss";
 
 /* ── Base: premium dark ── */
+html {
+  scroll-behavior: smooth;
+}
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
@@ -10,14 +13,37 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
+/* Focus visible - erişilebilirlik */
+*:focus-visible {
+  outline: 2px solid rgba(16,185,129,0.9);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+button:focus-visible, a:focus-visible {
+  outline: 2px solid rgba(16,185,129,0.95);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(16,185,129,0.15);
+}
 
-/* Hide scrollbar for tabs */
+/* Visible scrollbar for top tabs - ince ama görünür */
 .scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16,185,129,0.9) rgba(15,23,42,0.6);
 }
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;
+  display: block;
+  height: 6px;
+  width: 6px;
+}
+.scrollbar-hide::-webkit-scrollbar-track {
+  background: rgba(15,23,42,0.6);
+  border-radius: 999px;
+}
+.scrollbar-hide::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, rgba(16,185,129,0.9), rgba(6,182,212,0.85));
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 /* Prevent text overflow everywhere */
@@ -155,13 +181,30 @@ body {
   animation: float-y 3s ease-in-out infinite;
 }
 
-/* Setup / log panel scrollbar */
+/* Setup / log panel scrollbar + main content + tabs */
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16,185,129,0.9) rgba(15,23,42,0.6);
+  scrollbar-gutter: stable;
+}
 .custom-scroll::-webkit-scrollbar {
-  width: 5px;
+  width: 8px;
+  height: 8px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 999px;
 }
 .custom-scroll::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.45);
-  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(16,185,129,0.9), rgba(6,182,212,0.85));
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(16,185,129,1), rgba(6,182,212,1));
+}
+.custom-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Match play button attention */
@@ -255,4 +298,63 @@ body {
 /* Selection */
 ::selection {
   background: rgba(16,185,129,0.28);
+}
+
+/* ── Tab content geçiş animasyonu ── */
+@keyframes tabIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tab-content {
+  animation: tabIn 0.32s cubic-bezier(0.22,1,0.36,1);
+}
+/* Üst sekme kaydırma için fade kenarlar - scroll indicator */
+.tabs-fade-left {
+  background: linear-gradient(90deg, rgba(15,23,42,0.9) 0%, transparent 100%);
+}
+.tabs-fade-right {
+  background: linear-gradient(270deg, rgba(15,23,42,0.9) 0%, transparent 100%);
+}
+/* Sekme hover parıltısı */
+.tab-btn {
+  position: relative;
+  overflow: hidden;
+}
+.tab-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(300px circle at var(--x,50%) var(--y,50%), rgba(255,255,255,0.08), transparent 40%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.tab-btn:hover::before { opacity: 1; }
+/* Premium iç gölge - ana panel derinlik */
+.panel-inner-glow {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.2), 0 20px 60px rgba(0,0,0,0.35);
+}
+/* Buton press efekti */
+.btn-press:active { transform: scale(0.98); }
+/* Skeleton shimmer */
+@keyframes skeletonShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(51,65,85,0.5);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  transform: translateX(-100%);
+  animation: skeletonShine 1.4s ease-in-out infinite;
+}
+/* Daha yumuşak backdrop blur Fallback */
+@supports not (backdrop-filter: blur(12px)) {
+  .glass, .glass-strong { background: rgba(15,23,42,0.92) !important; }
 }

@@ -175,10 +175,76 @@ export interface Investment {
   id: number;
   name: string;
   price: number;
-  type: string;
+  type: 'stock' | 'gold' | 'realestate' | 'crypto' | 'bond' | 'fx';
   owned: number;
   lastChange: number;
   icon: string;
+  basePrice: number;
+  history: number[];
+  volatility: number; // weekly sigma (0.02 = 2%)
+  drift: number; // expected weekly return (0.004 = 0.4%)
+  dividendYield: number; // annual dividend / rent / coupon (0.015 = 1.5%)
+  risk: 'Düşük' | 'Orta' | 'Yüksek' | 'Çok Yüksek';
+  sector: string;
+  description: string;
+  avgCost: number;
+  dividendsEarned: number;
+  // Piyasa duyarlılığı için korelasyon katsayısı
+  marketBeta?: number;
+}
+
+/* ══════════ KREDİ & TEFECİ SİSTEMİ (v2.1) ══════════ */
+export interface CreditPackage {
+  id: string;
+  name: string;
+  amount: number; // anapara
+  weeks: number; // vade
+  interestRate: number; // toplam faiz oranı 0.18 = %18
+  weeklyPayment: number; // haftalık taksit
+  totalRepayment: number; // toplam geri ödeme
+  type: 'bank' | 'shark';
+  icon: string;
+  description: string;
+  requirement?: string; // örn: "Yönetim güveni %45+"
+  maxActive?: number;
+}
+
+export interface ActiveCredit {
+  id: string; // unique instance id
+  packageId: string;
+  name: string;
+  principal: number;
+  totalRepayment: number;
+  weeklyPayment: number;
+  weeksTotal: number;
+  weeksLeft: number;
+  paidAmount: number;
+  interestRate: number;
+  type: 'bank' | 'shark';
+  takenWeek: number;
+  takenSeason: number;
+}
+
+/* ══════════ KULÜP KİMLİĞİ & MÜZE (v4.2) ══════════ */
+export type ClubPhilosophy = 'youth' | 'money' | 'trophy' | null;
+
+export interface UltrasRequest {
+  id: string;
+  kind: 'youth' | 'derby' | 'star' | 'cleanSheet';
+  text: string;
+  deadlineWeek: number;
+  deadlineSeason: number;
+  reward: string;
+  penalty: string;
+}
+
+export interface MuseumEntry {
+  season: number;
+  position: number;
+  leagueLevel: number;
+  trophies: string[];
+  topScorer?: { name: string; goals: number };
+  budget: number;
 }
 
 export interface Sponsor {
@@ -401,6 +467,8 @@ export interface GameState {
   };
   tactics: Tactics;
   investments: Investment[];
+  activeCredits: ActiveCredit[];
+  creditScore: number; // 300-850
   cupMatches: CupMatch[];
   cupEliminated: boolean;
   seasonObjective: string;
@@ -450,6 +518,11 @@ export interface GameState {
   outgoingLoans: OutgoingLoan[];
   // ── v3.3: Stadyum Stüdyosu (3D) ──
   stadium: StadiumState;
+  // ── v4.2: Kulüp Kimliği & Müze ──
+  clubPhilosophy: ClubPhilosophy;
+  ultrasHappiness: number; // 0-100
+  ultrasRequests: UltrasRequest[];
+  museum: MuseumEntry[];
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──

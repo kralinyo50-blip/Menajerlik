@@ -5,7 +5,7 @@ import {
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
-  INITIAL_INVESTMENTS, UNHAPPY_MORALE
+  INITIAL_INVESTMENTS, CREDIT_PACKAGES, UNHAPPY_MORALE
 } from '../data/constants';
 import { TURKEY_CITIES, SHOP_TYPES } from '../data/cities';
 import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
@@ -122,6 +122,72 @@ const bumpScorers = (scorers: LeagueScorer[], club: string, logo: string, goals:
   }
 };
 
+/* ══════════ GERÇEKÇİ YATIRIM MOTORU ══════════ */
+function gaussian(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Eski kayıtları yeni şemaya göç ettir
+function ensureInvestments(investments: any[]): import('../types/game').Investment[] {
+  if (!investments || investments.length === 0) return [...INITIAL_INVESTMENTS].map(i => ({ ...i, history: [...(i.history as number[])] })) as any;
+  const byId = new Map(INITIAL_INVESTMENTS.map(i => [i.id, i] as const));
+  return investments.map((inv: any) => {
+    const tpl = byId.get(inv.id);
+    if (!tpl) return inv;
+    const base = tpl as any;
+    return {
+      id: inv.id,
+      name: inv.name ?? base.name,
+      price: typeof inv.price === 'number' ? inv.price : base.price,
+      basePrice: inv.basePrice ?? base.basePrice,
+      type: inv.type ?? base.type,
+      owned: inv.owned ?? 0,
+      lastChange: inv.lastChange ?? 0,
+      icon: inv.icon ?? base.icon,
+      history: Array.isArray(inv.history) && inv.history.length >= 8 ? inv.history.slice(-20) : [...base.history],
+      volatility: inv.volatility ?? base.volatility,
+      drift: inv.drift ?? base.drift,
+      dividendYield: inv.dividendYield ?? base.dividendYield,
+      risk: inv.risk ?? base.risk,
+      sector: inv.sector ?? base.sector,
+      description: inv.description ?? base.description,
+      avgCost: inv.avgCost ?? inv.price ?? base.price,
+      dividendsEarned: inv.dividendsEarned ?? 0,
+      marketBeta: inv.marketBeta ?? base.marketBeta,
+    };
+  });
+}
+
+function investmentFeeRate(type: string): number {
+  switch (type) {
+    case 'stock': return 0.008; // %0.8
+    case 'gold': return 0.006;
+    case 'realestate': return 0.012; // tapu + komisyon yüksek
+    case 'crypto': return 0.010;
+    case 'bond': return 0.004;
+    default: return 0.008;
+  }
+}
+
+function pickMarketEvent(): { label: string; mods: Partial<Record<string, number>> } | null {
+  if (Math.random() > 0.28) return null;
+  const events = [
+    { label: 'TCMB faiz artırdı — tahvil fırladı, borsa baskılandı', mods: { bond: 0.016, stock: -0.018, gold: 0.008 } },
+    { label: 'Enflasyon beklentiyi aştı — altın ve emlak coştu', mods: { gold: 0.022, realestate: 0.014, bond: -0.010 } },
+    { label: 'Kripto ETF onayı — kripto rallisi', mods: { crypto: 0.075, stock: 0.006 } },
+    { label: 'Kripto düzenleme endişesi — sert satış', mods: { crypto: -0.085 } },
+    { label: 'BIST bilançolar güçlü — borsa pozitif', mods: { stock: 0.021, realestate: 0.006 } },
+    { label: 'Küresel risk iştahı düştü — güvenli liman talebi', mods: { gold: 0.018, stock: -0.015, crypto: -0.025 } },
+    { label: 'Konut kampanyası açıklandı — GYO prim yaptı', mods: { realestate: 0.019 } },
+    { label: 'Hazine ihalesine güçlü talep — tahvil ralli', mods: { bond: 0.012 } },
+  ];
+  return events[Math.floor(Math.random() * events.length)];
+}
+
+
 export interface MatchOutcomeOptions {
   isCup?: boolean;
   isHome?: boolean;
@@ -234,7 +300,9 @@ export const useGameState = () => {
         pressing: 'medium',
         tempo: 'normal'
       },
-      investments: [...INITIAL_INVESTMENTS],
+      investments: INITIAL_INVESTMENTS.map(i => ({ ...i, history: [...(i.history as number[])] })),
+      activeCredits: [],
+      creditScore: 620,
       cupMatches,
       cupEliminated: false,
       seasonObjective: 'İlk 5\'e gir',
@@ -281,6 +349,10 @@ export const useGameState = () => {
       loanList: [],
       outgoingLoans: [],
       stadium: defaultStadium(),
+      clubPhilosophy: null,
+      ultrasHappiness: 65,
+      ultrasRequests: [],
+      museum: [],
       life: defaultLife(),
       socialFeed: []
     };
@@ -313,6 +385,15 @@ export const useGameState = () => {
   }, []);
 
   const setGameStateExternal = useCallback((state: GameState) => {
+    if ((state as any).investments) {
+      (state as any).investments = ensureInvestments((state as any).investments) as any;
+    }
+    if (!(state as any).activeCredits) (state as any).activeCredits = [];
+    if ((state as any).creditScore == null) (state as any).creditScore = 620;
+    if ((state as any).clubPhilosophy === undefined) (state as any).clubPhilosophy = null;
+    if ((state as any).ultrasHappiness == null) (state as any).ultrasHappiness = 65;
+    if (!(state as any).ultrasRequests) (state as any).ultrasRequests = [];
+    if (!(state as any).museum) (state as any).museum = [];
     setGameState(state);
   }, []);
 
@@ -610,6 +691,16 @@ export const useGameState = () => {
     const loaded = readSlot(slot);
     if (!loaded) return false;
     if (loaded.careerOver) loaded.careerOver = false; // kariyer ekranından devam edilmez
+    // eski yatırımları yeni şemaya taşı
+    if (loaded.investments) {
+      loaded.investments = ensureInvestments(loaded.investments as any) as any;
+    }
+    if (!(loaded as any).activeCredits) (loaded as any).activeCredits = [];
+    if ((loaded as any).creditScore == null) (loaded as any).creditScore = 620;
+    if ((loaded as any).clubPhilosophy === undefined) (loaded as any).clubPhilosophy = null;
+    if ((loaded as any).ultrasHappiness == null) (loaded as any).ultrasHappiness = 65;
+    if (!(loaded as any).ultrasRequests) (loaded as any).ultrasRequests = [];
+    if (!(loaded as any).museum) (loaded as any).museum = [];
     setGameState(loaded);
     return true;
   }, []);
@@ -910,7 +1001,8 @@ export const useGameState = () => {
         achievements: (prev.achievements || []).map(a => ({ ...a })),
         matchHistory: [...prev.matchHistory],
         news: [...prev.news],
-        investments: prev.investments.map(i => ({ ...i })),
+        investments: prev.investments.map(i => ({ ...i, history: [...(i as any).history || []] })),
+        activeCredits: [...((prev as any).activeCredits || [])].map((c: any) => ({ ...c })),
         team11: prev.team11.map(p => ({ ...p })),
         bench: prev.bench.map(p => ({ ...p })),
         leagueScorers: prev.leagueScorers.map(s => ({ ...s })),
@@ -1216,14 +1308,117 @@ export const useGameState = () => {
         }
       }
 
-      /* — Yatırımlar — */
-      newState.investments = newState.investments.map(inv => {
-        const change = Math.floor(Math.random() * 21) - 10;
-        if (inv.owned > 0) {
-          newState.budget += Math.floor((inv.price * inv.owned) * (change / 100));
+      /* — Yatırımlar — gerçekçi simülasyon: drift + volatilite + piyasa betası + olay şoku + temettü */
+      {
+        // eski kayıtları göç ettir
+        newState.investments = ensureInvestments(newState.investments as any) as any;
+        const marketSentiment = gaussian() * 0.012; // haftalık genel piyasa rüzgârı ±%1.2
+        const event = pickMarketEvent();
+        let totalDividend = 0;
+        newState.investments = newState.investments.map((raw: any) => {
+          const inv: any = { ...raw, history: [...(raw.history || [])] };
+          const vol = inv.volatility ?? 0.03;
+          const drift = inv.drift ?? 0.002;
+          const beta = inv.marketBeta ?? 0.6;
+          const eventMod = event?.mods[inv.type] ?? event?.mods[inv.type as string] ?? 0;
+          // fat-tail: crypto %8 ihtimalle ekstra şok
+          let shock = gaussian() * vol;
+          if (inv.type === 'crypto' && Math.random() < 0.08) shock += (Math.random() < 0.5 ? 1 : -1) * 0.09;
+          if (inv.type === 'gold' && marketSentiment < -0.008) shock += Math.abs(marketSentiment) * 0.6; // güvenli liman
+          const weeklyReturn = drift + shock + beta * marketSentiment + eventMod;
+          // mean-reversion küçük düzeltme: fiyattan çok uzaklaştıysa geri çek
+          const distance = (inv.price - inv.basePrice) / inv.basePrice;
+          const reversion = -distance * 0.015; // %1.5 geri çekme
+          const finalReturn = weeklyReturn + reversion;
+          const newPrice = Math.max(Math.round(inv.basePrice * 0.32), Math.round(inv.price * (1 + finalReturn)));
+          const clamped = Math.max(5000, newPrice);
+          const changePct = ((clamped - inv.price) / inv.price) * 100;
+          inv.history.push(clamped);
+          if (inv.history.length > 20) inv.history.shift();
+          inv.price = clamped;
+          inv.lastChange = Math.round(changePct * 10) / 10;
+          // temettü / kira / kupon — haftalık nakit akışı (sadece elde varsa)
+          if ((inv.owned || 0) > 0 && inv.dividendYield > 0) {
+            const weeklyPayout = Math.round(inv.price * inv.owned * (inv.dividendYield / 52));
+            if (weeklyPayout > 0) {
+              totalDividend += weeklyPayout;
+              inv.dividendsEarned = (inv.dividendsEarned || 0) + weeklyPayout;
+            }
+          }
+          return inv;
+        });
+        if (totalDividend > 0) {
+          newState.budget += totalDividend;
+          newState.news = [`💵 Yatırım temettü/kupon/kira geliri: +$${totalDividend.toLocaleString()}`, ...newState.news.slice(0, 4)];
         }
-        return { ...inv, lastChange: change };
-      });
+        if (event) {
+          newState.news = [`📰 Piyasa: ${event.label}`, ...newState.news.slice(0, 4)];
+        }
+      }
+
+      /* — Kredi taksitleri (her hafta) — */
+      {
+        const credits: any[] = (newState as any).activeCredits || [];
+        if (credits.length > 0) {
+          let totalDue = 0;
+          let missedShark = 0;
+          let missedBank = 0;
+          const nextCredits: any[] = [];
+          credits.forEach((loan: any) => {
+            const due = loan.weeklyPayment;
+            const canPay = newState.budget >= due;
+            // her hafta tahsilat (negatife düşebilir — gerçekte kredi kartı gibi)
+            newState.budget -= due;
+            loan.paidAmount = (loan.paidAmount || 0) + due;
+            loan.weeksLeft = (loan.weeksLeft || loan.weeksTotal) - 1;
+            totalDue += due;
+            if (!canPay) {
+              if (loan.type === 'shark') missedShark++;
+              else missedBank++;
+            }
+            if (loan.weeksLeft > 0) {
+              nextCredits.push({ ...loan });
+            } else {
+              // kredi bitti — skor toparlar
+              (newState as any).creditScore = Math.min(850, Math.max(300, ((newState as any).creditScore ?? 620) + (loan.type === 'shark' ? 28 : 18)));
+              newState.news = [`✅ ${loan.name} tamamen ödendi! Kredi skoru yükseldi.`, ...newState.news.slice(0,4)];
+            }
+          });
+          (newState as any).activeCredits = nextCredits;
+          if (totalDue > 0) {
+            newState.news = [`🏦 Kredi taksiti: -$${totalDue.toLocaleString()} (${credits.length} kredi)`, ...newState.news.slice(0,4)];
+          }
+          // gecikme cezaları
+          if (missedBank > 0) {
+            newState.boardConfidence = Math.max(0, newState.boardConfidence - 6 * missedBank);
+            (newState as any).creditScore = Math.max(300, ((newState as any).creditScore ?? 620) - 18 * missedBank);
+            newState.news = [`⚠️ Banka taksiti ödenemedi! Yönetim güveni -${6*missedBank}, skor düştü. Bütçe: $${newState.budget.toLocaleString()}`, ...newState.news.slice(0,4)];
+            newState.boardMessages = [`👔 Yönetim: "Kredi ödemesini aksattın, mali disiplin şart!"`, ...newState.boardMessages.slice(0,5)];
+          }
+          if (missedShark > 0) {
+            // tefeci çok sert
+            newState.boardConfidence = Math.max(0, newState.boardConfidence - 10 * missedShark);
+            newState.fanHappiness = Math.max(0, (newState.fanHappiness || 60) - 5 * missedShark);
+            newState.team11 = newState.team11.map(pl => ({ ...pl, morale: Math.max(0, pl.morale - 4 * missedShark) }));
+            newState.bench = newState.bench.map(pl => ({ ...pl, morale: Math.max(0, pl.morale - 4 * missedShark) }));
+            (newState as any).creditScore = Math.max(300, ((newState as any).creditScore ?? 620) - 28 * missedShark);
+            // puan silme — tefeci mafyası federasyona şikayet etmiş gibi
+            const userTeam = newState.league.find(tm => tm.isUser);
+            if (userTeam && userTeam.p > 0) {
+              const pts = Math.min(userTeam.p, missedShark); // her gecikme 1 puan
+              userTeam.p = Math.max(0, userTeam.p - pts);
+              newState.news = [`💀 Tefeci kapıya dayandı! -$${totalDue.toLocaleString()} ödenemedi → -${pts} puan silindi! Moraller çöktü.`, ...newState.news.slice(0,4)];
+              newState.boardMessages = [`🚨 Tefeci tehdidi: "Parayı getirmezseniz kulübün lisansı yanar!" -${pts} puan silindi!`, ...newState.boardMessages.slice(0,5)];
+            } else {
+              newState.news = [`💀 Tefeci tahsilatı gecikti! Takım morali -${4*missedShark}, güven -10.`, ...newState.news.slice(0,4)];
+            }
+          }
+          // iflas kontrol: bütçe çok ekside ve 2+ kredi
+          if (newState.budget < -500000 && nextCredits.length >= 2) {
+            newState.boardMessages = [`📉 Mali kriz: Bütçe $${newState.budget.toLocaleString()} — acil satış yap veya iflas kapıda!`, ...newState.boardMessages.slice(0,5)];
+          }
+        }
+      }
 
       /* — İyileşme — */
       const medicalLvl = prev.skills?.medical ?? 0;
@@ -1462,6 +1657,72 @@ export const useGameState = () => {
         newState.boardMessages = [...loanReminders, ...newState.boardMessages.slice(0, 5)];
       }
 
+      /* — Ultras istekleri: deadline + galibiyet/maglubiyet etkisi + yeni istek şansı — */
+      {
+        const reqs: any[] = (newState as any).ultrasRequests || [];
+        const remaining: any[] = [];
+        reqs.forEach((r: any) => {
+          const expired = (newState.season > r.deadlineSeason) || (newState.season === r.deadlineSeason && newState.week > r.deadlineWeek);
+          if (expired) {
+            (newState as any).ultrasHappiness = Math.max(0, ((newState as any).ultrasHappiness||65) - 8);
+            newState.fanHappiness = Math.max(0, (newState.fanHappiness||60) - 5);
+            newState.news = [`📢 Ultras öfkeli: "${r.text}" yerine getirilmedi → taraftar -5, ultras -8`, ...newState.news.slice(0,4)];
+          } else {
+            remaining.push(r);
+          }
+        });
+        (newState as any).ultrasRequests = remaining;
+        // galibiyet/maglubiyet ultras'a yansır + felsefe bonusu
+        const phil: any = (newState as any).clubPhilosophy;
+        if (userWon) {
+          const bonus = phil === 'trophy' ? 5 : phil === 'money' ? 4 : 3;
+          (newState as any).ultrasHappiness = Math.min(100, ((newState as any).ultrasHappiness||65) + bonus);
+        } else if (userLost) {
+          (newState as any).ultrasHappiness = Math.max(0, ((newState as any).ultrasHappiness||65) - 3);
+        } else {
+          (newState as any).ultrasHappiness = Math.max(0, Math.min(100, ((newState as any).ultrasHappiness||65) + 0));
+        }
+        // haftada %20 ihtimalle yeni istek (kupa haftası değilse)
+        if (remaining.length < 2 && !isCup && Math.random() < 0.20) {
+          const pool = [
+            { kind: 'youth', text: 'Bu ay bir altyapı oyuncusunu A takıma al!', reward: 'Sadakat +12', penalty: '-8' },
+            { kind: 'star', text: 'Yıldız transferi istiyoruz — OVR 78+ birini al', reward: 'Doluluk +8%', penalty: '-10 taraftar' },
+            { kind: 'derby', text: 'Sıradaki iç saha maçını kazan!', reward: 'Moral +8', penalty: '-5 güven' },
+            { kind: 'cleanSheet', text: '2 maçta gol yemeyin', reward: 'Savunma +2', penalty: '-10' },
+          ];
+          const pick = pool[Math.floor(Math.random()*pool.length)];
+          const req: any = {
+            id: `ur-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+            kind: pick.kind,
+            text: pick.text,
+            deadlineWeek: (newState.week||1) + 3 + Math.floor(Math.random()*2),
+            deadlineSeason: newState.season||1,
+            reward: pick.reward,
+            penalty: pick.penalty,
+          };
+          (newState as any).ultrasRequests = [...remaining, req];
+          newState.news = [`📢 Ultras: "${pick.text}" — ${req.deadlineWeek - (newState.week||1)} hafta süren var!`, ...newState.news.slice(0,4)];
+        }
+        // felsefe haftalık pasif bonus
+        if (phil === 'youth' && Math.random() < 0.18) {
+          // genç bir oyuncu +1 gelişim şansı
+          const youthCandidates = [...newState.team11, ...newState.bench].filter(pl=> pl.age <= 22 && pl.ovr < pl.potential);
+          if (youthCandidates.length) {
+            const lucky = youthCandidates[Math.floor(Math.random()*youthCandidates.length)];
+            const bump = (pl:any)=> pl.id===lucky.id ? { ...pl, ovr: Math.min(pl.potential, pl.ovr+1)} : pl;
+            newState.team11 = newState.team11.map(bump);
+            newState.bench = newState.bench.map(bump);
+          }
+        }
+        if (phil === 'money' && !isCup) {
+          // hafif ekstra sponsor geliri simülasyonu: haftalık küçük bonus
+          if (Math.random() < 0.25) {
+            const bonus = 8000 + Math.floor(Math.random()*12000);
+            newState.budget += bonus;
+          }
+        }
+      }
+
       /* — Görevler, XP ve yetenek etkileri — */
       if (!isCup && (newState.clubStats.penaltyWins === undefined)) newState.clubStats.penaltyWins = 0;
       if (penaltyWinner === 'user') {
@@ -1638,32 +1899,184 @@ export const useGameState = () => {
     });
   }, []);
 
-  const buyInvestment = useCallback((investmentId: number) => {
+  const buyInvestment = useCallback((investmentId: number, quantity: number = 1) => {
     setGameState(prev => {
       if (!prev) return null;
       const inv = prev.investments.find(i => i.id === investmentId);
-      if (!inv || prev.budget < inv.price) return prev;
-
+      if (!inv) return prev;
+      const qty = Math.max(1, Math.floor(quantity));
+      const fee = investmentFeeRate(inv.type);
+      const unitCost = Math.round(inv.price * (1 + fee));
+      const totalCost = unitCost * qty;
+      if (prev.budget < totalCost) return prev;
+      const oldOwned = inv.owned || 0;
+      const oldAvg = (inv as any).avgCost ?? inv.price;
+      const newOwned = oldOwned + qty;
+      const newAvg = Math.round((oldOwned * oldAvg + totalCost) / newOwned);
       return {
         ...prev,
-        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned + 1 } : i)),
-        budget: prev.budget - inv.price
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: newOwned, avgCost: newAvg } : i)),
+        budget: prev.budget - totalCost,
+        news: [`📈 ${inv.name} — ${qty} lot alındı @ $${inv.price.toLocaleString()} (komisyon %${(fee*100).toFixed(1)})`, ...prev.news.slice(0, 4)]
       };
     });
   }, []);
 
-  const sellInvestment = useCallback((investmentId: number) => {
+  const sellInvestment = useCallback((investmentId: number, quantity: number = 1) => {
     setGameState(prev => {
       if (!prev) return null;
       const inv = prev.investments.find(i => i.id === investmentId);
-      if (!inv || inv.owned <= 0) return prev;
-
-      const sellPrice = Math.floor(inv.price * (1 + inv.lastChange / 100));
+      if (!inv || (inv.owned || 0) <= 0) return prev;
+      const qty = Math.min(Math.max(1, Math.floor(quantity)), inv.owned);
+      const fee = investmentFeeRate(inv.type);
+      const unitProceeds = Math.round(inv.price * (1 - fee));
+      const avg = (inv as any).avgCost ?? inv.price;
+      let totalProceeds = 0;
+      let totalTax = 0;
+      for (let k = 0; k < qty; k++) {
+        const profit = unitProceeds - avg;
+        const tax = profit > 0 ? Math.round(profit * 0.10) : 0; // %10 stopaj sadece kâra
+        totalProceeds += unitProceeds - tax;
+        totalTax += tax;
+      }
+      const newOwned = inv.owned - qty;
       return {
         ...prev,
-        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: i.owned - 1 } : i)),
-        budget: prev.budget + sellPrice
+        investments: prev.investments.map(i => (i.id === investmentId ? { ...i, owned: newOwned, avgCost: newOwned === 0 ? i.price : (i as any).avgCost } : i)),
+        budget: prev.budget + totalProceeds,
+        news: [`💰 ${inv.name} — ${qty} lot satıldı @ $${inv.price.toLocaleString()} → net $${totalProceeds.toLocaleString()}${totalTax ? ` (vergi $${totalTax.toLocaleString()})` : ''}`, ...prev.news.slice(0, 4)]
       };
+    });
+  }, []);
+
+  /* ══════════ KREDİ & TEFECİ ══════════ */
+  const takeCredit = useCallback((packageId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const pkg: any = CREDIT_PACKAGES.find(c => c.id === packageId);
+      if (!pkg) return prev;
+      const active = (prev as any).activeCredits || [];
+      if (active.length >= 3) return prev; // max 3 aynı anda
+      // banka için yönetim güveni şartı
+      if (pkg.type === 'bank') {
+        const need = pkg.id === 'bank_quick' ? 35 : pkg.id === 'bank_standard' ? 40 : 50;
+        if ((prev.boardConfidence || 50) < need) return prev;
+      }
+      // aynı paketten en fazla 1 tane
+      if (active.some((c: any) => c.packageId === packageId)) return prev;
+      const loan = {
+        id: `cr-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+        packageId: pkg.id,
+        name: pkg.name,
+        principal: pkg.amount,
+        totalRepayment: pkg.totalRepayment,
+        weeklyPayment: pkg.weeklyPayment,
+        weeksTotal: pkg.weeks,
+        weeksLeft: pkg.weeks,
+        paidAmount: 0,
+        interestRate: pkg.interestRate,
+        type: pkg.type,
+        takenWeek: prev.week,
+        takenSeason: prev.season,
+      };
+      const creditScoreDelta = pkg.type === 'shark' ? -35 : -12;
+      return {
+        ...prev,
+        budget: prev.budget + pkg.amount,
+        activeCredits: [...active, loan],
+        creditScore: Math.max(300, Math.min(850, (prev.creditScore ?? 620) + creditScoreDelta)),
+        news: [pkg.type === 'shark' ? `🕶️ Tefeciden $${pkg.amount.toLocaleString()} alındı! Haftalık $${pkg.weeklyPayment.toLocaleString()} x${pkg.weeks} = $${pkg.totalRepayment.toLocaleString()} (%${Math.round(pkg.interestRate*100)} faiz). Dikkat: gecikme = puan silme!` : `🏦 ${pkg.name} onaylandı: +$${pkg.amount.toLocaleString()} (haftalık $${pkg.weeklyPayment.toLocaleString()} x${pkg.weeks})`, ...prev.news.slice(0,4)],
+        boardMessages: pkg.type === 'shark' ? [`⚠️ Tefeciden borç alındı — yönetim tedirgin: "Bu işin sonu kötü bitebilir."`, ...prev.boardMessages.slice(0,5)] : prev.boardMessages,
+      };
+    });
+  }, []);
+
+  const repayCreditEarly = useCallback((creditId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const active: any[] = (prev as any).activeCredits || [];
+      const loan = active.find(c => c.id === creditId);
+      if (!loan) return prev;
+      const remaining = loan.totalRepayment - loan.paidAmount;
+      // erken kapatmada %5 ıskonto
+      const discount = Math.round(remaining * 0.05);
+      const payNow = remaining - discount;
+      if (prev.budget < payNow) return prev;
+      return {
+        ...prev,
+        budget: prev.budget - payNow,
+        activeCredits: active.filter(c => c.id !== creditId),
+        creditScore: Math.min(850, (prev.creditScore ?? 620) + (loan.type === 'shark' ? 22 : 15)),
+        news: [`✅ ${loan.name} erken kapatıldı: $${payNow.toLocaleString()} ödendi (iskonto $${discount.toLocaleString()})`, ...prev.news.slice(0,4)],
+      };
+    });
+  }, []);
+
+  const setClubPhilosophy = useCallback((philosophy: import('../types/game').ClubPhilosophy) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      if (prev.clubPhilosophy === philosophy) return prev;
+      // bonuslar
+      let bonusMsg = '';
+      let updates: any = { clubPhilosophy: philosophy };
+      if (philosophy === 'youth') {
+        updates = { ...updates, academyLevel: Math.min(5, (prev.academyLevel||1)+1), ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+8) };
+        bonusMsg = '🌱 Altyapı Fabrikası seçildi! Akademi +1 seviye, ultras coşkulu!';
+      } else if (philosophy === 'money') {
+        updates = { ...updates, budget: prev.budget + 250000, ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+5) };
+        bonusMsg = '💰 Para Makinesi seçildi! +$250k sıcak para, sponsorlar memnun!';
+      } else if (philosophy === 'trophy') {
+        updates = { ...updates, teamChemistry: Math.min(100, (prev.teamChemistry||55)+6), ultrasHappiness: Math.min(100, (prev.ultrasHappiness||65)+6) };
+        bonusMsg = '🏆 Kupa Avcısı seçildi! Takım kimyası +6, stadyum inliyor!';
+      }
+      return { ...prev, ...updates, news: [bonusMsg, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const generateUltrasRequests = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      // zaten 2 aktif varsa üretme
+      if ((prev.ultrasRequests||[]).length >= 2) return prev;
+      // rastgele 1-2 istek
+      const templates: any[] = [
+        { kind: 'youth', text: 'Bu ay bir altyapı oyuncusunu A takıma al!', reward: 'Sadakat +12, kimya +2', penalty: '-8 taraftar', check: 'youth' },
+        { kind: 'star', text: 'Yıldız transferi istiyoruz — OVR 78+ birini al', reward: 'Tribün doluluk +8%', penalty: '-10 taraftar' },
+        { kind: 'derby', text: 'Sıradaki iç saha maçını kazan!', reward: 'Moral +8 tüm takım', penalty: '-5 güven' },
+        { kind: 'cleanSheet', text: '2 maçta gol yemeyin', reward: 'Savunma +2', penalty: '-10 ultras' },
+      ];
+      const pick = templates[Math.floor(Math.random()*templates.length)];
+      const req: any = {
+        id: `ur-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+        kind: pick.kind,
+        text: pick.text,
+        deadlineWeek: (prev.week||1) + 3 + Math.floor(Math.random()*3),
+        deadlineSeason: prev.season||1,
+        reward: pick.reward,
+        penalty: pick.penalty,
+      };
+      return { ...prev, ultrasRequests: [...(prev.ultrasRequests||[]), req], news: [`📢 Ultras: "${pick.text}" — 3 hafta süren var!`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const completeUltrasRequest = useCallback((requestId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const req = (prev.ultrasRequests||[]).find((r:any)=> r.id===requestId);
+      if (!req) return prev;
+      let bonus: any = {};
+      if (req.kind === 'youth') bonus = { teamChemistry: Math.min(100,(prev.teamChemistry||55)+2), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+12), fanHappiness: Math.min(100,(prev.fanHappiness||60)+3) };
+      else if (req.kind === 'star') bonus = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+8), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+10) };
+      else if (req.kind === 'derby') bonus = { team11: prev.team11.map(pl=>({ ...pl, morale: Math.min(100, pl.morale+8)})), bench: prev.bench.map(pl=>({ ...pl, morale: Math.min(100, pl.morale+8)})), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+10) };
+      else if (req.kind === 'cleanSheet') bonus = { ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+9) };
+      return { ...prev, ...bonus, ultrasRequests: (prev.ultrasRequests||[]).filter((r:any)=> r.id!==requestId), ultrasHappiness: Math.min(100,(prev.ultrasHappiness||65)+5), news: [`✅ Ultras isteği tamamlandı: "${req.text}" → ${req.reward}`, ...prev.news.slice(0,4)], boardMessages: [`📢 Ultras memnun: "${req.text}" yerine getirildi!`, ...prev.boardMessages.slice(0,5)] };
+    });
+  }, []);
+
+  const dismissUltrasRequest = useCallback((requestId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, ultrasRequests: (prev.ultrasRequests||[]).filter((r:any)=> r.id!==requestId), ultrasHappiness: Math.max(0,(prev.ultrasHappiness||65)-6), news: [`❌ Ultras isteği görmezden gelindi — ultras -6`, ...prev.news.slice(0,4)] };
     });
   }, []);
 
@@ -2258,6 +2671,12 @@ export const useGameState = () => {
     promoteYouthPlayer,
     buyInvestment,
     sellInvestment,
+    takeCredit,
+    repayCreditEarly,
+    setClubPhilosophy,
+    generateUltrasRequests,
+    completeUltrasRequest,
+    dismissUltrasRequest,
     trainPlayer,
     openShopBranch,
     unlockAchievement,
