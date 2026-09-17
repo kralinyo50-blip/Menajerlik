@@ -641,7 +641,8 @@ export interface ShopBranchData {
   openedWeek: number;
 }
 
-/* ══════════ SOSYAL MEDYA (FIFA tarzı) ══════════ */
+/* ══════════ SOSYAL MEDYA (FIFA tarzı) — çok platformlu ══════════ */
+export type SocialPlatform = 'instagram' | 'tiktok' | 'youtube';
 export type SocialPostType = 'user' | 'bot' | 'match' | 'transfer' | 'news' | 'hype';
 
 export interface SocialPost {
@@ -662,6 +663,9 @@ export interface SocialPost {
   image?: string;
   tags?: string[];
   timeAgo: string;
+  platform: SocialPlatform;
+  views?: number;
+  videoId?: string;
 }
 
 export interface MatchEvent {

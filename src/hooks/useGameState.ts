@@ -413,6 +413,7 @@ export const useGameState = () => {
     if ((state as any).activeDeviceId === undefined) (state as any).activeDeviceId = (state as any).devices?.[0]?.id || 'phone_mini';
     if (!(state as any).pcBuild) (state as any).pcBuild = {};
     if (!(state as any).pcInventory) (state as any).pcInventory = [];
+    if ((state as any).socialFeed) (state as any).socialFeed = (state as any).socialFeed.map((post: any)=> ({ platform: 'instagram', views: post.views ?? Math.floor(post.likes*12), ...post }));
     if (!(state as any).stadium?.tribunes) {
       const baseStadium = (state as any).stadium || {};
       baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
@@ -749,6 +750,7 @@ export const useGameState = () => {
       if (tac.pressingIntensity == null) tac.pressingIntensity = 50;
       if (tac.tempoValue == null) tac.tempoValue = 50;
     }
+    if ((loaded as any).socialFeed) (loaded as any).socialFeed = (loaded as any).socialFeed.map((post: any)=> ({ platform: post.platform || 'instagram', views: post.views ?? Math.floor((post.likes||200)*12), ...post }));
     setGameState(loaded);
     return true;
   }, []);
@@ -3036,8 +3038,9 @@ export const useGameState = () => {
   }, []);
 
   /* ══════════════ SOSYAL MEDYA (FutbolX) ══════════════ */
-  const addSocialPost = useCallback((content: string, image?: string) => {
+  const addSocialPost = useCallback((content: string, image?: string, platform: string = 'instagram') => {
     if (!content || content.trim().length < 3) return;
+    const safePlatform: any = (platform === 'tiktok' || platform === 'youtube' || platform === 'instagram') ? platform : 'instagram';
     setGameState(prev => {
       if (!prev) return null;
       const trimmed = content.slice(0, 280);
@@ -3046,12 +3049,24 @@ export const useGameState = () => {
       let bonusFame = 1;
       let bonusFan = 1;
       let tags: string[] = ['#SüperLig'];
-      // Cihaz kalitesi sosyal etkiye yansır (mild but noticeable)
+      // Cihaz kalitesi — platforma göre ağırlık değişir, ama hep mild
       const activeDev: any = (prev.devices||[]).find((d:any)=> d.id===prev.activeDeviceId) || (prev.devices||[])[0];
       const devQuality = activeDev?.quality ?? 42;
-      const devBonus = Math.round((devQuality - 42) / 12); // -? to +4
+      const devCamera = activeDev?.camera ?? 45;
+      const devPerf = activeDev?.performance ?? 40;
+      const devBonus = Math.round((devQuality - 42) / 12); // 0..4
+      // platform ağırlığı: instagram kamera, tiktok perf, youtube ikisi
+      let platformBonus = 0;
+      if (safePlatform === 'instagram') platformBonus = Math.round(devCamera * 0.9 + devBonus*70);
+      else if (safePlatform === 'tiktok') platformBonus = Math.round(devPerf * 1.1 + devBonus*85);
+      else platformBonus = Math.round((devCamera + devPerf)/2 * 1.0 + devBonus*95 + devQuality);
       if (low.includes('transfer')) { tags.push('#Transfer'); bonusFame+=1; }
       if (low.includes('#maç')||low.includes('maç')||low.includes('galib')) { tags.push('#MaçGünü'); bonusFan+=1; }
+      if (safePlatform === 'tiktok') tags.push('#keşfet');
+      if (safePlatform === 'youtube') tags.push('#YouTube');
+      const baseLikes = safePlatform==='youtube' ? 420 : safePlatform==='tiktok' ? 380 : 340;
+      const viewsMult = safePlatform==='youtube' ? 28 : safePlatform==='tiktok' ? 35 : 18;
+      const likesVal = Math.floor(baseLikes + Math.random()*900 + (prev.life?.stats.fame||40)*10 + platformBonus);
       const post: any = {
         id: `user-${Date.now()}`,
         author: prev.teamName,
@@ -3061,7 +3076,7 @@ export const useGameState = () => {
         type: 'user',
         week: prev.week,
         season: prev.season,
-        likes: Math.floor(340 + Math.random()*900 + (prev.life?.stats.fame||40)*10 + devBonus*85 + devQuality*2),
+        likes: likesVal,
         retweets: Math.floor(30 + Math.random()*200),
         comments: Math.floor(Math.random()*18),
         liked: false,
@@ -3069,7 +3084,10 @@ export const useGameState = () => {
         verified: true,
         tags,
         timeAgo: 'şimdi',
-        image: image || undefined
+        image: image || undefined,
+        platform: safePlatform,
+        views: Math.floor(likesVal * (viewsMult/10) + Math.random()*5000),
+        videoId: safePlatform==='youtube' ? 'pRpeEdMmmQ0' : undefined
       };
       const life = prev.life ?? defaultLife();
       return {
