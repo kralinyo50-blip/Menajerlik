@@ -214,7 +214,7 @@ function App() {
   // Hafta ilerledikçe menajer XP'si (maç içi XP zaten ekleniyor)
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2800);
+    setTimeout(() => setToast(null), 3200);
   }, []);
 
   const handleStart = useCallback((teamName: string, teamLogo: string, difficulty: Difficulty) => {
@@ -1118,7 +1118,7 @@ function App() {
             <div
               ref={tabsRef}
               onScroll={updateTabsFade}
-              className="flex gap-1.5 overflow-x-auto pb-2 custom-scroll bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20 scroll-smooth snap-x snap-mandatory"
+              className="flex gap-1.5 overflow-x-auto pb-2 custom-scroll bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20 scroll-smooth snap-x snap-mandatory scroll-px-2"
               style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(16,185,129,0.9) rgba(15,23,42,0.6)' }}
             >
               {tabs.map(tab => (

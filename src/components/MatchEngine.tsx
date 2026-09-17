@@ -98,7 +98,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   const pushSpiker = useCallback((txt: string) => {
     setSpiker(txt);
-    setTimeout(() => setSpiker(null), 2200);
+    setTimeout(() => setSpiker(null), 2000);
   }, []);
 
   const soundOn = gameState.soundOn !== false;
@@ -904,7 +904,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
                 <div className="text-[10px] tracking-widest font-bold text-slate-400">xG</div>
                 <div className="text-white font-black text-sm">{xg.home.toFixed(2)} <span className="text-slate-500 text-xs">-</span> {xg.away.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-500">beklenen gol</div>
+                <div className="text-[10px] text-slate-500">beklenen gol (xG)</div>
               </div>
               <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
                 <div className="text-[10px] tracking-widest font-bold text-slate-400">DEĞİŞİKLİK</div>
@@ -952,7 +952,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 <div className="absolute top-2 bottom-2 left-2 w-6 border-r border-white/15 bg-white/[0.03]" />
                 <div className="absolute top-2 bottom-2 right-2 w-6 border-l border-white/15 bg-white/[0.03]" />
                 {shotMap.slice(-18).map((s,i)=> (
-                  <div key={i} title={`${s.team==='home'?gameState.teamName:opponent.name} ${s.minute}' xG ${s.xg.toFixed(2)}`} className={`absolute w-2.5 h-2.5 rounded-full border border-white/60 shadow-sm -translate-x-1/2 -translate-y-1/2 ${s.team==='home' ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ left: `${s.x}%`, top: `${s.y}%`, opacity: 0.85 }} />
+                  <div key={i} title={`${s.team==='home'?gameState.teamName:opponent.name} ${s.minute}' xG ${s.xg.toFixed(2)}`} className={`absolute w-2.5 h-2.5 rounded-full border border-white/60 shadow-sm -translate-x-1/2 -translate-y-1/2 ${s.team==='home' ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ left: `${s.x}%`, top: `${s.y}%`, opacity: 0.82 }} />
                 ))}
               </div>
               <div className="text-[10px] text-slate-500 mt-1.5 flex gap-3">

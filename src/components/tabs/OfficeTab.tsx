@@ -119,7 +119,7 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
 
         {/* Kulüp Felsefesi */}
         <Section title="Kulüp Felsefesi" icon="🧭" accent="text-violet-400">
-          <p className="text-xs text-slate-400 mb-3">Sezon başında bir kimlik seç — bonuslar ve taraftar beklentisi ona göre şekillenir. Seçimi değiştirebilirsin ama ultras biraz bozulur.</p>
+          <p className="text-xs text-slate-400 mb-3">Sezon başında bir kimlik seç — bonuslar ve taraftar beklentisi ona göre şekillenir. Seçimi değiştirebilirsin — ultras kısa süre bozulur, yeni bonus hemen gelir.</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {PHILOSOPHIES.map(ph => {
               const selected = gameState.clubPhilosophy === ph.id;
@@ -167,7 +167,7 @@ export const OfficeTab: React.FC<OfficeTabProps> = ({
               ))}
             </div>
           )}
-          <div className="text-[11px] text-slate-500 mt-2">Hafif olay: istekler her maç sonrası %20 şansla gelir, süresi dolarsa taraftar -5 / ultras -8. Galibiyet ultras +3~5, mağlubiyet -3.</div>
+          <div className="text-[11px] text-slate-500 mt-2">Dengeli: istekler maç sonrası %20 şansla gelir, süresi dolarsa taraftar -5 / ultras -8. Galibiyet ultras +3~5, mağlubiyet -3.</div>
         </Section>
 
         {/* Transfer offers */}

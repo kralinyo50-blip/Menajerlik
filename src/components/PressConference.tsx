@@ -84,7 +84,7 @@ export const PressConference: React.FC<Props> = ({ press, onAnswer, onDismiss })
         {/* footer drama hint */}
         <div className="px-6 pb-5">
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-[11px] text-amber-200/80 flex items-center gap-2">
-            <span>🎭</span><span>Yeni drama modu aktif: agresif demeçler %30 ihtimalle yönetim güveni -2 daha düşürür, sosyal medyada gündem olur.</span>
+            <span>🎭</span><span>Drama modu (more_drama): agresif demeçler %30 ihtimalle yönetim güveni -2 daha düşürür, sosyal medyada gündem olur.</span>
           </div>
         </div>
       </div>

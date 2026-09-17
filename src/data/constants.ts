@@ -453,11 +453,11 @@ export const PRESS_QUESTIONS: Record<string, { q: string; answers: { tone: strin
 };
 
 export const SCOUT_REGIONS = [
-  { id: 'balkans', name: 'Balkanlar', flag: '🇹🇷', desc: 'Ucuz, hızlı — teknik, mücadeleci gençler', cost: 45000, weeks: 2, ovrRange: [60, 69], potRange: [74, 84], trait: 'Teknik + Mücadele' },
-  { id: 'west_eu', name: 'Batı Avrupa', flag: '🇩🇪', desc: 'Dengeli, pahalı değil — taktik zekâ', cost: 85000, weeks: 3, ovrRange: [64, 74], potRange: [78, 88], trait: 'Taktik + Pas' },
-  { id: 'south_america', name: 'Güney Amerika', flag: '🇧🇷', desc: 'Pahalı, yetenek tavanı yüksek — flair', cost: 135000, weeks: 3, ovrRange: [65, 74], potRange: [82, 92], trait: 'Flair + Dripling' },
-  { id: 'africa', name: 'Afrika', flag: '🇳🇬', desc: 'Hız + güç, orta maliyet', cost: 70000, weeks: 2, ovrRange: [62, 71], potRange: [77, 89], trait: 'Hız + Güç' },
-  { id: 'east_eu', name: 'Doğu Avrupa', flag: '🇵🇱', desc: 'Fizik + disiplin, orta süre', cost: 65000, weeks: 3, ovrRange: [61, 70], potRange: [76, 86], trait: 'Fizik + Disiplin' },
-  { id: 'asia', name: 'Doğu Asya', flag: '🇯🇵', desc: 'Çalışkan, düşük maliyet, sürpriz potansiyel', cost: 50000, weeks: 2, ovrRange: [59, 68], potRange: [73, 85], trait: 'Çalışkan + Sürpriz' },
+  { id: 'balkans', name: 'Balkanlar', flag: '🇹🇷', desc: 'Ucuz, hızlı — teknik, mücadeleci gençler', cost: 42000, weeks: 2, ovrRange: [60, 68], potRange: [74, 84], trait: 'Teknik + Mücadele' },
+  { id: 'west_eu', name: 'Batı Avrupa', flag: '🇩🇪', desc: 'Dengeli, pahalı değil — taktik zekâ', cost: 78000, weeks: 3, ovrRange: [64, 73], potRange: [78, 87], trait: 'Taktik + Pas' },
+  { id: 'south_america', name: 'Güney Amerika', flag: '🇧🇷', desc: 'Pahalı, yetenek tavanı yüksek — flair', cost: 125000, weeks: 3, ovrRange: [65, 73], potRange: [81, 91], trait: 'Flair + Dripling' },
+  { id: 'africa', name: 'Afrika', flag: '🇳🇬', desc: 'Hız + güç, orta maliyet', cost: 62000, weeks: 2, ovrRange: [62, 70], potRange: [77, 88], trait: 'Hız + Güç' },
+  { id: 'east_eu', name: 'Doğu Avrupa', flag: '🇵🇱', desc: 'Fizik + disiplin, orta süre', cost: 58000, weeks: 3, ovrRange: [61, 69], potRange: [76, 85], trait: 'Fizik + Disiplin' },
+  { id: 'asia', name: 'Doğu Asya', flag: '🇯🇵', desc: 'Çalışkan, düşük maliyet, sürpriz potansiyel', cost: 40000, weeks: 2, ovrRange: [59, 67], potRange: [73, 84], trait: 'Çalışkan + Sürpriz' },
 ];
 

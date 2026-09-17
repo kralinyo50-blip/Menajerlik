@@ -1713,7 +1713,7 @@ export const useGameState = () => {
           newState.news = [`📢 Ultras: "${pick.text}" — ${req.deadlineWeek - (newState.week||1)} hafta süren var!`, ...newState.news.slice(0,4)];
         }
         // Drama modu — %12 ihtimalle soyunma odası / kriz olayı (more_drama)
-        if (!isCup && Math.random() < 0.12) {
+        if (!isCup && Math.random() < 0.10) {
           const roll = Math.random();
           if (roll < 0.35) {
             // Soyunma odası kavgası
@@ -1784,7 +1784,7 @@ export const useGameState = () => {
           if (left <= 0) {
             // rapor üret
             const cfg = regionMap[m.regionId] || regionMap.balkans;
-            const count = 1 + (Math.random()<0.45?1:0) + (Math.random()<0.15?1:0); // 1-3
+            const count = 1 + (Math.random()<0.42?1:0) + (Math.random()<0.10?1:0); // 1-3
             const players: any[] = [];
             for (let i=0;i<count;i++) {
               const role = cfg.roles[Math.floor(Math.random()*cfg.roles.length)];
@@ -1794,7 +1794,7 @@ export const useGameState = () => {
               const rc = (()=>{ try{ return randomCountry(); } catch { return {country:'Bilinmiyor', flag:'🌍'}; } })();
               const id = Date.now()+Math.floor(Math.random()*100000)+i;
               const name = `${FIRST_NAMES[Math.floor(Math.random()*FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random()*LAST_NAMES.length)]}`;
-              const val = Math.round(ovr* 12000 + (pot-ovr)*8000 + Math.random()*5000);
+              const val = Math.round(ovr* 11500 + (pot-ovr)*7500 + Math.random()*4000);
               players.push({ id, name, ovr, role, age, potential: Math.min(99,pot), value: val, wage: Math.max(800, Math.round(ovr*280)), contract: 3, energy: 100, morale: 75+Math.floor(Math.random()*15), goals:0, assists:0, injured:false, injuryWeeks:0, yellowCards:0, redCard:false, suspension:0, matchesPlayed:0, form:5+Math.floor(Math.random()*3), country: rc.country, flag: rc.flag, potentialOriginal: pot });
             }
             const report: any = { id: `rep-${Date.now()}-${Math.random().toString(36).slice(2,4)}`, regionId: m.regionId, regionName: m.regionName, players, generatedWeek: newState.week, generatedSeason: newState.season };

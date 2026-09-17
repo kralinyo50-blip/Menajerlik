@@ -171,14 +171,14 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-black tracking-tight text-white">🌟 Genç Akademi & Scout Ağı</h2>
-            <span className="text-[11px] bg-violet-500/15 border border-violet-500/30 text-violet-300 px-2.5 py-1 rounded-full">ORTALAMA • GERÇEKÇİ • DRAMA</span>
+            <span className="text-[11px] bg-violet-500/15 border border-violet-500/30 text-violet-300 px-2.5 py-1 rounded-full">DENGELİ • GERÇEKÇİ • HAFİF DRAMA</span>
           </div>
           <div className="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-3 mb-4 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-slate-300">Aktif görev: <b className="text-white">{(gameState.scoutMissions||[]).length}/3</b></span>
             <span className="w-1 h-1 bg-slate-600 rounded-full" />
             <span className="text-slate-300">Rapor: <b className="text-white">{(gameState.scoutReports||[]).length}</b></span>
             <span className="w-1 h-1 bg-slate-600 rounded-full" />
-            <span className="text-slate-400 hidden sm:inline">Bölge seç → izci gönder → {`2-3 hafta sonra 1-3 genç gelir`}</span>
+            <span className="text-slate-400 hidden sm:inline">Bölge seç → gönder → 2-3 hafta sonra rapor</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
             {SCOUT_REGIONS.map(r=>{
@@ -298,7 +298,7 @@ export const FacilitiesTab: React.FC<FacilitiesTabProps> = ({
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-white font-bold text-sm">{rep.regionName} • Sezon {rep.generatedSeason} Hafta {rep.generatedWeek} • {rep.players.length} genç</div>
                     <div className="flex gap-2">
-                      <button onClick={()=> onClaimScoutReport?.(rep.id)} className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-bold">Hepsini Al</button>
+                      <button onClick={()=> onClaimScoutReport?.(rep.id)} className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-bold">Tümünü Altyapıya</button>
                       <button onClick={()=> onDismissScoutReport?.(rep.id)} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg">Sil</button>
                     </div>
                   </div>

@@ -227,7 +227,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
             <div className="h-3 mx-4 -mt-1 rounded-b-xl bg-gradient-to-b from-amber-950/60 to-black/40 border-x border-b border-amber-900/30 shadow-xl" />
             <div className="flex justify-between text-[10px] text-slate-500 mt-2 px-1">
               <span>Toplam {gameState.clubStats.leagueTitles} Lig • {gameState.clubStats.cupWins} Kupa</span>
-              <span className="hidden sm:inline">Işıklandırılmış vitrin — kupaya tıkla, sezon anısı canlansın</span>
+              <span className="hidden sm:inline">Işıklandırılmış vitrin — her sezonun kartı müzede saklanır</span>
             </div>
           </div>
 
