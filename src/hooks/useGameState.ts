@@ -2080,6 +2080,96 @@ export const useGameState = () => {
     });
   }, []);
 
+  const generatePressConference = useCallback((opponent: string, wasWin: boolean, wasDraw: boolean) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const qs: any[] = (() => {
+        if (wasWin) return [
+          { id: 'q1', question: 'Galibiyetin anahtarı neydi?', answers: [
+            { tone: 'humble', label: 'Çocuklar çok çalıştı, ben sadece yön verdim', effect: 'Takım morali +5, kimya +2' },
+            { tone: 'confident', label: 'Planım tıkır tıkır işledi — biz daha iyiyiz', effect: 'Taraftar +6, board +3' },
+            { tone: 'aggressive', label: 'Hakem de rakip de yetmedi!', effect: 'Ultras +7, kart riski +15%' },
+          ]},
+          { id: 'q2', question: 'Bir oyuncunuzu öne çıkarır mısınız?', answers: [
+            { tone: 'humble', label: 'Hepsi yıldızdı, tek isim haksızlık olur', effect: 'Genel moral +3' },
+            { tone: 'confident', label: 'Gol kralımız yine konuştu', effect: 'Golcü +10, diğerleri -2' },
+            { tone: 'neutral', label: 'Taraftar muhteşemdi', effect: 'Fan +8, ultras +5' },
+          ]},
+        ];
+        if (wasDraw) return [
+          { id: 'q1', question: 'Beraberliği nasıl değerlendiriyorsunuz?', answers: [
+            { tone: 'humble', label: 'Bir puan da puandır', effect: 'Kimya +1' },
+            { tone: 'aggressive', label: 'Hakem iki puanımızı çaldı!', effect: 'Ultras +5, board -2' },
+            { tone: 'confident', label: 'Üstün olan bizdik', effect: 'Fan +3' },
+          ]},
+          { id: 'q2', question: 'Sıradaki maç için mesajınız?', answers: [
+            { tone: 'confident', label: 'Eze eze kazanacağız', effect: 'Moral +4' },
+            { tone: 'humble', label: 'Adım adım, her maç final', effect: 'Kimya +2' },
+            { tone: 'neutral', label: 'Taraftar yanımızda olsun', effect: 'Fan +4' },
+          ]},
+        ];
+        return [
+          { id: 'q1', question: 'Mağlubiyetin sebebi neydi?', answers: [
+            { tone: 'humble', label: 'Sorumluluk bende', effect: 'Board +3, saygı +4' },
+            { tone: 'aggressive', label: 'Oyuncularım sahada yoktu!', effect: 'Moral -8, board -5' },
+            { tone: 'confident', label: 'Kaza oldu, telafi edeceğiz', effect: 'Moral -2' },
+          ]},
+          { id: 'q2', question: 'Eleştirilere ne diyorsunuz?', answers: [
+            { tone: 'humble', label: 'Haklılar, daha çok çalışmalıyız', effect: 'Fan +2' },
+            { tone: 'aggressive', label: 'Koltuğumdan memnun olmayan gitsin!', effect: 'Board -7, ultras +6' },
+            { tone: 'neutral', label: 'Sahada konuşacağız', effect: 'Moral +2' },
+          ]},
+        ];
+      })();
+      const conf: any = { id: `press-${Date.now()}`, opponent, wasWin, wasDraw, questions: qs, answered: 0 };
+      return { ...prev, pendingPress: conf, news: [`🎙️ Basın toplantısı: ${opponent} maçı sonrası sorular seni bekliyor!`, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const answerPressQuestion = useCallback((tone: string) => {
+    setGameState(prev => {
+      if (!prev || !(prev as any).pendingPress) return prev;
+      const press: any = (prev as any).pendingPress;
+      const currentQ = press.questions[press.answered];
+      if (!currentQ) return prev;
+      const ans = currentQ.answers.find((a:any)=> a.tone===tone) || currentQ.answers[0];
+      let updates: any = {};
+      let msg = `🎙️ Basın: "${ans.label}" → ${ans.effect}`;
+      if (tone === 'humble') {
+        updates = { teamChemistry: Math.min(100,(prev.teamChemistry||55)+1), boardConfidence: Math.min(100,(prev.boardConfidence||60)+2), team11: prev.team11.map(p=> ({...p, morale: Math.min(100,p.morale+2)})), bench: prev.bench.map(p=> ({...p, morale: Math.min(100,p.morale+2)})) };
+        updates.fanHappiness = Math.min(100,(prev.fanHappiness||60)+2);
+      } else if (tone === 'confident') {
+        updates = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+4), boardConfidence: Math.min(100,(prev.boardConfidence||60)+2), team11: prev.team11.map(p=> ({...p, morale: Math.min(100,p.morale+3)})), bench: prev.bench.map(p=> ({...p, morale: Math.max(0,p.morale-1)})) };
+        updates.ultrasHappiness = Math.min(100,((prev as any).ultrasHappiness||65)+2);
+      } else if (tone === 'aggressive') {
+        updates = { ultrasHappiness: Math.min(100,((prev as any).ultrasHappiness||65)+5), fanHappiness: Math.min(100,(prev.fanHappiness||60)+1), boardConfidence: Math.max(0,(prev.boardConfidence||60)-3), team11: prev.team11.map(p=> ({...p, morale: Math.max(0,p.morale-2)})) };
+        if (Math.random() < 0.3) {
+          updates.boardConfidence = Math.max(0,(updates.boardConfidence?? prev.boardConfidence)-2);
+          msg += " | Drama: Yönetim kaşlarını çattı!";
+        }
+      } else {
+        updates = { fanHappiness: Math.min(100,(prev.fanHappiness||60)+3) };
+        updates.ultrasHappiness = Math.min(100,((prev as any).ultrasHappiness||65)+3);
+      }
+      const nextAnswered = press.answered + 1;
+      const isDone = nextAnswered >= press.questions.length;
+      const nextPress = isDone ? null : { ...press, answered: nextAnswered };
+      let socialFeed: any = prev.socialFeed || [];
+      if (isDone && Math.random() < 0.6) {
+        const hot = tone==='aggressive' ? '🔥 Basın toplantısında ortalık karıştı! Taraftar ikiye bölündü.' : tone==='confident' ? '🎙️ Hocadan iddialı sözler — taraftar coşkulu!' : '🎙️ Alçakgönüllü demeçler takdir topladı.';
+        socialFeed = [{ id: `press-social-${Date.now()}`, author: 'FutbolX', handle: '@futbolx', text: hot, likes: 40 + Math.floor(Math.random()*80), liked: false, comments: [], time: 'az önce', isUser: false }, ...socialFeed].slice(0,30);
+      }
+      return { ...prev, ...updates, pendingPress: nextPress, socialFeed, news: [msg, ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
+  const dismissPress = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, pendingPress: null, boardConfidence: Math.max(0,(prev.boardConfidence||60)-2), news: ['🎙️ Basın toplantısı atlandı — yönetim memnun değil (-2)', ...prev.news.slice(0,4)] };
+    });
+  }, []);
+
   const trainPlayer = useCallback((playerId: number, _attribute?: string) => {
     setGameState(prev => {
       if (!prev || prev.budget < 25000) return prev;
@@ -2677,6 +2767,9 @@ export const useGameState = () => {
     generateUltrasRequests,
     completeUltrasRequest,
     dismissUltrasRequest,
+    generatePressConference,
+    answerPressQuestion,
+    dismissPress,
     trainPlayer,
     openShopBranch,
     unlockAchievement,

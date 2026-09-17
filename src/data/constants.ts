@@ -412,3 +412,43 @@ export const ULTRAS_TEMPLATES = [
   { kind: 'cleanSheet' as const, text: '2 maçta gol yemeyin — savunmayı toparlayın', reward: 'Savunma +2 sonraki maç', penalty: 'Ultras -10' },
   { kind: 'derby' as const, text: 'Deplasmanda yenilmeyin — en az beraberlik', reward: 'Deplasman primi +$100k', penalty: 'Fan -7' },
 ];
+
+export const PRESS_QUESTIONS: Record<string, { q: string; answers: { tone: string; label: string; effect: string }[] }[]> = {
+  win: [
+    { q: "Galibiyetin anahtarı neydi?", answers: [
+      { tone: 'humble', label: "Çocuklar çok çalıştı, ben sadece yön verdim", effect: "Takım morali +5, kimya +2" },
+      { tone: 'confident', label: "Planım tıkır tıkır işledi — biz daha iyiyiz", effect: "Taraftar +6, board +3 ama rakip bileniyor" },
+      { tone: 'aggressive', label: "Hakem de rakip de yetmedi!", effect: "Ultras +7, ama kart riski haftaya +15%" },
+    ]},
+    { q: "Bir oyuncunuzu öne çıkarır mısınız?", answers: [
+      { tone: 'humble', label: "Hepsi yıldızdı, tek isim haksızlık olur", effect: "Takım geneli moral +3" },
+      { tone: 'confident', label: "Gol kralımız yine konuştu — ona güveniyorum", effect: "Golcü moral +10, diğerleri -2" },
+      { tone: 'neutral', label: "Taraftar muhteşemdi, galibiyet onların", effect: "Fan +8, ultras +5" },
+    ]},
+  ],
+  draw: [
+    { q: "Beraberliği nasıl değerlendiriyorsunuz?", answers: [
+      { tone: 'humble', label: "Bir puan da puandır, ders çıkardık", effect: "Moral sabit, kimya +1" },
+      { tone: 'aggressive', label: "Hakem iki puanımızı çaldı!", effect: "Ultras +5, board -2" },
+      { tone: 'confident', label: "Üstün olan bizdik, gol gecikti", effect: "Fan +3" },
+    ]},
+    { q: "Sıradaki maç için mesajınız?", answers: [
+      { tone: 'confident', label: "Eze eze kazanacağız", effect: "Takım morali +4, baskı artar" },
+      { tone: 'humble', label: "Adım adım, her maç final", effect: "Kimya +2" },
+      { tone: 'neutral', label: "Taraftar yanımızda olsun yeter", effect: "Fan +4" },
+    ]},
+  ],
+  loss: [
+    { q: "Mağlubiyetin sebebi neydi?", answers: [
+      { tone: 'humble', label: "Sorumluluk bende, daha iyi hazırlanacağız", effect: "Board +3, takım saygı +4" },
+      { tone: 'aggressive', label: "Oyuncularım sahada yoktu!", effect: "Takım moral -8, board -5 ama ultras +3" },
+      { tone: 'confident', label: "Kaza oldu, telafi edeceğiz", effect: "Moral -2, fan -2" },
+    ]},
+    { q: "Eleştirilere ne diyorsunuz?", answers: [
+      { tone: 'humble', label: "Haklılar, daha çok çalışmalıyız", effect: "Fan +2, kimya +1" },
+      { tone: 'aggressive', label: "Koltuğumdan memnun olmayan istifa etsin!", effect: "Board -7, ultras +6" },
+      { tone: 'neutral', label: "Sahada konuşacağız", effect: "Moral +2" },
+    ]},
+  ],
+};
+

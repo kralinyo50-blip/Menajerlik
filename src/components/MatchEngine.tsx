@@ -20,6 +20,7 @@ export interface MatchExtras {
   shots: { home: number; away: number };
   corners: { home: number; away: number };
   fouls: { home: number; away: number };
+  xg: { home: number; away: number };
   teamTalkMorale: number;
   penaltyWinner?: 'user' | 'opponent';
 }
@@ -59,6 +60,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [speed, setSpeed] = useState<1 | 2 | 4>(2);
   const [possession, setPossession] = useState(50);
   const [shots, setShots] = useState({ home: 0, away: 0 });
+  const [xg, setXg] = useState({ home: 0, away: 0 });
+  const [spiker, setSpiker] = useState<string | null>(null);
   const [corners, setCorners] = useState({ home: 0, away: 0 });
   const [fouls, setFouls] = useState({ home: 0, away: 0 });
   const [activeLineup, setActiveLineup] = useState<Player[]>(() => fixLineup(gameState).team11);
@@ -90,6 +93,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const injuryMapRef = useRef<Map<number, number>>(new Map());
   const sentOffRef = useRef<number[]>([]);
   const handlerRef = useRef<(m: number, extra: boolean) => void>(() => {});
+
+  const pushSpiker = useCallback((txt: string) => {
+    setSpiker(txt);
+    setTimeout(() => setSpiker(null), 2200);
+  }, []);
 
   const soundOn = gameState.soundOn !== false;
   const play = useCallback((fn: () => void) => { if (soundOn) fn(); }, [soundOn]);
@@ -212,6 +220,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       });
     }
     play(sfx.goal);
+    pushSpiker(`⚽ GOOOOLL! ${player?.name || 'Takım'} affetmedi! xG ${ (Math.random()*0.4+0.3).toFixed(2)}`);
     setGoalFlash(true);
     setTimeout(() => setGoalFlash(false), 900);
     // kısa gol kutlaması — performansa hafif, sadece CSS
@@ -258,6 +267,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
       if (isUserAttack) {
         setShots(s => ({ ...s, home: s.home + 1 }));
+        const thisXg = 0.08 + Math.random()*0.32;
+        setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
         const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01))) * goalMult);
@@ -310,6 +321,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         }
       } else {
         setShots(s => ({ ...s, away: s.away + 1 }));
+        const thisXgA = 0.06 + Math.random()*0.28;
+        setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
         const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008))) * goalMult);
         const roll = Math.random();
@@ -332,6 +345,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           scoreRef.current.o += 1;
           setOppScore(scoreRef.current.o);
           play(sfx.conceded);
+          pushSpiker(`❌ ${opponent.name} cezayı kesti! Tribünler sustu...`);
           setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
           setTimeout(() => setCelebration(null), 2200);
           addEvent({
@@ -740,6 +754,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       shots,
       corners,
       fouls,
+      xg,
       teamTalkMorale: talkBonus.morale,
       penaltyWinner
     };
@@ -811,6 +826,13 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         </div>
 
+        {/* Spiker */}
+        {spiker && (
+          <div className="bg-amber-500 text-black text-xs font-bold px-3 py-1.5 flex items-center gap-2 animate-pulse">
+            <span className="bg-black text-amber-400 px-1.5 py-0.5 rounded text-[10px]">SPİKER</span>
+            <span className="truncate">{spiker}</span>
+          </div>
+        )}
         {/* Scoreboard */}
         <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0">
           <div className="flex items-center justify-between max-w-xl mx-auto">
@@ -852,7 +874,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
 
           {(phase !== 'pre') && (
-            <div className="mt-3 grid grid-cols-2 lg:grid-cols-5 gap-2 max-w-3xl mx-auto text-center text-xs">
+            <div className="mt-3 grid grid-cols-2 lg:grid-cols-6 gap-2 max-w-3xl mx-auto text-center text-xs">
               <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20 hover:border-emerald-500/30 transition-colors">
                 <div className="text-[10px] tracking-widest font-bold text-slate-400">TOP HAKİMİYETİ</div>
                 <div className="text-white font-black text-sm">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
@@ -873,6 +895,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
                 <div className="text-[10px] tracking-widest font-bold text-slate-400">FAUL</div>
                 <div className="text-white font-black text-lg">{fouls.home} <span className="text-slate-500 text-xs">-</span> {fouls.away}</div>
+              </div>
+              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
+                <div className="text-[10px] tracking-widest font-bold text-slate-400">xG</div>
+                <div className="text-white font-black text-sm">{xg.home.toFixed(2)} <span className="text-slate-500 text-xs">-</span> {xg.away.toFixed(2)}</div>
+                <div className="text-[10px] text-slate-500">beklenen gol</div>
               </div>
               <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
                 <div className="text-[10px] tracking-widest font-bold text-slate-400">DEĞİŞİKLİK</div>

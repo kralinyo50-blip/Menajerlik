@@ -247,6 +247,21 @@ export interface MuseumEntry {
   budget: number;
 }
 
+export type PressAnswerTone = 'humble' | 'confident' | 'aggressive' | 'neutral';
+export interface PressQuestion {
+  id: string;
+  question: string;
+  answers: { tone: PressAnswerTone; label: string; effect: string; }[];
+}
+export interface PressConference {
+  id: string;
+  opponent: string;
+  wasWin: boolean;
+  wasDraw: boolean;
+  questions: PressQuestion[];
+  answered: number;
+}
+
 export interface Sponsor {
   name: string;
   income: number;
@@ -523,6 +538,7 @@ export interface GameState {
   ultrasHappiness: number; // 0-100
   ultrasRequests: UltrasRequest[];
   museum: MuseumEntry[];
+  pendingPress?: PressConference | null;
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──

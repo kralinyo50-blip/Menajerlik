@@ -28,6 +28,7 @@ import { TeamActivityEvent, shouldTriggerTeamActivity } from './components/TeamA
 import { Tutorial } from './components/Tutorial';
 import { AchievementsPanel } from './components/AchievementsPanel';
 import AiAssistant from './components/AiAssistant';
+import { PressConference } from './components/PressConference';
 import {
   InGameMinigame,
   MinigameContext,
@@ -99,6 +100,9 @@ function App() {
     takeCredit,
     repayCreditEarly,
     setClubPhilosophy,
+    generatePressConference,
+    answerPressQuestion,
+    dismissPress,
     generateUltrasRequests,
     completeUltrasRequest,
     dismissUltrasRequest,
@@ -392,7 +396,15 @@ function App() {
     setIsCupMatch(false);
     setShowPreMatch(false);
 
-    // Maç sonu hikâye mini oyunu / olay (sezonun son maçında gösterilmez)
+    // Basın toplantısı — her lig maçı sonrası (kupa dahil) drama modunda
+    const wasWinPress = userWon && !isDraw;
+    if (opponent && !isCupMatch) {
+      setTimeout(() => generatePressConference(opponent.name, wasWinPress, isDraw), 500);
+    } else if (opponent && isCupMatch) {
+      setTimeout(() => generatePressConference(opponent.name, wasWinPress, isDraw), 600);
+    }
+
+    // Maç sonu hikâye mini oyunu / olay (sezonun son maçında gösterilmez) — basın sonrası gecikmeli
     const wasWin = userWon && !isDraw;
     if (opponent && (isCupMatch || gameState.week < 18)) {
       const story = pickStoryMinigame(gameState, wasWin, opponent.name);
@@ -409,7 +421,7 @@ function App() {
     setTimeout(() => saveGame(0), 1200);
   }, [
     gameState, isCupMatch, updatePlayer, processMatchResult, updateGameState,
-    currentOpponent, currentFixture, saveGame
+    currentOpponent, currentFixture, saveGame, generatePressConference
   ]);
 
   const handleStoryMinigameComplete = useCallback((result: MinigameResult) => {
@@ -971,6 +983,10 @@ function App() {
 
       {storyMinigame && (
         <InGameMinigame context={storyMinigame} gameState={gameState} onComplete={handleStoryMinigameComplete} />
+      )}
+
+      {gameState.pendingPress && (
+        <PressConference press={gameState.pendingPress} onAnswer={answerPressQuestion} onDismiss={dismissPress} />
       )}
 
       {/* Sezon sonu gazetesi */}
