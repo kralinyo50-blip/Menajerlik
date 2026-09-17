@@ -58,6 +58,15 @@ export interface LifeLogEntry {
   summary: string;
 }
 
+export interface ManagerAppearance {
+  /** Ten rengi (hex) */
+  skin?: string;
+  /** Saç rengi (hex) */
+  hair?: string;
+  /** Antrenman kıyafeti tercihi */
+  outfit?: 'club' | 'black';
+}
+
 export interface ManagerLife {
   stats: LifeStats;
   /** Bu hafta kullanılan aktivite hakkı */
@@ -70,6 +79,10 @@ export interface ManagerLife {
   owned: string[];
   /** Son aktivite kayıtları */
   history: LifeLogEntry[];
+  /** Menajer görünümü (ten, saç, kıyafet) */
+  appearance?: ManagerAppearance;
+  /** Düşük performans modu (PC'de FPS için) */
+  lowPerf?: boolean;
 }
 
 /** Bilindik oyuncu sınıflandırması */
@@ -91,6 +104,9 @@ export interface Player {
   value: number;
   wage: number;
   contract: number;
+  /** Ülke / bayrak */
+  country?: string;
+  flag?: string;
   t?: number; // pitch position top %
   l?: number; // pitch position left %
   yellowCards?: number;
@@ -436,6 +452,8 @@ export interface GameState {
   stadium: StadiumState;
   // ── v4.0: Menajerin kendi hayatı ──
   life: ManagerLife;
+  // ── v4.1: Sosyal Medya (FutbolX) ──
+  socialFeed: SocialPost[];
 }
 
 export interface ShopBranchData {
@@ -444,6 +462,29 @@ export interface ShopBranchData {
   district: string;
   shopType: 'small' | 'medium' | 'large' | 'flagship';
   openedWeek: number;
+}
+
+/* ══════════ SOSYAL MEDYA (FIFA tarzı) ══════════ */
+export type SocialPostType = 'user' | 'bot' | 'match' | 'transfer' | 'news' | 'hype';
+
+export interface SocialPost {
+  id: string;
+  author: string;
+  handle: string;
+  logo: string;
+  content: string;
+  type: SocialPostType;
+  week: number;
+  season: number;
+  likes: number;
+  retweets: number;
+  comments: number;
+  liked: boolean;
+  isUser: boolean;
+  verified?: boolean;
+  image?: string;
+  tags?: string[];
+  timeAgo: string;
 }
 
 export interface MatchEvent {

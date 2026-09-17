@@ -2,6 +2,7 @@ import { GameState, LoanTarget, LoanOutOffer, Player, PlayerRole, StarTier, Team
 import { pickStars, STAR_POOL, StarEntry, TIER_INFO } from '../data/stars';
 import { playerValue, playerWage } from './pricing';
 import { FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL } from '../data/constants';
+import { randomCountry } from '../data/countries';
 
 const genName = () =>
   `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
@@ -33,7 +34,9 @@ export function starToPlayer(entry: StarEntry, id: number, opts?: { markTier?: b
     suspension: 0,
     matchesPlayed: 0,
     form: 6,
-    starTier: entry.tier
+    starTier: entry.tier,
+    country: (entry as any).country || 'Türkiye',
+    flag: (entry as any).flag || '🇹🇷'
   };
 }
 
@@ -78,6 +81,7 @@ export function buildGenericMarketPlayers(state: GameState, count: number): Play
     const ovr = Math.max(50, Math.round(base + (Math.random() * 20 - 6)));
     const age = 18 + Math.floor(Math.random() * 16);
     const potential = Math.min(99, ovr + Math.floor(Math.random() * 14));
+    const rc = randomCountry();
     list.push({
       id: Date.now() + i,
       name: genName(),
@@ -98,7 +102,9 @@ export function buildGenericMarketPlayers(state: GameState, count: number): Play
       redCard: false,
       suspension: 0,
       matchesPlayed: 0,
-      form: 5 + Math.floor(Math.random() * 4)
+      form: 5 + Math.floor(Math.random() * 4),
+      country: rc.country,
+      flag: rc.flag
     });
   }
   return list;
@@ -185,6 +191,7 @@ export function generateLoanList(state: GameState, count = 5): LoanTarget[] {
     const age = 19 + Math.floor(Math.random() * 12);
     const potential = Math.min(99, ovr + 6 + Math.floor(Math.random() * 12));
     const value = playerValue(ovr, age, { potential });
+    const rc2 = randomCountry();
     list.push({
       id: Date.now() + 3000 + list.length,
       player: {
@@ -207,7 +214,9 @@ export function generateLoanList(state: GameState, count = 5): LoanTarget[] {
         redCard: false,
         suspension: 0,
         matchesPlayed: 0,
-        form: 5
+        form: 5,
+        country: rc2.country,
+        flag: rc2.flag
       },
       fromClub: club.name,
       fromLogo: club.logo,

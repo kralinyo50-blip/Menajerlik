@@ -32,13 +32,14 @@ export function weatherShield(design: StadiumDesign, weather: string): number {
   return 1 + protection * 0.8 * (1 - 0.78);
 }
 
-/** Bilet geliri çarpanı: VIP + kozmetik + taraftar etkisi */
+/** Bilet geliri çarpanı: VIP + kozmetik + taraftar etkisi + yıldızlar gişe çeker */
 export function gateMultiplier(state: GameState): number {
   const stadium = state.stadium;
   let mult = 1;
   if (stadium?.vip) mult += 0.12;
   if ((stadium?.cosmetics || []).includes('roof:glass')) mult += 0.04;
   if ((stadium?.cosmetics || []).includes('stands:bowl')) mult += 0.03;
+  mult += starGateBonus(state);
   return mult;
 }
 
@@ -53,24 +54,52 @@ export function stadiumLoveBonus(state: GameState): number {
   return love;
 }
 
-/** Tribüne gelen her seyircinin büfe/ürün harcaması — stadyumu doldurmak kazandırır */
+/** Yıldız oyuncuların tribün/forma etkisini toplar */
+export function starBonuses(state: GameState): { attendance: number; gate: number; perFan: number; shop: number } {
+  const all = [...(state.team11 || []), ...(state.bench || [])];
+  let w = 0, s = 0, t = 0, wk = 0;
+  all.forEach(p => {
+    if (p.starTier === 'world') w++;
+    else if (p.starTier === 'star') s++;
+    else if (p.starTier === 'turkish') t++;
+    else if (p.starTier === 'wonderkid') wk++;
+  });
+  // doyurma: ilk yıldızlar daha değerli
+  const att = Math.min(0.32, w * 0.11 + s * 0.065 + t * 0.075 + wk * 0.035);
+  const gate = Math.min(0.22, w * 0.085 + s * 0.05 + t * 0.045 + wk * 0.025);
+  const perFan = Math.min(8, w * 3.2 + s * 1.8 + t * 2.2 + wk * 1.1);
+  const shop = Math.min(0.85, w * 0.32 + s * 0.2 + t * 0.17 + wk * 0.11);
+  return { attendance: att, gate, perFan, shop };
+}
+
+export function starAttendanceFactor(state: GameState): number {
+  return 1 + starBonuses(state).attendance;
+}
+export function starGateBonus(state: GameState): number {
+  return starBonuses(state).gate;
+}
+export function starShopMultiplier(state: GameState): number {
+  return 1 + starBonuses(state).shop;
+}
+
+/** Tribüne gelen her seyircinin büfe/ürün harcaması — stadyumu doldurmak kazandırır + yıldızlar forma sattırır */
 export function fanSpendingPerFan(state: GameState): number {
   let perFan = 12;
   if (state.stadium?.vip) perFan += 4;
   if ((state.stadium?.design?.roof ?? 'none') !== 'none') perFan += 2;
+  perFan += starBonuses(state).perFan;
   return perFan;
 }
 
-/** İç saha maçı için tahmini seyirci & gelir önizlemesi (UI) */
+/** İç saha maçı için tahmini seyirci & gelir önizlemesi (UI) — yıldızlar dahil */
 export function previewHomeMatch(state: GameState, leaguePosition = 5, weather: 'sunny' | 'rain' = 'sunny') {
   const capacity = stadiumCapacity(state);
   const mult = state.stadium?.ticketMultiplier ?? 1;
   const price = ticketPriceFor(state.stadiumLvl, mult);
-  // Lig pozisyonu ilgiyi belirler (calculateAttendance ile aynı mantık)
   const positivity = Math.max(0.45, Math.min(1.05, 1.15 - leaguePosition * 0.06));
   const love = 0.55 + ((state.fanHappiness ?? 60) / 100) * 0.4;
   const weatherFactor = weather === 'rain' ? 0.82 * weatherShield(state.stadium?.design ?? ({} as StadiumDesign), 'rain') : 1.05;
-  const attendance = Math.max(500, Math.min(capacity, Math.floor(capacity * positivity * love * weatherFactor * demandFactor(mult))));
+  const attendance = Math.max(500, Math.min(capacity, Math.floor(capacity * positivity * love * weatherFactor * demandFactor(mult) * starAttendanceFactor(state))));
   const gate = Math.floor(attendance * price * gateMultiplier(state));
   const catering = Math.floor(attendance * fanSpendingPerFan(state));
   return { capacity, price, attendance, gate, catering, total: gate + catering };

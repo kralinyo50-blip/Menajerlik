@@ -136,8 +136,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
         })}
       </div>
 
-      <div className="px-3 py-2.5 border-t border-slate-700/50 bg-slate-900/60 text-[10px] text-slate-500 text-center">
-        Son güncelleme: {UPDATE_LOG[0]?.date} • Manager Pro Ultimate
+      <div className="px-3 py-2.5 border-t border-slate-700/50 bg-slate-900/60 text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
+        <span>Son güncelleme: {UPDATE_LOG[0]?.date} • Manager Pro Ultimate</span>
+        <span className="w-1 h-1 rounded-full bg-amber-400/60" />
+        <span className="kaan-watermark text-[10px]">Made by Kaan</span>
       </div>
     </aside>
   );
@@ -148,12 +150,13 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
         isAnimating ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      {/* Animated background */}
+      {/* Animated background — premium */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/40" />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-32 -right-32 w-[28rem] h-[28rem] bg-emerald-500/15 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/3 left-1/2 w-72 h-72 bg-amber-500/8 rounded-full blur-3xl" />
+        <div className="absolute -top-32 -right-32 w-[30rem] h-[30rem] bg-emerald-500/18 rounded-full blur-3xl animate-aurora" />
+        <div className="absolute -bottom-40 -left-20 w-[32rem] h-[32rem] bg-cyan-500/12 rounded-full blur-3xl animate-aurora" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-1/3 left-1/2 w-[28rem] h-[28rem] bg-amber-500/10 rounded-full blur-3xl animate-aurora" style={{ animationDelay: '4s' }} />
+        <div className="absolute top-1/2 left-1/3 w-72 h-72 bg-violet-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
         {/* Pitch lines decoration */}
         <div className="absolute inset-0 opacity-[0.04]" style={{
           backgroundImage: 'linear-gradient(rgba(16,185,129,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,.8) 1px, transparent 1px)',
@@ -194,7 +197,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
 
           {/* CENTER — Setup card */}
           <div className="flex items-center justify-center">
-            <div className="w-full max-w-lg bg-slate-800/90 backdrop-blur-xl p-6 sm:p-10 rounded-3xl shadow-2xl border border-slate-700/60 relative overflow-hidden">
+            <div className="w-full max-w-lg bg-slate-800/90 backdrop-blur-xl p-6 sm:p-10 rounded-3xl shadow-2xl border border-slate-700/60 relative overflow-hidden premium-border glass-strong">
               {/* Shine */}
               <div className="pointer-events-none absolute -top-24 -right-24 w-48 h-48 bg-emerald-400/10 rounded-full blur-2xl" />
 
@@ -213,12 +216,20 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
                   MANAGER PRO 2026
                 </h1>
                 <p className="text-slate-400 mt-1.5 text-sm">Ultimate Football Management</p>
+                <div className="mt-2 flex items-center justify-center gap-1.5">
+                  <span className="h-px w-8 bg-gradient-to-r from-transparent to-amber-400/50" />
+                  <span className="kaan-watermark text-[11px] tracking-[0.18em] kaan-glow">MADE BY KAAN</span>
+                  <span className="h-px w-8 bg-gradient-to-l from-transparent to-amber-400/50" />
+                </div>
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   <span className="bg-amber-500/15 text-amber-300 text-[10px] font-bold px-2.5 py-1 rounded-full border border-amber-500/30">
                     ✨ ULTIMATE EDITION
                   </span>
                   <span className="bg-emerald-500/15 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full border border-emerald-500/30">
                     🎮 Oyun İçi Mini Oyunlar
+                  </span>
+                  <span className="bg-cyan-500/15 text-cyan-300 text-[10px] font-bold px-2.5 py-1 rounded-full border border-cyan-500/30">
+                    ☀️ BÜTÜN YAZ BOYUNCA GELİŞTİRİLDİ
                   </span>
                 </div>
               </div>
@@ -282,7 +293,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
                     className={`w-full mt-3 py-3 font-medium rounded-xl border transition-all duration-300 ${
                       hasSave
                         ? 'bg-slate-700/80 hover:bg-slate-600 text-white border-emerald-500/40 shadow-md shadow-emerald-500/10'
-                        : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-700/50'
+                        : 'bg-slate-800/60 backdrop-blur-xl text-slate-400 border-slate-700 hover:bg-slate-700/50'
                     }`}
                   >
                     📂 Kayıtlı Oyunu Yükle
@@ -380,9 +391,13 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
         </div>
       </div>
 
-      {/* Bottom version bar */}
-      <div className="absolute bottom-2 left-0 right-0 text-center text-[10px] text-slate-600 pointer-events-none">
-        Manager Pro 2026 Ultimate • v{CURRENT_VERSION} • localhost
+      {/* Bottom version bar — Made by Kaan */}
+      <div className="absolute bottom-2 left-0 right-0 text-center text-[10px] text-slate-500 pointer-events-none flex items-center justify-center gap-2">
+        <span>Manager Pro 2026 Ultimate • v{CURRENT_VERSION}</span>
+        <span className="w-1 h-1 rounded-full bg-slate-600" />
+        <span className="kaan-watermark text-[10px]">Made by Kaan</span>
+        <span className="w-1 h-1 rounded-full bg-slate-600" />
+        <span className="text-amber-300/70">☀️ Bütün Yaz Boyunca Geliştirildi</span>
       </div>
     </div>
   );

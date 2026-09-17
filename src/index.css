@@ -1,9 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
 @import "tailwindcss";
 
-/* Custom Fonts */
+/* ── Base: premium dark ── */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
+  background: #020617;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Hide scrollbar for tabs */
@@ -25,77 +30,72 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Scrollbar Styling */
+/* ── Premium Scrollbar ── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 999px;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.5);
-  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(16,185,129,0.9), rgba(6,182,212,0.85));
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.7);
+  background: linear-gradient(180deg, rgba(16,185,129,1), rgba(6,182,212,1));
 }
 
 /* Marquee Animation */
 @keyframes marquee {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-50%);
-  }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
-
 .animate-marquee {
   animation: marquee 30s linear infinite;
 }
 
 /* Custom Animations */
 @keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 40px rgba(16, 185, 129, 0.6);
-  }
+  0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(16, 185, 129, 0.6); }
 }
-
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
 /* Gradient Text */
 .text-gradient {
-  background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #8b5cf6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Glass Effect */
+/* Glass Effect - premium */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.glass-strong {
+  background: rgba(15,23,42,0.72);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 /* Card Hover Effects */
 .card-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(16,185,129,0.08);
 }
 
 /* Player Card Drag */
@@ -106,27 +106,17 @@ body {
 
 /* Loading Spinner */
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
-
 .animate-spin-slow {
   animation: spin 3s linear infinite;
 }
 
 /* Toast slide-in */
 @keyframes slide-in-right {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
-
 .animate-slide-in {
   animation: slide-in-right 0.3s ease-out;
 }
@@ -136,7 +126,6 @@ body {
   0%, 100% { background-color: transparent; }
   50% { background-color: rgba(16, 185, 129, 0.15); }
 }
-
 .animate-goal-flash {
   animation: goal-flash 0.6s ease-in-out;
 }
@@ -192,4 +181,78 @@ body {
 }
 .animate-badge-pop {
   animation: badge-pop 1.5s ease-in-out infinite;
+}
+
+/* ── NEW PREMIUM: shimmer & aurora ── */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: shimmer 2.2s ease-in-out infinite;
+}
+
+@keyframes aurora {
+  0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 0.9; }
+  50% { transform: translate(-20px, -12px) rotate(1deg) scale(1.05); opacity: 1; }
+  100% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 0.9; }
+}
+.animate-aurora {
+  animation: aurora 12s ease-in-out infinite;
+}
+
+@keyframes kaan-glow {
+  0%,100% { text-shadow: 0 0 12px rgba(251,191,36,0.35), 0 0 32px rgba(16,185,129,0.25); }
+  50% { text-shadow: 0 0 18px rgba(251,191,36,0.55), 0 0 40px rgba(16,185,129,0.4); }
+}
+.kaan-glow {
+  animation: kaan-glow 3s ease-in-out infinite;
+}
+
+@keyframes border-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* Premium card border gradient */
+.premium-border {
+  position: relative;
+  border-radius: 1rem;
+}
+.premium-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(16,185,129,0.5), rgba(6,182,212,0.4), rgba(139,92,246,0.4));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Made by Kaan watermark */
+.kaan-watermark {
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+  background: linear-gradient(90deg, #fbbf24, #f59e0b, #10b981, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  opacity: 0.95;
+}
+
+/* Selection */
+::selection {
+  background: rgba(16,185,129,0.28);
 }

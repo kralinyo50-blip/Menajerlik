@@ -187,6 +187,8 @@ export interface StadiumBuildOptions {
   sponsorText?: string;
   /** Gece modu — projektörler yanar */
   night?: boolean;
+  /** Yağmur yağıyor ve çatı korumuyor → zemin ıslak */
+  wet?: boolean;
 }
 
 export interface StadiumSceneBundle {
@@ -224,7 +226,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   /* ── Zemin (dış alan) ── */
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(300, 260),
-    new THREE.MeshStandardMaterial({ color: 0x6b7585, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: opts.night ? 0x3d4550 : 0x6b7585, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.06;
@@ -234,7 +236,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   /* ── Saha çevresi (apron) ── */
   const apron = new THREE.Mesh(
     new THREE.PlaneGeometry(PITCH_L + MARGIN * 2, PITCH_W + MARGIN * 2),
-    new THREE.MeshStandardMaterial({ color: 0x5c7a44, roughness: 0.98 })
+    new THREE.MeshStandardMaterial({ color: opts.night ? 0x3f5a32 : 0x5c7a44, roughness: 0.98 })
   );
   apron.rotation.x = -Math.PI / 2;
   apron.position.y = 0;
@@ -243,7 +245,13 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
 
   /* ── Çim ── */
   const pitchTex = pitchTexture(design, opts.logo ?? '⚽');
-  const pitchMat = new THREE.MeshStandardMaterial({ color: pitchTex ? 0xffffff : 0x37994a, roughness: 0.95 });
+  const pitchMat = new THREE.MeshStandardMaterial({
+    color: pitchTex ? 0xffffff : 0x37994a,
+    roughness: opts.wet ? 0.52 : 0.95,
+    metalness: opts.wet ? 0.08 : 0.0,
+    emissive: opts.wet ? new THREE.Color(0x1a3a25) : new THREE.Color(0x000000),
+    emissiveIntensity: opts.wet ? (opts.night ? 0.22 : 0.08) : 0,
+  });
   if (pitchTex) pitchMat.map = pitchTex;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(PITCH_L, PITCH_W), pitchMat);
   pitch.userData.previewColor = design.pitchPattern === 'stripes' ? 0x349646 : design.pitchPattern === 'rings' ? 0x2f9e44 : 0x3aa04e;
@@ -391,7 +399,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   const screenMat = new THREE.MeshStandardMaterial({
     color: 0x0b1220,
     emissive: new THREE.Color(0x2dd4bf),
-    emissiveIntensity: opts.night ? 1.5 : 0.7,
+    emissiveIntensity: opts.night ? 0.9 : 0.7,
     roughness: 0.25
   });
   const screen = new THREE.Mesh(new THREE.BoxGeometry(15.5, 6.2, 0.35), screenMat);
@@ -416,7 +424,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   const ledMat = new THREE.MeshStandardMaterial({
     color: led ? 0xffffff : 0x111827,
     emissive: new THREE.Color(design.accentColor),
-    emissiveIntensity: opts.night ? 1.1 : 0.45,
+    emissiveIntensity: opts.night ? 0.65 : 0.45,
     side: THREE.DoubleSide
   });
   if (led) {
@@ -464,7 +472,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     const lampMat = new THREE.MeshStandardMaterial({
       color: 0xfff6cc,
       emissive: new THREE.Color(0xfff2b0),
-      emissiveIntensity: opts.night ? 1.6 : 0.25,
+      emissiveIntensity: opts.night ? 0.85 : 0.25,
       roughness: 0.2
     });
     const cx = PITCH_L / 2 + MARGIN + depth * 0.75;
@@ -490,9 +498,10 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   }
 
   /* ── Işıklandırma ── */
-  const hemi = new THREE.HemisphereLight(opts.night ? 0x24365c : 0xbcd9ff, opts.night ? 0x0b1020 : 0x3f5233, opts.night ? 0.75 : 0.85);
+  const hemi = new THREE.HemisphereLight(opts.night ? 0x1a2540 : 0xbcd9ff, opts.night ? 0x0d1328 : 0x3f5233, opts.night ? 0.52 : 0.85);
   group.add(hemi);
-  const sun = new THREE.DirectionalLight(opts.night ? 0xdfe9ff : 0xfff4d6, opts.night ? 0.75 : 1.35);
+  // Gece güneşi kısık ve soğuk — bembeyaz yıkamayı engeller
+  const sun = new THREE.DirectionalLight(opts.night ? 0x8da0c2 : 0xfff4d6, opts.night ? 0.32 : 1.32);
   sun.position.set(90, 130, 70);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -508,7 +517,8 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   if (opts.night && design.floodlights) {
     const lightTargets: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
     lightTargets.forEach(([lx, lz]) => {
-      const spot = new THREE.PointLight(0xfff1c2, 180000, 300, 2);
+      // Önceki 180000 değeri sahayı bembeyaz yapıyordu — düşür, mesafeyi kaptır
+      const spot = new THREE.PointLight(0xffe9a8, 42000, 260, 1.85);
       spot.position.set(lx * (PITCH_L / 2 + MARGIN + depth * 0.7), height + 16, lz * (PITCH_W / 2 + MARGIN + depth * 0.7));
       group.add(spot);
     });

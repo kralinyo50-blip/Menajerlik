@@ -25,6 +25,9 @@ export const TransferTab: React.FC<TransferTabProps> = ({
   const [negotiationState, setNegotiationState] = useState<'none' | 'negotiating' | 'success' | 'failed'>('none');
   const [negotiatedPrice, setNegotiatedPrice] = useState<number>(0);
   const [negotiationAttempts, setNegotiationAttempts] = useState<number>(0);
+  const [wageMult, setWageMult] = useState(1);
+  const [contractYears, setContractYears] = useState(3);
+  const [promise, setPromise] = useState<'starter' | 'rotation' | 'bench'>('rotation');
 
   const market = gameState.marketList || [];
   const loans = gameState.loanList || [];
@@ -44,36 +47,58 @@ export const TransferTab: React.FC<TransferTabProps> = ({
     setNegotiationState('none');
     setNegotiatedPrice(player.value);
     setNegotiationAttempts(0);
+    // oyuncunun beklentisi: yüksek OVR → starter ister, genç → rotation kabul eder
+    setWageMult(1);
+    setContractYears(player.age < 25 ? 4 : player.age > 30 ? 2 : 3);
+    setPromise(player.ovr >= 78 ? 'starter' : player.ovr >= 72 ? 'rotation' : 'bench');
   };
+
+  const appealScore = (() => {
+    if (!selectedPlayer) return 0;
+    const wageAppeal = wageMult >= 1.25 ? 30 : wageMult >= 1 ? 20 : wageMult >= 0.9 ? 10 : 0;
+    const contractAppeal = contractYears >= 4 ? 22 : contractYears >= 3 ? 18 : contractYears >= 2 ? 10 : 4;
+    const promiseAppeal = promise === 'starter' ? 26 : promise === 'rotation' ? 16 : 6;
+    const skillBonus = (gameState.skills?.negotiation ?? 0) * 4;
+    const fameBonus = Math.round(fameNegotiationBonus(gameState) * 100 * 0.25);
+    const scoutBonus = gameState.scoutLvl * 2;
+    const total = wageAppeal + contractAppeal + promiseAppeal + skillBonus + fameBonus + scoutBonus;
+    return Math.min(100, total);
+  })();
+  const needsAppeal = 68;
 
   const handleNegotiate = () => {
     if (!selectedPlayer || negotiationAttempts >= 3) return;
     setNegotiationState('negotiating');
     setNegotiationAttempts(prev => prev + 1);
 
-    const baseChance = 0.5 - (negotiationAttempts * 0.15) + (gameState.scoutLvl * 0.05)
-      + (gameState.skills?.negotiation ?? 0) * 0.04
-      + fameNegotiationBonus(gameState);
-    const success = Math.random() < baseChance;
+    const baseChance = 0.22 + (appealScore / 100) * 0.58 - negotiationAttempts * 0.12;
+    const success = Math.random() < Math.max(0.08, Math.min(0.92, baseChance));
 
     setTimeout(() => {
       if (success) {
-        const discountPercent = 5 + Math.floor(Math.random() * 16);
-        setNegotiatedPrice(Math.floor(negotiatedPrice * (1 - discountPercent / 100)));
+        // ikna oldu → maaş ve sözle fiyatı düşür
+        const discountBase = 6 + Math.floor((appealScore / 100) * 14); // 6-20%
+        const wagePenalty = wageMult > 1 ? Math.round((wageMult - 1) * 8) : 0; // yüksek maaş verdiysen indirim azalır
+        const discountPercent = Math.max(2, discountBase - wagePenalty);
+        setNegotiatedPrice(prev => Math.max(Math.floor(selectedPlayer!.value * 0.62), Math.floor(prev * (1 - discountPercent / 100))));
         setNegotiationState('success');
       } else {
-        if (Math.random() < 0.3) {
-          const increasePercent = 5 + Math.floor(Math.random() * 10);
-          setNegotiatedPrice(Math.floor(negotiatedPrice * (1 + increasePercent / 100)));
+        if (Math.random() < 0.38) {
+          const increasePercent = 4 + Math.floor(Math.random() * 9);
+          setNegotiatedPrice(prev => Math.floor(prev * (1 + increasePercent / 100)));
         }
         setNegotiationState('failed');
       }
-    }, 900);
+    }, 850);
   };
 
   const handleBuy = () => {
     if (selectedPlayer && gameState.budget >= negotiatedPrice) {
-      onBuyPlayer({ ...selectedPlayer, value: negotiatedPrice }, negotiatedPrice);
+      const finalWage = Math.round(selectedPlayer.wage * wageMult);
+      const finalMorale = promise === 'starter' ? 85 : promise === 'rotation' ? 74 : 62;
+      // yıldıza yedek sözü verildiyse moral düşük başlar
+      const moraleAdj = selectedPlayer.ovr >= 78 && promise === 'bench' ? -12 : selectedPlayer.ovr < 72 && promise === 'bench' ? 0 : 0;
+      onBuyPlayer({ ...selectedPlayer, value: negotiatedPrice, wage: finalWage, contract: contractYears, morale: Math.max(45, finalMorale + moraleAdj) } as Player, negotiatedPrice);
       setSelectedPlayer(null);
       setNegotiationState('none');
     }
@@ -106,7 +131,10 @@ export const TransferTab: React.FC<TransferTabProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white">Transfer Pazarı</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-black tracking-tight text-white">Transfer Pazarı</h2>
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 kaan-watermark">MADE BY KAAN</span>
+          </div>
           <p className="text-slate-400 text-sm">
             Scout Seviyesi: {gameState.scoutLvl} • Pazarlık: %{Math.round(50 + gameState.scoutLvl * 5 + (gameState.skills?.negotiation ?? 0) * 4 + fameNegotiationBonus(gameState) * 100)}+
             {loanCount > 0 && <span className="text-cyan-300"> • {loanCount} kiralık oyuncun var</span>}
@@ -219,16 +247,16 @@ export const TransferTab: React.FC<TransferTabProps> = ({
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-emerald-400 font-medium">{ROLE_NAMES[player.role]}</div>
-                      <div className="text-xs text-slate-400">{player.age} yaş</div>
+                      <div className="text-xs text-slate-400 leading-relaxed">{player.age} yaş</div>
                     </div>
                   </div>
 
-                  <div className="font-bold text-white mb-1 truncate">{player.name.replace(/^[^\w]+\s/, '')}</div>
+                  <div className="font-bold text-white mb-1 truncate flex items-center gap-1.5"><span title={player.country}>{player.flag ?? '🇹🇷'}</span> {player.name.replace(/^[^\w]+\s/, '')}</div>
                   {tier && (
                     <div className="text-[10px] text-slate-400 mb-2 italic">{TIER_INFO[tier].label}</div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                  <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
                     <div className="bg-slate-700/30 px-2 py-1 rounded">
                       <span className="text-slate-400">Pot:</span>
                       <span className="text-emerald-400 ml-1 font-bold">{player.potential}</span>
@@ -238,6 +266,14 @@ export const TransferTab: React.FC<TransferTabProps> = ({
                       <span className="text-red-400 ml-1">{formatMoney(player.wage)}/h</span>
                     </div>
                   </div>
+                  {tier && (
+                    <div className="bg-gradient-to-r from-amber-500/12 to-purple-500/12 border border-amber-500/20 rounded-lg px-2 py-1.5 mb-2 text-[10px] leading-tight">
+                      <div className="text-amber-200 font-bold flex items-center gap-1">
+                        👕 Forma %{tier === 'world' ? 22 : tier === 'star' ? 14 : tier === 'turkish' ? 16 : 10} • 🏟️ Tribün +%{tier === 'world' ? 11 : tier === 'star' ? 7 : tier === 'turkish' ? 8 : 4} • ⭐ +{tier === 'world' ? 14 : tier === 'star' ? 9 : tier === 'turkish' ? 10 : 7} ün
+                      </div>
+                      <div className="text-slate-400">{tier === 'world' ? 'Dünya yıldızı her maçı doldurur' : tier === 'turkish' ? 'Milli yıldız taraftarı coşturur' : tier === 'star' ? 'Yıldız gişeyi artırır' : 'Genç yıldız geleceğe yatırım'}</div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between">
                     <div className="text-amber-400 font-black">{formatMoney(player.value)}</div>
@@ -274,7 +310,7 @@ export const TransferTab: React.FC<TransferTabProps> = ({
                       {target.player.ovr}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-white font-bold truncate">{target.player.name.replace(/^[^\w]+\s/, '')}</div>
+                      <div className="text-white font-bold truncate flex items-center gap-1.5"><span title={target.player.country}>{target.player.flag ?? '🇹🇷'}</span> {target.player.name.replace(/^[^\w]+\s/, '')}</div>
                       <div className="text-[11px] text-slate-400">
                         {target.fromLogo} {target.fromClub} • {ROLE_NAMES[target.player.role]} • {target.player.age} yaş
                       </div>
@@ -326,8 +362,8 @@ export const TransferTab: React.FC<TransferTabProps> = ({
       {selectedLoan && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setSelectedLoan(null)}>
           <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-cyan-500/40" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-cyan-300 mb-1">Kiralık Anlaşması</h3>
-            <div className="text-white font-bold text-lg">{selectedLoan.player.name.replace(/^[^\w]+\s/, '')}</div>
+            <h3 className="text-xl font-black tracking-tight text-cyan-300 mb-1">Kiralık Anlaşması</h3>
+            <div className="text-white font-bold text-lg"><span title={selectedLoan.player.country}>{selectedLoan.player.flag ?? '🇹🇷'}</span> {selectedLoan.player.name.replace(/^[^\w]+\s/, '')}</div>
             <div className="text-slate-400 text-sm mb-4">
               {selectedLoan.fromLogo} {selectedLoan.fromClub} • {ROLE_NAMES[selectedLoan.player.role]} • OVR {selectedLoan.player.ovr}
             </div>
@@ -387,7 +423,7 @@ export const TransferTab: React.FC<TransferTabProps> = ({
                   {selectedPlayer.ovr}
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-white">{selectedPlayer.name.replace(/^[^\w]+\s/, '')}</h3>
+                  <h3 className="text-2xl font-black tracking-tight text-white flex items-center gap-2"><span title={selectedPlayer.country}>{selectedPlayer.flag ?? '🇹🇷'}</span> {selectedPlayer.name.replace(/^[^\w]+\s/, '')}</h3>
                   <div className="text-emerald-400 font-medium">{ROLE_NAMES[selectedPlayer.role]} • {selectedPlayer.age} yaş</div>
                   <div className="text-red-400 text-sm">Maaş: {formatMoney(selectedPlayer.wage)}/hafta</div>
                 </div>
@@ -399,9 +435,10 @@ export const TransferTab: React.FC<TransferTabProps> = ({
               <div className="flex justify-between items-center">
                 <div>
                   <div className="text-sm text-slate-400">Piyasa Değeri</div>
-                  <div className={`text-xl font-bold ${getDiscountPercent() > 0 ? 'text-slate-500 line-through' : 'text-amber-400'}`}>
+                  <div className={`text-xl font-black tracking-tight ${getDiscountPercent() > 0 ? 'text-slate-500 line-through' : 'text-amber-400'}`}>
                     {formatMoney(selectedPlayer.value)}
                   </div>
+                  <div className="text-[10px] text-slate-500">{selectedPlayer.age < 26 ? 'Genç — uzun sözleşme sever' : selectedPlayer.ovr >= 78 ? 'Yıldız — ilk 11 ister' : 'Rotasyona razı'}</div>
                 </div>
                 {getDiscountPercent() !== 0 && (
                   <div className="text-right">
@@ -417,19 +454,71 @@ export const TransferTab: React.FC<TransferTabProps> = ({
               </div>
             </div>
 
+            {/* İkna barları — maaş + süre + söz (yeni!) */}
+            <div className="space-y-3 mb-4">
+              <div>
+                <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                  <span>💰 Maaş Teklifi: {formatMoney(Math.round(selectedPlayer.wage * wageMult))}/hafta</span>
+                  <span className={wageMult >= 1.2 ? 'text-emerald-400' : wageMult >= 1 ? 'text-slate-300' : 'text-orange-400'}>{wageMult}x • {wageMult >= 1.2 ? '+30' : wageMult >= 1 ? '+20' : wageMult >= 0.9 ? '+10' : '+0'}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {[0.9, 1, 1.2, 1.25].map(m => (
+                    <button key={m} onClick={() => setWageMult(m)} className={`py-1.5 rounded-lg text-xs font-bold border ${wageMult === m ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-slate-700/40 text-slate-300 border-slate-600 hover:bg-slate-600/50'}`}>{m}x</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                  <span>📅 Sözleşme: {contractYears} yıl</span>
+                  <span>{contractYears >= 4 ? 'uzun +22' : contractYears >= 3 ? '+18' : contractYears >= 2 ? '+10' : '+4'}</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {[1, 2, 3, 4, 5].map(y => (
+                    <button key={y} onClick={() => setContractYears(y)} className={`py-1.5 rounded-lg text-xs font-bold border ${contractYears === y ? 'bg-blue-500 text-white border-blue-600' : 'bg-slate-700/40 text-slate-300 border-slate-600 hover:bg-slate-600/50'}`}>{y}Y</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400 mb-1">🤝 Rol Sözü</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['starter', 'rotation', 'bench'] as const).map(p => (
+                    <button key={p} onClick={() => setPromise(p)} className={`py-1.5 rounded-lg text-xs font-bold border ${promise === p ? 'bg-amber-500 text-black border-amber-600' : 'bg-slate-700/40 text-slate-300 border-slate-600 hover:bg-slate-600/50'}`}>{p === 'starter' ? 'İlk 11 ⭐ +26' : p === 'rotation' ? 'Rotasyon 🔄 +16' : 'Yedek 🪑 +6'}</button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">{selectedPlayer.ovr >= 78 && promise !== 'starter' ? '⚠️ Bu yıldız ilk 11 istiyor, ikna zor!' : selectedPlayer.ovr < 72 && promise === 'bench' ? '💡 Genç, yedeğe razı — maaşla telafi et' : 'Sözü tutamazsan moral düşer'}</div>
+              </div>
+              <div className="bg-slate-900/60 rounded-xl p-2.5 border border-slate-700">
+                <div className="flex justify-between text-[11px] mb-1">
+                  <span className="text-slate-400">İkna Çubuğu</span>
+                  <span className={appealScore >= needsAppeal ? 'text-emerald-400 font-bold' : 'text-amber-400'}>{appealScore}/100 {appealScore >= needsAppeal ? '✓ ikna olur' : `— %${needsAppeal - appealScore} eksik`}</span>
+                </div>
+                <div className="h-2.5 bg-slate-700 rounded-full overflow-hidden flex relative">
+                  <div className="absolute left-[68%] top-0 bottom-0 w-[2px] bg-white/80" title="eşik %68" />
+                  <div className={`h-full ${appealScore >= needsAppeal ? 'bg-emerald-500' : 'bg-amber-500'} transition-all`} style={{ width: `${appealScore}%` }} />
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Yetenek +{(gameState.skills?.negotiation ?? 0) * 4} • Ün +{Math.round(fameNegotiationBonus(gameState) * 100 * 0.25)} • Scout +{gameState.scoutLvl * 2} • bara göre şans %{Math.round(22 + (appealScore / 100) * 58)}</div>
+              </div>
+              {selectedPlayer.starTier && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 text-[11px]">
+                  <div className="text-amber-200 font-bold">👕 Forma +${Math.round(selectedPlayer.value * (selectedPlayer.starTier === 'world' ? 0.22 : selectedPlayer.starTier === 'star' ? 0.14 : selectedPlayer.starTier === 'turkish' ? 0.16 : 0.10)).toLocaleString()} • 🏟️ Tribün +{selectedPlayer.starTier === 'world' ? '11%' : selectedPlayer.starTier === 'star' ? '7%' : selectedPlayer.starTier === 'turkish' ? '8%' : '4%'} • ⭐ Ün +{selectedPlayer.starTier === 'world' ? 14 : selectedPlayer.starTier === 'star' ? 9 : selectedPlayer.starTier === 'turkish' ? 10 : 7}</div>
+                  <div className="text-[10px] text-slate-400">Bu oyuncu gelirse her iç saha maçı ve her 5 haftada bir dükkan geliri artar — yıldız kendisini amorti eder!</div>
+                </div>
+              )}
+            </div>
+
             {negotiationState === 'negotiating' && (
               <div className="bg-blue-500/20 rounded-xl p-4 mb-4 text-center animate-pulse">
-                <span className="text-blue-400">🤝 Pazarlık yapılıyor...</span>
+                <span className="text-blue-400">🤝 Pazarlık yapılıyor... %{Math.round(22 + (appealScore / 100) * 58)} şans</span>
               </div>
             )}
             {negotiationState === 'success' && (
               <div className="bg-emerald-500/20 rounded-xl p-4 mb-4 text-center">
-                <span className="text-emerald-400">✅ Pazarlık başarılı! Fiyat düştü!</span>
+                <span className="text-emerald-400">✅ İkna oldu! Fiyat düştü — sözleşme {contractYears} yıl, {promise} sözüyle imzalıyor!</span>
               </div>
             )}
             {negotiationState === 'failed' && (
               <div className="bg-red-500/20 rounded-xl p-4 mb-4 text-center">
-                <span className="text-red-400">❌ Satıcı teklifi reddetti!</span>
+                <span className="text-red-400">❌ Menajeri reddetti! Maaşı veya sözü yükselt — %{needsAppeal - appealScore > 0 ? `${needsAppeal - appealScore} eksik` : 'şanssızlık'}</span>
               </div>
             )}
 

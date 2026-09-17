@@ -17,6 +17,7 @@ import { OfficeTab } from './components/tabs/OfficeTab';
 import { CareerTab } from './components/tabs/CareerTab';
 import { StadiumTab } from './components/tabs/StadiumTab';
 import { LifeTab } from './components/tabs/LifeTab';
+import { SocialTab } from './components/tabs/SocialTab';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -38,14 +39,15 @@ import { BOT_NAMES_BY_LEVEL, FORMATIONS } from './data/constants';
 import { calculateAttendance, generateFixture } from './utils/fixture';
 import { assignKeyPlayers, applyLoanGrowth, generateLoanList } from './utils/loan';
 import { playerValue } from './utils/pricing';
-import { demandFactor, weatherShield } from './utils/stadium';
+import { demandFactor, weatherShield, starAttendanceFactor } from './utils/stadium';
 import { StadiumDesign } from './types/game';
 import { createSeasonMissions, createWeeklyMissions } from './utils/missions';
 import { exportSaveToFile, importSaveFromFile, writeSlot, clearSlot } from './utils/save';
+import { randomCountry } from './data/countries';
 import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
-  | 'office' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
+  | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
   | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
@@ -101,6 +103,8 @@ function App() {
     spendSkillPoint,
     doLifeActivity,
     buyLifeItem,
+    updateLifeAppearance,
+    setLifeLowPerf,
     setStadiumDesign,
     buyStadiumCosmetic,
     buyCapacityPackage,
@@ -114,7 +118,10 @@ function App() {
     recallLoan,
     claimDailyReward,
     dismissDailyReward,
-    autoPickBestEleven
+    autoPickBestEleven,
+    addSocialPost,
+    likeSocialPost,
+    commentOnPost
   } = useGameState();
 
   const [activeTab, setActiveTab] = useState<TabId>('office');
@@ -263,7 +270,8 @@ function App() {
           isCup: isCupMatch,
           capacityBonus: gameState.stadium?.capacityBonus ?? 0,
           demandFactor: demandFactor(gameState.stadium?.ticketMultiplier ?? 1),
-          weatherShield: weatherShield(gameState.stadium?.design ?? ({} as StadiumDesign), gameState.weather)
+          weatherShield: weatherShield(gameState.stadium?.design ?? ({} as StadiumDesign), gameState.weather),
+          starFactor: starAttendanceFactor(gameState)
         })
       : 0;
 
@@ -568,11 +576,13 @@ function App() {
         const role = ['STP', 'SB', 'OS', 'FW', 'KL'][bench.length % 5];
         const id = Date.now() + Math.floor(Math.random() * 100000);
         const ovr = 62 + Math.floor(Math.random() * 12) + (5 - newLeagueLevel) * 3;
+        const rcAltyapi = randomCountry();
         bench = [...bench, {
           id, name: `Altyapı Oyuncusu`, ovr, role: role as Player['role'], energy: 100,
           morale: 70, goals: 0, assists: 0, injured: false, injuryWeeks: 0, age: 19,
           potential: Math.min(99, ovr + 12), value: ovr * 15000, wage: ovr * 350,
-          contract: 3, yellowCards: 0, redCard: false, suspension: 0, matchesPlayed: 0, form: 5
+          contract: 3, yellowCards: 0, redCard: false, suspension: 0, matchesPlayed: 0, form: 5,
+          country: rcAltyapi.country, flag: rcAltyapi.flag
         }];
       }
       // İlk 11 boşsa yedekten tamamla
@@ -804,9 +814,12 @@ function App() {
   const pendingPoints = gameState.skillPoints || 0;
   const activeMissions = (gameState.missions || []).filter(m => !m.completed).length;
   const careerBadge = pendingPoints + (activeMissions > 0 ? 1 : 0);
+  const socialCount = (gameState.socialFeed || []).filter(p=>!p.isUser).length;
+  const socialBadge = socialCount > 0 ? Math.min(9, Math.ceil(socialCount/4)) : 0;
 
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
+    { id: 'social', label: 'Sosyal', icon: '💬', badge: socialBadge },
     { id: 'career', label: 'Kariyer', icon: '🧠', badge: careerBadge },
     { id: 'life', label: 'Hayat', icon: '🚶', badge: lifeSlots > 0 ? lifeSlots : 0 },
     { id: 'stadium', label: 'Stadyum', icon: '🏟️' },
@@ -824,7 +837,14 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.07),transparent_60%),radial-gradient(ellipse_at_bottom_right,_rgba(6,182,212,0.06),transparent_60%),radial-gradient(ellipse_at_bottom_left,_rgba(139,92,246,0.05),transparent_60%),radial-gradient(ellipse_at_center,_rgba(251,191,36,0.03),transparent_70%)] pointer-events-none" />
+      <div className="absolute inset-0 opacity-[0.025]" style={{backgroundImage:"url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJhIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1Ii8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2EpIiBvcGFjaXR5PSIuMDUiLz48L3N2Zz4=')"}} />
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-28 -right-28 w-[36rem] h-[36rem] bg-emerald-500/[0.06] rounded-full blur-3xl animate-aurora" />
+        <div className="absolute -bottom-32 -left-20 w-[32rem] h-[32rem] bg-cyan-500/[0.05] rounded-full blur-3xl animate-aurora" style={{animationDelay:'3s'}} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-[48rem] h-[48rem] bg-violet-500/[0.03] rounded-full blur-3xl" />
+      </div>
       {showTutorial && (
         <Tutorial
           onComplete={() => { completeTutorial(); setShowTutorial(false); showToast('Tutorial tamamlandı! Bol şans ⚽'); }}
@@ -944,10 +964,15 @@ function App() {
 
             <button
               onClick={() => { setSeasonSummary(null); sfx.coin(); }}
-              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-bold rounded-xl"
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/20 shimmer"
             >
               Yeni Sezona Başla ⚽
             </button>
+            <div className="text-center mt-3 text-[10px] text-slate-500 flex items-center justify-center gap-1.5">
+              <span>☀️ Bütün Yaz Boyunca Geliştirildi</span>
+              <span className="w-1 h-1 rounded-full bg-slate-600" />
+              <span className="kaan-watermark text-[10px]">Made by Kaan</span>
+            </div>
           </div>
         </div>
       )}
@@ -1010,21 +1035,21 @@ function App() {
         </div>
 
         <div className="flex-1 flex flex-col p-2 lg:p-4 pl-0 min-w-0 overflow-hidden">
-          <div className="flex gap-1 lg:gap-2 mb-2 lg:mb-4 overflow-x-auto pb-1 flex-shrink-0 scrollbar-hide">
+          <div className="flex gap-1.5 mb-3 lg:mb-4 overflow-x-auto pb-1 flex-shrink-0 scrollbar-hide bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative px-2 lg:px-4 py-2 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-medium whitespace-nowrap transition-all flex items-center gap-1 lg:gap-2 ${
+                className={`relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 ${
                   activeTab === tab.id
-                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                    : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50 hover:text-white'
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
                 }`}
               >
-                <span>{tab.icon}</span>
-                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="text-base">{tab.icon}</span>
+                <span className="hidden sm:inline tracking-wide">{tab.label}</span>
                 {!!tab.badge && tab.badge > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                  <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600':'bg-red-500 text-white'}`}>
                     {tab.badge > 9 ? '9+' : tab.badge}
                   </span>
                 )}
@@ -1032,7 +1057,14 @@ function App() {
             ))}
           </div>
 
-          <div className="flex-1 bg-slate-800/30 rounded-xl lg:rounded-2xl p-3 lg:p-6 border border-slate-700/30 overflow-hidden">
+          <div className="flex-1 bg-slate-800/45 backdrop-blur-xl rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden relative">
+            <div className="pointer-events-none absolute top-3 right-4 hidden lg:flex items-center gap-1.5 opacity-[0.35] hover:opacity-60 transition-opacity">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="kaan-watermark text-[10px] tracking-[0.18em]">MADE BY KAAN</span>
+            </div>
+            {activeTab === 'social' && (
+              <SocialTab gameState={gameState} onCreatePost={addSocialPost} onLikePost={likeSocialPost} onAddComment={commentOnPost} />
+            )}
             {activeTab === 'office' && (
               <OfficeTab
                 gameState={gameState}
@@ -1056,6 +1088,8 @@ function App() {
                 gameState={gameState}
                 onDoActivity={doLifeActivity}
                 onBuyItem={buyLifeItem}
+                onUpdateAppearance={updateLifeAppearance}
+                onToggleLowPerf={setLifeLowPerf}
               />
             )}
             {activeTab === 'stadium' && (
@@ -1118,10 +1152,19 @@ function App() {
         </div>
       </div>
 
+      <div className="fixed bottom-8 left-0 right-0 pointer-events-none hidden lg:flex justify-center z-30 opacity-40">
+        <div className="bg-slate-900/70 backdrop-blur border border-slate-700/50 px-3 py-1 rounded-full text-[10px] text-slate-400 flex items-center gap-2 shadow-lg">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Manager Pro 2026 Ultimate</span>
+          <span className="w-1 h-1 rounded-full bg-slate-600" />
+          <span className="kaan-watermark text-[10px]">MADE BY KAAN</span>
+          <span className="w-1 h-1 rounded-full bg-slate-600" />
+          <span className="text-amber-300/70">☀️ Bütün Yaz Boyunca Geliştirildi</span>
+        </div>
+      </div>
       <NewsTicker news={gameState.news} />
     </div>
   );
 }
-
 
 export default App;

@@ -18,7 +18,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, onNew
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-[80] flex items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-xl bg-gradient-to-b from-red-900/60 to-slate-900 rounded-3xl border border-red-500/40 p-6 my-auto">
+      <div className="w-full max-w-xl bg-gradient-to-b from-red-900/60 to-slate-900 rounded-3xl border border-red-500/40 p-6 my-auto premium-border shadow-2xl">
         <div className="text-center mb-6">
           <div className="text-6xl mb-3">📉</div>
           <h1 className="text-3xl font-black text-red-400">KOVULDUN!</h1>
@@ -94,7 +94,7 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, onNew
         <div className="flex gap-3 justify-center flex-wrap">
           <button
             onClick={onNewCareer}
-            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-bold rounded-xl transition-all"
+            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 shimmer"
           >
             🚀 Yeni Kariyer Başlat
           </button>
@@ -104,6 +104,11 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, onNew
           >
             💾 Kayıtlı Oyuna Dön
           </button>
+        </div>
+        <div className="text-center mt-5 text-[10px] text-slate-500 flex items-center justify-center gap-1.5 opacity-60">
+          <span className="kaan-watermark text-[10px]">Made by Kaan</span>
+          <span className="w-1 h-1 rounded-full bg-slate-600" />
+          <span>☀️ Bütün Yaz Boyunca Geliştirildi</span>
         </div>
       </div>
     </div>

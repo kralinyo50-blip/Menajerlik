@@ -108,14 +108,14 @@ export const CupTab: React.FC<CupTabProps> = ({ gameState, onPlayCupMatch }) => 
                       {isCurrent && (
                         <button
                           onClick={onPlayCupMatch}
-                          className="ml-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-bold rounded-xl transition-all shadow-lg shadow-amber-500/30"
+                          className="ml-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/30"
                         >
                           ⚽ Oyna
                         </button>
                       )}
 
                       {isPlayed && (
-                        <div className={`ml-6 px-4 py-2 rounded-xl font-bold ${
+                        <div className={`ml-6 px-4 py-2 rounded-2xl font-bold ${
                           isWon 
                             ? 'bg-emerald-500/20 text-emerald-400' 
                             : 'bg-red-500/20 text-red-400'
@@ -125,7 +125,7 @@ export const CupTab: React.FC<CupTabProps> = ({ gameState, onPlayCupMatch }) => 
                       )}
 
                       {isLocked && !isPlayed && (
-                        <div className="ml-6 px-4 py-2 bg-slate-700/50 rounded-xl text-slate-500 font-medium">
+                        <div className="ml-6 px-4 py-2 bg-slate-700/50 rounded-2xl text-slate-500 font-medium">
                           🔒 Kilitli
                         </div>
                       )}
@@ -149,7 +149,7 @@ export const CupTab: React.FC<CupTabProps> = ({ gameState, onPlayCupMatch }) => 
         {/* Prize Info */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
           {rounds.map((round, i) => (
-            <div key={i} className="bg-slate-800/50 rounded-xl p-4 text-center border border-slate-700/50">
+            <div key={i} className="bg-slate-800/50 rounded-2xl p-4 text-center border border-slate-700/50">
               <div className="text-sm text-slate-400 mb-1">{round.name} Ödülü</div>
               <div className="text-lg font-bold text-amber-400">
                 ${((i + 1) * 150000).toLocaleString()}

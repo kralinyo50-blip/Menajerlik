@@ -15,6 +15,10 @@ interface Stadium3DProps {
   /** Sahne yüksekliği (px) */
   height?: number;
   className?: string;
+  /** Tribün doluluğu 0-100 — bayrak dalgalanma hızını etkiler */
+  crowdIntensity?: number;
+  /** Yağmur yağıyor ve çatı korumuyor → zemin ıslak / parlak */
+  wet?: boolean;
 }
 
 /**
@@ -22,15 +26,19 @@ interface Stadium3DProps {
  * Kendi orbit kontrolü: sürükle = döndür, tekerlek/pinch = yakınlaştır, çift tık = sıfırla.
  */
 export const Stadium3D: React.FC<Stadium3DProps> = ({
-  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = ''
+  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
   const nightRef = useRef(night);
   const cinematicRef = useRef(cinematic);
+  const crowdRef = useRef(crowdIntensity);
+  const wetRef = useRef(wet);
   nightRef.current = night;
   cinematicRef.current = cinematic;
+  crowdRef.current = crowdIntensity;
+  wetRef.current = wet;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -48,7 +56,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.setSize(mount.clientWidth || 640, height, false);
     renderer.shadowMap.enabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = nightRef.current ? 1.15 : 1.0;
+    // Geceyi bembeyaz yapmaması için pozlamayı kıs — gece daha loş, gündüz canlı
+    renderer.toneMappingExposure = nightRef.current ? 0.88 : 1.02;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.width = '100%';
@@ -67,9 +76,10 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     const targetY = Math.max(6, rows * 1.1);
 
     const scene = new THREE.Scene();
-    const skyColor = nightRef.current ? 0x060a18 : 0x7fb2e5;
+    const skyColor = nightRef.current ? 0x0a102a : 0x7fb2e5;
     scene.background = new THREE.Color(skyColor);
-    scene.fog = new THREE.Fog(skyColor, baseRadius * 1.5, baseRadius * 4);
+    // Gece sisi daha koyu ve yakın — bembeyaz pus olmayacak
+    scene.fog = new THREE.Fog(skyColor, baseRadius * 1.35, baseRadius * 3.4);
 
     const camera = new THREE.PerspectiveCamera(46, (mount.clientWidth || 640) / height, 0.6, baseRadius * 7);
 
@@ -143,7 +153,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
 
     /* ── Sahne ── */
-    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, night: nightRef.current });
+    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, night: nightRef.current, wet: wetRef.current });
     scene.add(bundle.group);
     setReady(true);
 
@@ -169,20 +179,25 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
         applyCamera();
       }
 
-      // Bayraklar dalgalanır
+      // Bayraklar dalgalanır — doluluk arttıkça hızlı ve geniş dalga (coşku)
+      const intensity = Math.max(0, Math.min(100, crowdRef.current)) / 100; // 0..1
+      const flagSpeed = 0.7 + intensity * 1.8; // seyrek 0.7 → dolu 2.5
+      const flagAmp = 0.18 + intensity * 0.32; // seyrek 0.18 → dolu 0.5
       bundle.animated.flags.forEach((flag, i) => {
-        flag.rotation.y = Math.sin(t * 1.6 + i * 0.7) * 0.35;
+        flag.rotation.y = Math.sin(t * flagSpeed + i * 0.7) * flagAmp;
+        // dolu tribünde bayrak biraz daha sallansın + hafif Z eğimi
+        flag.rotation.z = Math.sin(t * flagSpeed * 0.7 + i) * intensity * 0.12;
       });
       // LED panolar kayar
       bundle.animated.ledTextures.forEach(tex => {
         tex.offset.x = (tex.offset.x + dt * 0.12) % 1;
       });
-      // Projektör parlaklığı hafifçe nefes alır
+      // Projektör parlaklığı hafifçe nefes alır — gece için kısık tutuluyor (bembeyaz önlendi)
       if (nightRef.current) {
         bundle.animated.floodlights.forEach((fl, i) => {
           const mat = (fl as THREE.Mesh).material as THREE.MeshStandardMaterial;
           if (mat && 'emissiveIntensity' in mat) {
-            mat.emissiveIntensity = 1.35 + Math.sin(t * 1.2 + i) * 0.25;
+            mat.emissiveIntensity = 0.85 + Math.sin(t * 1.2 + i) * 0.18;
           }
         });
       }
@@ -218,7 +233,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       void bundle;
       setReady(false);
     };
-  }, [design, capacity, logo, sponsorText, height, night]);
+  }, [design, capacity, logo, sponsorText, height, night, wet]);
 
   if (failed) {
     return (
