@@ -21,6 +21,7 @@ export interface MatchExtras {
   corners: { home: number; away: number };
   fouls: { home: number; away: number };
   xg: { home: number; away: number };
+  shotMap?: { x:number; y:number; team:'home'|'away'; minute:number; xg:number }[];
   teamTalkMorale: number;
   penaltyWinner?: 'user' | 'opponent';
 }
@@ -62,6 +63,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [shots, setShots] = useState({ home: 0, away: 0 });
   const [xg, setXg] = useState({ home: 0, away: 0 });
   const [spiker, setSpiker] = useState<string | null>(null);
+  const [shotMap, setShotMap] = useState<{ x:number; y:number; team:'home'|'away'; minute:number; xg:number }[]>([]);
   const [corners, setCorners] = useState({ home: 0, away: 0 });
   const [fouls, setFouls] = useState({ home: 0, away: 0 });
   const [activeLineup, setActiveLineup] = useState<Player[]>(() => fixLineup(gameState).team11);
@@ -269,6 +271,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setShots(s => ({ ...s, home: s.home + 1 }));
         const thisXg = 0.08 + Math.random()*0.32;
         setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
+        setShotMap(m => [...m, { x: 72 + Math.random()*20, y: 20 + Math.random()*60, team: 'home', minute: currentMinute, xg: thisXg }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
         const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01))) * goalMult);
@@ -323,6 +326,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setShots(s => ({ ...s, away: s.away + 1 }));
         const thisXgA = 0.06 + Math.random()*0.28;
         setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
+        setShotMap(m => [...m, { x: 8 + Math.random()*20, y: 20 + Math.random()*60, team: 'away', minute: currentMinute, xg: thisXgA }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
         const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008))) * goalMult);
         const roll = Math.random();
@@ -755,6 +759,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       corners,
       fouls,
       xg,
+      shotMap,
       teamTalkMorale: talkBonus.morale,
       penaltyWinner
     };
@@ -930,6 +935,32 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         )}
 
+        {/* Şut Haritası — ortalama görsel, sade */}
+        {phase !== 'pre' && shotMap.length > 0 && (
+          <div className="px-2 lg:px-4 pt-2">
+            <div className="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] tracking-widest font-bold text-slate-400">ŞUT HARİTASI — xG {xg.home.toFixed(2)} : {xg.away.toFixed(2)}</div>
+                <div className="text-[10px] text-slate-500">{shotMap.length} şut • yeşil senin, kırmızı rakip</div>
+              </div>
+              <div className="relative h-28 bg-gradient-to-b from-emerald-900/30 to-emerald-800/20 rounded-lg border border-emerald-700/30 overflow-hidden">
+                {/* saha çizgileri */}
+                <div className="absolute inset-2 border border-white/20 rounded-sm" />
+                <div className="absolute top-1/2 left-2 right-2 h-px bg-white/20 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-12 h-16 border border-white/15 rounded-sm -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-white/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-2 bottom-2 left-2 w-6 border-r border-white/15 bg-white/[0.03]" />
+                <div className="absolute top-2 bottom-2 right-2 w-6 border-l border-white/15 bg-white/[0.03]" />
+                {shotMap.slice(-18).map((s,i)=> (
+                  <div key={i} title={`${s.team==='home'?gameState.teamName:opponent.name} ${s.minute}' xG ${s.xg.toFixed(2)}`} className={`absolute w-2.5 h-2.5 rounded-full border border-white/60 shadow-sm -translate-x-1/2 -translate-y-1/2 ${s.team==='home' ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ left: `${s.x}%`, top: `${s.y}%`, opacity: 0.85 }} />
+                ))}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1.5 flex gap-3">
+                <span>● Yeşil = sen ({shots.home} şut)</span><span>● Kırmızı = rakip ({shots.away})</span><span className="ml-auto hidden sm:inline">Son 18 şut gösterilir — ortalama mod sade</span>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Match Console - büyütüldü */}
         <div className="p-2 lg:p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 flex-1 min-h-[160px] lg:min-h-[200px] max-h-[42vh] lg:max-h-[300px] overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">

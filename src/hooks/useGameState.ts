@@ -1703,6 +1703,40 @@ export const useGameState = () => {
           (newState as any).ultrasRequests = [...remaining, req];
           newState.news = [`📢 Ultras: "${pick.text}" — ${req.deadlineWeek - (newState.week||1)} hafta süren var!`, ...newState.news.slice(0,4)];
         }
+        // Drama modu — %12 ihtimalle soyunma odası / kriz olayı (more_drama)
+        if (!isCup && Math.random() < 0.12) {
+          const roll = Math.random();
+          if (roll < 0.35) {
+            // Soyunma odası kavgası
+            const a = [...newState.team11, ...newState.bench][Math.floor(Math.random()*Math.min(11,newState.team11.length))];
+            const b = [...newState.team11, ...newState.bench].find(pl=> pl.id!==a.id) || a;
+            newState.teamChemistry = Math.max(0,(newState.teamChemistry||55)-4);
+            newState.team11 = newState.team11.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-7)} : pl);
+            newState.bench = newState.bench.map(pl=> pl.id===a.id||pl.id===b.id ? { ...pl, morale: Math.max(0, pl.morale-7)} : pl);
+            newState.news = [`🎭 Drama: Soyunma odasında ${a.name} — ${b.name} tartışması! Kimya -4, moral -7`, ...newState.news.slice(0,4)];
+          } else if (roll < 0.65) {
+            // Yıldız resti — wantsOut drama
+            const candidates = [...newState.team11, ...newState.bench].filter(pl=> pl.ovr>=76 && !pl.wantsOut);
+            if (candidates.length) {
+              const star = candidates[Math.floor(Math.random()*candidates.length)];
+              const bump = (pl:any)=> pl.id===star.id ? { ...pl, wantsOut: true, morale: Math.max(0, pl.morale-10)} : pl;
+              newState.team11 = newState.team11.map(bump);
+              newState.bench = newState.bench.map(bump);
+              (newState as any).ultrasHappiness = Math.max(0,((newState as any).ultrasHappiness||65)-6);
+              newState.news = [`🎭 Drama: ${star.name} menajeriyle görüştü — "ayrılmak istiyorum" (wantsOut)! Ultras -6`, ...newState.news.slice(0,4)];
+              newState.boardMessages = [`📢 ${star.name} ayrılmak istiyor! Ofis → Sözleşmeler'den ikna et.`, ...newState.boardMessages.slice(0,4)];
+            }
+          } else {
+            // Sakatlık şoku — antrenmanda ekstra sakatlık
+            const vic = [...newState.team11].filter(pl=> !pl.injured)[Math.floor(Math.random()*newState.team11.length)];
+            if (vic) {
+              const weeks = 1 + Math.floor(Math.random()*2);
+              const inj = (pl:any)=> pl.id===vic.id ? { ...pl, injured: true, injuryWeeks: weeks, energy: Math.max(0, pl.energy-20)} : pl;
+              newState.team11 = newState.team11.map(inj);
+              newState.news = [`🎭 Drama: Antrenmanda şok sakatlık — ${vic.name} ${weeks} hafta yok!`, ...newState.news.slice(0,4)];
+            }
+          }
+        }
         // felsefe haftalık pasif bonus
         if (phil === 'youth' && Math.random() < 0.18) {
           // genç bir oyuncu +1 gelişim şansı
@@ -2121,8 +2155,33 @@ export const useGameState = () => {
           ]},
         ];
       })();
+      // Drama: 3. soru — transfer dedikodusu / yıldız krizi (ultra drama mod)
+      if (Math.random() < 0.55) {
+        const hasOffers = (prev.transferOffers||[]).length > 0;
+        const wantsOut = [...(prev.team11||[]), ...(prev.bench||[])].find((p:any)=> p.wantsOut);
+        if (wantsOut) {
+          qs.push({ id: 'q3', question: `${wantsOut.name} ayrılmak istiyor — ne diyorsunuz?`, answers: [
+            { tone: 'humble', label: `O bizim evladımız, konuşup ikna edeceğim`, effect: 'Yıldız moral +6, kimya +1' },
+            { tone: 'confident', label: `Kimse kulüpten büyük değil`, effect: 'Takım +3, yıldız -5 ama taraftar +5' },
+            { tone: 'aggressive', label: `Gitsin! Parasını getirsin yeter`, effect: 'Board +4, ultras -4, yıldız -10' },
+          ]});
+        } else if (hasOffers) {
+          const offer = (prev.transferOffers||[])[0];
+          qs.push({ id: 'q3', question: `${offer?.playerName || 'Bir oyuncunuza'} teklif var — satar mısınız?`, answers: [
+            { tone: 'humble', label: `Oyuncumla konuşacağım, o karar verecek`, effect: 'Oyuncu moral +3' },
+            { tone: 'confident', label: `Doğru fiyat gelirse herkes satılık`, effect: 'Board +3, fan -2' },
+            { tone: 'aggressive', label: `Bu rakamlar komik, kapıyı kapatıyoruz!`, effect: 'Ultras +4, board -1' },
+          ]});
+        } else if (Math.random() < 0.4) {
+          qs.push({ id: 'q3', question: `Taraftar şampiyonluk bekliyor — sözünüz nedir?`, answers: [
+            { tone: 'humble', label: `Maç maç bakıyoruz, söz vermek kolay`, effect: 'Board +2' },
+            { tone: 'confident', label: `Bu şehir şampiyonluğu hak ediyor — getireceğiz!`, effect: 'Fan +10, baskı artar' },
+            { tone: 'aggressive', label: `Bizi izlemeye devam edin, ezeceğiz!`, effect: 'Ultras +6, baskı +2' },
+          ]});
+        }
+      }
       const conf: any = { id: `press-${Date.now()}`, opponent, wasWin, wasDraw, questions: qs, answered: 0 };
-      return { ...prev, pendingPress: conf, news: [`🎙️ Basın toplantısı: ${opponent} maçı sonrası sorular seni bekliyor!`, ...prev.news.slice(0,4)] };
+      return { ...prev, pendingPress: conf, news: [`🎙️ Basın toplantısı: ${opponent} maçı sonrası ${qs.length} soru seni bekliyor!`, ...prev.news.slice(0,4)] };
     });
   }, []);
 
@@ -2135,6 +2194,16 @@ export const useGameState = () => {
       const ans = currentQ.answers.find((a:any)=> a.tone===tone) || currentQ.answers[0];
       let updates: any = {};
       let msg = `🎙️ Basın: "${ans.label}" → ${ans.effect}`;
+      // Drama: 3. soru özel — wantsOut oyuncusunu etkile
+      const isStarCrisis = currentQ.id==='q3' && currentQ.question.includes('ayrılmak istiyor');
+      if (isStarCrisis) {
+        const starName = currentQ.question.split(' ayrılmak')[0].trim();
+        const bump = (pl:any)=> pl.name===starName ? { ...pl, morale: tone==='humble' ? Math.min(100, pl.morale+6) : tone==='confident' ? Math.max(0, pl.morale-3) : Math.max(0, pl.morale-10), wantsOut: tone==='aggressive' ? true : tone==='humble' ? false : pl.wantsOut } : pl;
+        updates.team11 = (prev.team11||[]).map(bump);
+        updates.bench = (prev.bench||[]).map(bump);
+        if (tone==='humble') msg += ' | Yıldız ikna oldu!';
+        else if (tone==='aggressive') msg += ' | Yıldız resti gördü!';
+      }
       if (tone === 'humble') {
         updates = { teamChemistry: Math.min(100,(prev.teamChemistry||55)+1), boardConfidence: Math.min(100,(prev.boardConfidence||60)+2), team11: prev.team11.map(p=> ({...p, morale: Math.min(100,p.morale+2)})), bench: prev.bench.map(p=> ({...p, morale: Math.min(100,p.morale+2)})) };
         updates.fanHappiness = Math.min(100,(prev.fanHappiness||60)+2);
