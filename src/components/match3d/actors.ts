@@ -261,6 +261,25 @@ export function poseDive(rig: CharacterRig, side: number, p: number) {
   rig.rightShin.rotation.x = -0.2;
 }
 
+/** Yerden kurtarış ve topu göğsüne alma — kaleci havaya sıçramaz. */
+export function poseGroundSave(rig: CharacterRig, side: number, p: number) {
+  const q = Math.max(0, Math.min(1, p));
+  const reach = Math.sin(q * Math.PI);
+  rig.root.rotation.set(0, 0, -side * reach * 0.7);
+  rig.root.position.y = reach * 0.07;
+  rig.hips.position.y = 0.62;
+  rig.torso.rotation.set(0.42, 0, side * reach * 0.18);
+  rig.head.rotation.set(-0.28, -side * reach * 0.2, 0);
+  rig.leftArm.rotation.set(-1.2 - reach * 0.35, 0, 0.35);
+  rig.rightArm.rotation.set(-1.2 - reach * 0.35, 0, -0.35);
+  rig.leftForearm.rotation.x = -0.75;
+  rig.rightForearm.rotation.x = -0.75;
+  rig.leftLeg.rotation.set(0.35, 0, 0.18);
+  rig.rightLeg.rotation.set(0.35, 0, -0.18);
+  rig.leftShin.rotation.x = -0.7;
+  rig.rightShin.rotation.x = -0.7;
+}
+
 /** Oturuyor (yedek kulübesi) */
 export function poseSeated(rig: CharacterRig, t: number, seed = 0) {
   const b = Math.sin(t * 1.3 + seed) * 0.03;

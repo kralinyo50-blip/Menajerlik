@@ -233,16 +233,24 @@ export const LivePitch: React.FC<LivePitchProps> = ({
 
         {/* Rakip oyuncular — topa göre hafif pres / geri çekilme + dribble jitter */}
         {AWAY_SHAPE.map((p, i) => {
+          const isKeeper = i === 0;
           const chase = (0.12 + (i > 7 ? 0.18 : 0)) * (0.55 + fatigueFactor * 0.45);
-          const tgtY = p.t + awayBallInfluence * 2.5 + (ball.y - 50) * chase * 0.22;
-          const tgtX = p.l + (ball.x - 50) * chase * 0.18 + Math.sin(tick * 0.55 + i) * 0.9 * fatigueFactor;
+          // Kaleci çizgiye bağlı kalır; topa bakıp hareketsiz kalmaz, ancak
+          // stoper gibi sahanın içine de çıkmaz.
+          const keeperSave = lastAttack && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1;
+          const tgtY = isKeeper
+            ? 7 + Math.max(0, Math.min(9, (ball.y - 6) * 0.12))
+            : p.t + awayBallInfluence * 2.5 + (ball.y - 50) * chase * 0.22;
+          const tgtX = isKeeper
+            ? 50 + (ball.x - 50) * 0.16
+            : p.l + (ball.x - 50) * chase * 0.18 + Math.sin(tick * 0.55 + i) * 0.9 * fatigueFactor;
           return (
             <div
               key={`away-${i}`}
-              className="absolute w-4 h-4 lg:w-5 lg:h-5 rounded-full bg-red-600 border border-white/80 shadow flex items-center justify-center text-[7px] font-bold text-white"
+              className={`absolute ${isKeeper ? 'w-6 h-6 lg:w-7 lg:h-7 bg-red-800 border-2 border-amber-300 text-[10px]' : 'w-4 h-4 lg:w-5 lg:h-5 bg-red-600 border border-white/80 text-[7px]'} rounded-full shadow flex items-center justify-center font-bold text-white ${isKeeper && keeperSave ? 'animate-keeper-save' : ''}`}
               style={{ top: `${Math.max(6, Math.min(94, tgtY))}%`, left: `${Math.max(8, Math.min(92, tgtX))}%`, transform: 'translate(-50%, -50%)', transition: `all ${motionMs(420 + (1 - fatigueFactor) * 180)}ms ease-out` }}
             >
-              {i + 1}
+              {isKeeper ? '🧤' : i + 1}
             </div>
           );
         })}
@@ -251,6 +259,8 @@ export const LivePitch: React.FC<LivePitchProps> = ({
         {lineup.map(p => {
           const isOff = sentOff.includes(p.id);
           if (isOff) return null;
+          const isKeeper = p.role === 'KL';
+          const keeperSave = isKeeper && lastAttack?.team === 'away' && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1;
           const isCarrier = carrierId === p.id && possession > 38 && phase !== 'half';
           const isSlipping = slipId === p.id;
           const baseT = p.t ?? 50, baseL = p.l ?? 50;
@@ -260,8 +270,12 @@ export const LivePitch: React.FC<LivePitchProps> = ({
           const chase = chaseBase * (0.52 + fatigueFactor * 0.48) * (isWet ? 0.88 : 1);
           // dribbling gecikmesi: topun peşinden 300ms geriden gel — yorgunlukla daha geriden, kayganda daha savruk
           const jitter = (isCarrier ? 1.6 : 0.9) * fatigueFactor * (isWet ? 1.18 : 1);
-          const dynT = baseT * (1 - chase * 0.32) + ball.y * chase * 0.32 + Math.sin(tick * 0.7 + p.id * 0.4) * jitter;
-          const dynL = baseL * (1 - chase * 0.32) + ball.x * chase * 0.32 + Math.cos(tick * 0.6 + p.id * 0.5) * jitter;
+          const dynT = isKeeper
+            ? 93 - Math.max(0, Math.min(8, (94 - ball.y) * 0.10))
+            : baseT * (1 - chase * 0.32) + ball.y * chase * 0.32 + Math.sin(tick * 0.7 + p.id * 0.4) * jitter;
+          const dynL = isKeeper
+            ? 50 + (ball.x - 50) * 0.16
+            : baseL * (1 - chase * 0.32) + ball.x * chase * 0.32 + Math.cos(tick * 0.6 + p.id * 0.5) * jitter;
           const clampedT = Math.max(7, Math.min(93, dynT));
           const clampedL = Math.max(7, Math.min(93, dynL));
           const energyPct = Math.max(0, Math.min(100, eEff));
@@ -269,7 +283,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
           return (
             <div key={`home-${p.id}`} className="absolute" style={{ top: `${clampedT}%`, left: `${clampedL}%`, transform: `translate(-50%, -50%) ${isSlipping ? 'rotate(72deg) scale(0.92)' : ''}`, transition: isSlipping ? 'transform 260ms ease' : undefined }}>
               <div
-                className={`w-5 h-5 lg:w-6 lg:h-6 rounded-full border shadow flex items-center justify-center text-[8px] font-black ${p.injured ? 'bg-orange-500 text-black border-white' : isSlipping ? 'bg-sky-200 text-sky-900 border-sky-400' : isCarrier ? 'bg-white text-emerald-700 border-emerald-400 scale-110' : tired ? 'bg-emerald-300/90 text-black border-white/80' : 'bg-emerald-400 text-black border-white'}`}
+                className={`w-5 h-5 lg:w-6 lg:h-6 rounded-full border shadow flex items-center justify-center text-[8px] font-black ${p.injured ? 'bg-orange-500 text-black border-white' : isSlipping ? 'bg-sky-200 text-sky-900 border-sky-400' : keeperSave ? 'bg-amber-400 text-black border-white scale-125' : isKeeper ? 'bg-amber-500 text-black border-white' : isCarrier ? 'bg-white text-emerald-700 border-emerald-400 scale-110' : tired ? 'bg-emerald-300/90 text-black border-white/80' : 'bg-emerald-400 text-black border-white'}`}
                 style={{
                   transition: isCarrier ? `all ${motionMs(320)}ms cubic-bezier(0.34,1.2,0.64,1)` : isSlipping ? `all ${motionMs(260)}ms ease` : `all ${motionMs(520 + (1 - fatigueFactor) * 220)}ms ease-out`,
                   boxShadow: isSlipping ? '0 0 0 2px rgba(125,211,252,0.8), 0 2px 10px rgba(0,0,0,0.3)' : isCarrier ? '0 0 10px rgba(16,185,129,0.9), 0 2px 8px rgba(0,0,0,0.35)' : tired ? '0 0 6px rgba(251,146,60,0.35)' : undefined,
@@ -277,7 +291,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
                 }}
                 title={`${p.name} (${p.role}) • ⚡${Math.round(energyPct)}%${isSlipping ? ' — kaydı! 💦' : isCarrier ? ' — top sürüyor' : tired ? ' — yorgun' : ''}`}
               >
-                {isSlipping ? '💦' : isCarrier ? '●' : p.ovr > 84 ? '★' : p.role === 'KL' ? 'K' : ''}
+                {isSlipping ? '💦' : keeperSave ? '🧤' : isKeeper ? 'K' : isCarrier ? '●' : p.ovr > 84 ? '★' : ''}
               </div>
               {/* ⚡ enerji barı — 70'ten sonra veya carrier/yorgunlarda her zaman */}
               {(minute > 68 || isCarrier || energyPct < 48) && (
@@ -367,7 +381,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
           </div>
         ))}
       </div>
-      <style>{`@keyframes ballBounce{0%{transform:translate(-50%,-50%) scale(1)}100%{transform:translate(-50%,-58%) scale(1.05)}}`}</style>
+      <style>{`@keyframes keeperSave{0%{transform:translate(-50%,-50%) scale(1)}45%{transform:translate(-65%,-50%) rotate(-18deg) scale(1.28)}100%{transform:translate(-50%,-50%) scale(1)}} @keyframes ballBounce{0%{transform:translate(-50%,-50%) scale(1)}100%{transform:translate(-50%,-58%) scale(1.05)}} .animate-keeper-save{animation:keeperSave 900ms ease-in-out}`}</style>
     </div>
   );
 };
