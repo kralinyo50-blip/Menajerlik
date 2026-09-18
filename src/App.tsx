@@ -6,7 +6,6 @@ import { SquadTab } from './components/tabs/SquadTab';
 import { TransferTab } from './components/tabs/TransferTab';
 import { TacticsTab } from './components/tabs/TacticsTab';
 import { LeagueTab } from './components/tabs/LeagueTab';
-import { FacilitiesTab } from './components/tabs/FacilitiesTab';
 import { InvestTab } from './components/tabs/InvestTab';
 import { HistoryTab } from './components/tabs/HistoryTab';
 import { CupTab } from './components/tabs/CupTab';
@@ -50,7 +49,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'facilities' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
+  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -92,7 +91,7 @@ function App() {
     applyFixedLineup,
     processMatchResult,
     hireStaff,
-    upgradeFacility,
+    upgradeFacilityModule,
     discoverYouthPlayer,
     promoteYouthPlayer,
     buyInvestment,
@@ -910,7 +909,6 @@ function App() {
     { id: 'training', label: 'Antrenman', icon: '🏋️' },
     { id: 'league', label: 'Lig', icon: '🏆' },
     { id: 'cup', label: 'Kupa', icon: '🏅' },
-    { id: 'facilities', label: 'Tesisler', icon: '🏟️' },
     { id: 'shop', label: 'Dükkan', icon: '🛒' },
     { id: 'merch', label: 'Formalar', icon: '👕' },
     { id: 'invest', label: 'Yatırım', icon: '📈' },
@@ -1212,6 +1210,14 @@ function App() {
                 onUpgradeStadiumLevel={upgradeStadiumLevel}
                 onUpgradeTribune={upgradeTribune}
                 onHostEvent={hostStadiumEvent}
+                onUpgradeFacilityModule={upgradeFacilityModule}
+                onHireStaff={hireStaff}
+                onDiscoverYouth={discoverYouthPlayer}
+                onPromoteYouth={promoteYouthPlayer}
+                onSendScout={sendScout}
+                onClaimScoutReport={claimScoutReport}
+                onDismissScoutReport={dismissScoutReport}
+                onCancelScoutMission={cancelScoutMission}
               />
             )}
             {activeTab === 'squad' && (
@@ -1245,19 +1251,6 @@ function App() {
             )}
             {activeTab === 'league' && <LeagueTab gameState={gameState} />}
             {activeTab === 'cup' && <CupTab gameState={gameState} onPlayCupMatch={handlePlayCupMatch} />}
-            {activeTab === 'facilities' && (
-              <FacilitiesTab
-                gameState={gameState}
-                onUpgradeFacility={upgradeFacility}
-                onHireStaff={hireStaff}
-                onDiscoverYouth={discoverYouthPlayer}
-                onPromoteYouth={promoteYouthPlayer}
-                onSendScout={sendScout}
-                onClaimScoutReport={claimScoutReport}
-                onDismissScoutReport={dismissScoutReport}
-                onCancelScoutMission={cancelScoutMission}
-              />
-            )}
             {activeTab === 'shop' && <ShopTab gameState={gameState} onPurchase={handleShopPurchase} />}
             {activeTab === 'merch' && <MerchTab gameState={gameState} onOpenShop={openShopBranch} />}
             {activeTab === 'invest' && (

@@ -63,8 +63,8 @@ const STEPS = [
   {
     icon: '🏟️',
     title: 'Tesisler & Mağaza',
-    text: 'Stadyum, antrenman ve akademi yükselt. Türkiye genelinde forma mağazaları aç — pasif gelir kazan!',
-    tip: 'İpucu: Büyük şehirlerde mağaza açmak daha kârlı.'
+    text: 'Stadyum sekmesinin altında 3D Antrenman Kompleksi var: antrenman sahası, fitness salonu, rejenerasyon merkezi, taktik merkezi ve altyapı sahasını yükselt — oyuncuların gelişimi, morali ve sakatlık riski doğrudan değişir. Personel ve akademi/scout da aynı sekmede.',
+    tip: 'İpucu: Modül kartının üzerine gel — bir üst seviyeyi satın almadan 3D ön izle.'
   },
   {
     icon: '🎮',

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, Player, Team, MatchEvent, Weather, PlayerRating } from '../types/game';
 import { MATCH_EVENTS, WEATHER_INFO, ROLE_NAMES, HOME_ADVANTAGE, AWAY_PENALTY, FIRST_NAMES, LAST_NAMES } from '../data/constants';
 import { DIFFICULTY_CONFIG } from '../data/achievements';
+import { facilityEffects } from '../data/facility';
 import { InGameMinigame, MinigameContext, MinigameResult } from './InGameMinigames';
 import { PenaltyShootout } from './PenaltyShootout';
 import { sfx } from '../utils/sound';
@@ -136,6 +137,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     starAttack = Math.min(8, starAttack);
     starDefense = Math.min(8, starDefense);
 
+    // 🏋️ Antrenman kompleksi etkileri (taktik merkezi maç gücü, rejenerasyon riski vb.)
+    const facilityEff = facilityEffects(gameState.facility);
+
     const avgEnergy = pool.reduce((acc, p) => acc + p.energy, 0) / Math.max(1, pool.length);
     const avgMorale = pool.reduce((acc, p) => acc + p.morale, 0) / Math.max(1, pool.length);
     const chemistry = (gameState.teamChemistry || 50) / 100;
@@ -183,6 +187,12 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
     // Analist personeli
     if (gameState.staff?.some(s => s.type === 'analyst')) { attackBonus += 3; defenseBonus += 3; }
+
+    // 📊 Taktik & Analiz Merkezi (3D antrenman kompleksi) — maç hazırlığı bonusu
+    if (facilityEff.matchBonus > 0) {
+      attackBonus += facilityEff.matchBonus;
+      defenseBonus += facilityEff.matchBonus;
+    }
 
     // Menajer yeteneği: Taktik Zekâsı
     // Menajerin kendi formu (Hayat sekmesi): kondisyon ve keyif sahaya yansır

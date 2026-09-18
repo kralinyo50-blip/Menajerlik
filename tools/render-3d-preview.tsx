@@ -12,8 +12,9 @@ import zlib from 'node:zlib';
 import fs from 'node:fs';
 import { buildStadiumGroup } from '../src/components/stadium/scene';
 import { buildLifeScene } from '../src/components/life/scenes';
+import { buildTrainingComplex } from '../src/components/facility/scene';
 import { defaultStadium } from '../src/data/stadium';
-import { LifeActivityId, StadiumDesign } from '../src/types/game';
+import { LifeActivityId, StadiumDesign, FacilityState } from '../src/types/game';
 
 const W = 820;
 const H = 500;
@@ -277,6 +278,56 @@ const lifeScenes: { activity: LifeActivityId; variant: string; time: number; nam
   { activity: 'vacation', variant: 'beach', time: 1.4, name: 'preview-hayat-tatil-sahil.png' },
   { activity: 'press', variant: 'humble', time: 0.9, name: 'preview-hayat-basin-toplantisi.png' },
 ];
+
+/* ── 3D Antrenman Kompleksi önizlemeleri ── */
+const complexScenes: { name: string; facility: FacilityState; night: boolean; dTheta: number; zoom: number; highlight?: any }[] = [
+  {
+    name: 'preview-antrenman-kompleksi-gunduz.png',
+    facility: { pitch: 3, gym: 2, recovery: 2, tactics: 2, youth: 2 },
+    night: false, dTheta: 0, zoom: 1,
+  },
+  {
+    name: 'preview-antrenman-kompleksi-gece.png',
+    facility: { pitch: 5, gym: 5, recovery: 5, tactics: 5, youth: 5 },
+    night: true, dTheta: 0.35, zoom: 1.08, highlight: 'recovery' as any,
+  },
+];
+
+complexScenes.forEach(scene => {
+  const bundle = buildTrainingComplex({ facility: scene.facility, logo: '🦁', night: scene.night, clubColor: '#1d4ed8', accentColor: '#facc15', highlight: scene.highlight });
+  bundle.update(1.4, 0.016);
+  const buffer = renderToBuffer(bundle.group, {
+    radius: bundle.camera.radius * scene.zoom,
+    phi: bundle.camera.phi,
+    theta: bundle.camera.theta + scene.dTheta,
+    targetY: bundle.camera.targetY,
+    fov: bundle.camera.fov,
+  }, { sky: bundle.sky, fog: bundle.fog, night: scene.night });
+  writePNG(`${OUT_DIR}/${scene.name}`, buffer, W, H);
+  console.log(`🏋️  ${scene.name} üretildi (${bundle.triCount()} üçgen)`);
+});
+
+// Seviye karşılaştırma sayfası: aynı açı, tesis seviyeleri 1 → 5
+const levelTiles: { buf: Uint8Array; label: string }[] = [];
+[1, 2, 3, 4, 5].forEach(lvl => {
+  const bundle = buildTrainingComplex({
+    facility: { pitch: lvl, gym: lvl, recovery: lvl, tactics: lvl, youth: lvl },
+    logo: '🦁', night: false, clubColor: '#1d4ed8', accentColor: '#facc15',
+  });
+  bundle.update(1.4, 0.016);
+  const buffer = renderToBuffer(bundle.group, {
+    radius: bundle.camera.radius * 1.02,
+    phi: bundle.camera.phi,
+    theta: bundle.camera.theta,
+    targetY: bundle.camera.targetY,
+    fov: bundle.camera.fov,
+  }, { sky: bundle.sky, fog: bundle.fog, night: false });
+  writePNG(`${OUT_DIR}/preview-antrenman-seviye-${lvl}.png`, buffer, W, H);
+  levelTiles.push({ buf: buffer, label: `seviye ${lvl}` });
+});
+if (levelTiles.length > 0) {
+  console.log(`\n📄 ${composeSheet(levelTiles, 2, `${OUT_DIR}/preview-antrenman-seviyeler.png`)}`);
+}
 
 let failures = 0;
 const tiles: { buf: Uint8Array; label: string }[] = [];

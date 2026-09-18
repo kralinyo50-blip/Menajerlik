@@ -92,7 +92,9 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ## Kontroller
 
 - Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
-- Üst sekmeler: Ofis, Kariyer, **Hayat**, Stadyum, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Tesisler, Dükkan, Formalar, Yatırım, Geçmiş
+- Üst sekmeler: Ofis, Sosyal, Kariyer, **Hayat**, Stadyum, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Dükkan, Formalar, Yatırım, Geçmiş, Teknoloji
+- 🏟️ **Stadyum** sekmesi (3D): Renkler & Mimari, Kapasite & Büyüme, Tribünler & Etkinlik, Bilet Fiyatı, Kozmetik Mağazası + **🏋️ Antrenman Kompleksi (3D)**, **👥 Personel**, **🎓 Akademi & Scout** (eski Tesisler sekmesi buraya taşındı)
+- 🏋️ Antrenman kompleksinde her modülün (saha / fitness / rejenerasyon / taktik / altyapı) üzerine gel → bir üst seviyeyi 3D ön izlemede gör; gelişim, moral, enerji ve sakatlık riski canlı tabloda
 - Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak), ⏭️ Atla
 - 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
 

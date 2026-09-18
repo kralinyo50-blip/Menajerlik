@@ -4,6 +4,7 @@ import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from
 import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
 import { defaultStadium } from '../data/stadium';
+import { defaultFacility, normalizeFacility } from '../data/facility';
 import { defaultLife } from './life';
 import { generateInitialFeed } from '../data/social';
 import { randomCountry } from '../data/countries';
@@ -134,6 +135,7 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       weekLog: state.life?.weekLog ?? {},
       history: state.life?.history ?? [],
     },
+    facility: normalizeFacility({ ...defaultFacility(), ...(state.facility || {}) }),
     stadium: {
       ...defaultStadium(),
       ...(state.stadium || {}),

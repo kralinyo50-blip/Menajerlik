@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { GameState, RoofStyle, StandStyle, PitchPattern, StadiumDesign } from '../../types/game';
+import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign } from '../../types/game';
 import { Stadium3D } from '../Stadium3D';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
@@ -7,6 +7,8 @@ import {
 } from '../../data/stadium';
 import { formatMoney } from '../../utils/pricing';
 import { previewHomeMatch, stadiumCapacity } from '../../utils/stadium';
+import { TrainingComplexSection } from './TrainingComplexSection';
+import { StaffSection, YouthScoutSection } from './facilitySections';
 
 interface StadiumTabProps {
   gameState: GameState;
@@ -17,16 +19,32 @@ interface StadiumTabProps {
   onUpgradeStadiumLevel: (cost: number) => void;
   onUpgradeTribune?: (side: 'north'|'south'|'east'|'west') => void;
   onHostEvent?: (eventId: 'concert'|'fair') => void;
+  /* ── 3D Antrenman Kompleksi & tesis yönetimi (eski Tesisler sekmesi buraya taşındı) ── */
+  onUpgradeFacilityModule?: (id: FacilityModuleId) => void;
+  onHireStaff?: (type: Staff['type'], cost: number) => void;
+  onDiscoverYouth?: () => void;
+  onPromoteYouth?: (playerId: number) => void;
+  onSendScout?: (regionId: string) => void;
+  onClaimScoutReport?: (reportId: string, playerId?: number) => void;
+  onDismissScoutReport?: (reportId: string) => void;
+  onCancelScoutMission?: (missionId: string) => void;
 }
 
-type SubTab = 'design' | 'capacity' | 'tribunes' | 'tickets' | 'shop';
+type SubTab = 'design' | 'capacity' | 'tribunes' | 'tickets' | 'shop' | 'complex' | 'staff' | 'youth';
 
 const SubTabButton: React.FC<{ id: SubTab; icon: string; label: string }> = ({ id, icon, label }) => (
-  <span className="flex items-center gap-1.5" data-tab={id}>{icon} {label}</span>
+  <span className="flex items-center gap-1.5" data-tab={id}>
+    {icon} {label}
+    {id === 'complex' && (
+      <span className="text-[9px] bg-amber-400 text-black font-black px-1.5 py-0.5 rounded-full">YENİ</span>
+    )}
+  </span>
 );
 
 export const StadiumTab: React.FC<StadiumTabProps> = ({
-  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent
+  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent,
+  onUpgradeFacilityModule, onHireStaff, onDiscoverYouth, onPromoteYouth,
+  onSendScout, onClaimScoutReport, onDismissScoutReport, onCancelScoutMission
 }) => {
   const [sub, setSub] = useState<SubTab>('design');
   const [night, setNight] = useState(true);
@@ -129,6 +147,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-2xl font-black text-white">🏟️ Stadyum Stüdyosu</h2>
+            <p className="text-[11px] text-amber-300">🏋️ Tesisler artık burada: <b>Antrenman Kompleksi (3D)</b> • <b>Personel</b> • <b>Akademi &amp; Scout</b> alt sekmeleri</p>
             <p className="text-slate-400 text-sm">
               {gameState.teamName} Arena • Seviye {gameState.stadiumLvl} • {ROOF_LABEL[displayDesign.roof]} • {STAND_LABEL[displayDesign.stands]}
               {isPreview && <span className="ml-2 text-amber-300 text-xs font-bold">👁️ ÖN İZLEME</span>}
@@ -266,6 +285,9 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             ['tribunes', '🏟️', 'Tribünler & Etkinlik'],
             ['tickets', '🎟️', 'Bilet Fiyatı'],
             ['shop', '🛍️', 'Kozmetik Mağazası'],
+            ['complex', '🏋️', 'Antrenman Kompleksi (3D)'],
+            ['staff', '👥', 'Personel'],
+            ['youth', '🎓', 'Akademi & Scout'],
           ] as [SubTab, string, string][]).map(([id, icon, label]) => (
             <button
               key={id}
@@ -798,6 +820,33 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── 3D ANTRENMAN KOMPLEKSİ (eski Tesisler sekmesinin yeni yeri) ── */}
+        {sub === 'complex' && (
+          onUpgradeFacilityModule
+            ? <TrainingComplexSection gameState={gameState} onUpgradeFacilityModule={onUpgradeFacilityModule} />
+            : <div className="text-slate-400 text-sm">Antrenman kompleksi yüklenemedi.</div>
+        )}
+
+        {/* ── PERSONEL (eski Tesisler sekmesi) ── */}
+        {sub === 'staff' && (
+          onHireStaff
+            ? <StaffSection gameState={gameState} onHireStaff={onHireStaff} />
+            : <div className="text-slate-400 text-sm">Personel bölümü yüklenemedi.</div>
+        )}
+
+        {/* ── AKADEMİ & SCOUT (eski Tesisler sekmesi) ── */}
+        {sub === 'youth' && (
+          <YouthScoutSection
+            gameState={gameState}
+            onDiscoverYouth={onDiscoverYouth ?? (() => {})}
+            onPromoteYouth={onPromoteYouth ?? (() => {})}
+            onSendScout={onSendScout}
+            onClaimScoutReport={onClaimScoutReport}
+            onDismissScoutReport={onDismissScoutReport}
+            onCancelScoutMission={onCancelScoutMission}
+          />
         )}
       </div>
     </div>
