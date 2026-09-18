@@ -139,7 +139,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
           ))}
 
           <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-white font-medium">
-            {gameState.tactics.formation}
+            {gameState.tactics?.formation ?? '4-3-3'}
           </div>
           <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-white font-medium">
             ⭐ {Math.floor(gameState.team11.reduce((a, p) => a + p.ovr, 0) / Math.max(1, gameState.team11.length))} OVR

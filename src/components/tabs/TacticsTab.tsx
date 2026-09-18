@@ -46,19 +46,19 @@ export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTacti
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-slate-800/50 p-4 rounded-2xl">
               <div className="text-xs text-slate-400 leading-relaxed">Formasyon</div>
-              <div className="text-xl font-black tracking-tight text-emerald-400">{gameState.tactics.formation}</div>
+              <div className="text-xl font-black tracking-tight text-emerald-400">{gameState.tactics?.formation ?? '4-3-3'}</div>
             </div>
             <div className="bg-slate-800/50 p-4 rounded-2xl">
               <div className="text-xs text-slate-400 leading-relaxed">Oyun Stili</div>
-              <div className="text-xl font-black tracking-tight text-blue-400 capitalize">{gameState.tactics.style}</div>
+              <div className="text-xl font-black tracking-tight text-blue-400 capitalize">{gameState.tactics?.style ?? 'balanced'}</div>
             </div>
             <div className="bg-slate-800/50 p-4 rounded-2xl">
               <div className="text-xs text-slate-400 leading-relaxed">Baskı</div>
-              <div className="text-xl font-black tracking-tight text-purple-400 capitalize">{gameState.tactics.pressing}</div>
+              <div className="text-xl font-black tracking-tight text-purple-400 capitalize">{gameState.tactics?.pressing ?? 'medium'}</div>
             </div>
             <div className="bg-slate-800/50 p-4 rounded-2xl">
               <div className="text-xs text-slate-400 leading-relaxed">Tempo</div>
-              <div className="text-xl font-black tracking-tight text-amber-400 capitalize">{gameState.tactics.tempo}</div>
+              <div className="text-xl font-black tracking-tight text-amber-400 capitalize">{gameState.tactics?.tempo ?? 'normal'}</div>
             </div>
           </div>
         </div>

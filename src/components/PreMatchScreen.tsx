@@ -47,7 +47,7 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
   const sortedLeague = [...gameState.league].sort((a, b) => b.p - a.p || (b.gf - b.ga) - (a.gf - a.ga));
   const oppPosition = sortedLeague.findIndex(t => t.name === opponent.name) + 1;
   const userPosition = sortedLeague.findIndex(t => t.isUser) + 1;
-  const form = gameState.matchHistory.slice(-5).reverse();
+  const form = (gameState.matchHistory ?? []).slice(-5).reverse();
   const [showStadium, setShowStadium] = useState(false);
 
   const prediction = diff >= 6 ? { text: '🔥 Büyük favori biziz', color: 'text-emerald-400' }
@@ -220,7 +220,7 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
                 <div>🎽 Kaptan: <span className="text-white font-medium">{captain?.name ?? 'Belirlenmedi'}</span></div>
                 <div>🥅 Penaltı: <span className="text-white font-medium">{penaltyTaker?.name ?? '—'}</span></div>
                 <div>🎯 Frikik: <span className="text-white font-medium">{freekickTaker?.name ?? '—'}</span></div>
-                <div>📋 Taktik: <span className="text-white font-medium">{gameState.tactics.formation} • {gameState.tactics.style}</span></div>
+                <div>📋 Taktik: <span className="text-white font-medium">{gameState.tactics?.formation ?? '4-3-3'} • {gameState.tactics?.style ?? 'balanced'}</span></div>
                 <div>🏃 Antrenman odağı: <span className="text-white font-medium">{gameState.trainingFocus}</span></div>
               </div>
             </div>

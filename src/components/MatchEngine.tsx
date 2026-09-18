@@ -210,15 +210,18 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     let attackBonus = 0;
     let defenseBonus = 0;
 
-    if (gameState.tactics.style === 'attack') { attackBonus += 12; defenseBonus -= 8; }
-    if (gameState.tactics.style === 'defense') { attackBonus -= 8; defenseBonus += 12; }
-    if (gameState.tactics.style === 'possession') { attackBonus += 5; defenseBonus += 5; }
-    if (gameState.tactics.pressing === 'high') { attackBonus += 5; defenseBonus -= 2; }
-    if (gameState.tactics.pressing === 'low') { defenseBonus += 5; }
-    if (gameState.tactics.tempo === 'fast') { attackBonus += 7; defenseBonus -= 2; }
-    if (gameState.tactics.tempo === 'slow') { defenseBonus += 7; }
-    // 5 kaydırıcı — mild dengeli (ortalama görsel, gerçekçi)
-    const tac: any = gameState.tactics as any;
+    // 🛡️ eski kayıtlarda taktikler olmayabilir — maç girişte çökmesin
+    const tac: any = gameState.tactics ?? {
+      formation: '4-3-3', style: 'balanced', pressing: 'medium', tempo: 'normal',
+      defensiveLine: 50, width: 50, creativity: 50, pressingIntensity: 50, tempoValue: 50
+    };
+    if (tac.style === 'attack') { attackBonus += 12; defenseBonus -= 8; }
+    if (tac.style === 'defense') { attackBonus -= 8; defenseBonus += 12; }
+    if (tac.style === 'possession') { attackBonus += 5; defenseBonus += 5; }
+    if (tac.pressing === 'high') { attackBonus += 5; defenseBonus -= 2; }
+    if (tac.pressing === 'low') { defenseBonus += 5; }
+    if (tac.tempo === 'fast') { attackBonus += 7; defenseBonus -= 2; }
+    if (tac.tempo === 'slow') { defenseBonus += 7; }
     const dl = tac.defensiveLine ?? 50;
     const wd = tac.width ?? 50;
     const cr = tac.creativity ?? 50;
@@ -1358,7 +1361,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       {/* Gol coşkusu — hafif, sadece CSS */}
       {celebration && (
         <div
-          key={celebration.key}
+          key={"cel-" + celebration.key}
           className={`absolute inset-0 z-[55] flex flex-col items-center justify-center pointer-events-none overflow-hidden ${
             celebration.team === 'home'
               ? 'bg-emerald-500/18 backdrop-blur-[2px]'
@@ -1431,7 +1434,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       {/* Yedek kulübesi — değişiklik tabelası, ısınma → koşarak girme */}
       {subBoard && (
         <div
-          key={subBoard.key}
+          key={"sub-" + subBoard.key}
           className="absolute inset-0 z-[54] flex flex-col items-center justify-center pointer-events-none"
           style={{ animation: 'subFade 2800ms ease forwards' }}
         >
@@ -1479,7 +1482,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
       {/* VAR / Kart yakın çekim — hakem monitörü hissi */}
       {cardPop && (
-        <div key={cardPop.key} className="absolute inset-0 z-[53] flex items-center justify-center pointer-events-none" style={{ animation: 'cardFade 2600ms ease forwards' }}>
+        <div key={"card-" + cardPop.key} className="absolute inset-0 z-[53] flex items-center justify-center pointer-events-none" style={{ animation: 'cardFade 2600ms ease forwards' }}>
           <div className="relative bg-slate-900/94 border-2 rounded-2xl px-6 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] text-center min-w-[280px] max-w-[90%]" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : cardPop.kind === 'second' ? '#f59e0b' : '#eab308', animation: 'cardPop 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-3 py-0.5 rounded-full border text-[10px] font-black tracking-widest" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : '#eab308', color: cardPop.kind === 'red' ? '#fca5a5' : '#fde68a' }}>
               {cardPop.kind === 'red' ? '🟥 KIRMIZI KART' : cardPop.kind === 'second' ? '🟨🟥 ÇİFT SARI' : '🟨 SARI KART'} • {String(minute).padStart(2,"0")}' • VAR

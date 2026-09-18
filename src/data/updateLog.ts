@@ -9,6 +9,18 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.8.2',
+    date: '18 Eyl 2026',
+    tag: 'DÜZELTME',
+    title: '🛠️ Maça Girerken Oyun Çöküyordu — Kökten Düzeltildi',
+    items: [
+      '💥 Eski sürümden gelen kayıtlarda taktik verisi olmadığı için "MAÇA ÇIK" denince maç öncesi ekran açılışında oyun tamamen kapanıyordu (beyaz ekran) — kayıt yükleme artık eksik taktikleri otomatik tamamlıyor',
+      '🛡️ Aynı koruma maç motoruna da eklendi: taktik yoksa varsayılan 4-3-3 ile oynanır, çökme olmaz',
+      '📜 Eski kayıtlarda maç geçmişi/dışı listeler eksikse artık boş listeyle tamamlanıyor (kupa, haber, piyasa, altyapı)',
+      '🔢 Aynı anda oluşturulan transfer teklifi/oyuncu kayıtlarında kimlik çakışması (aynı milisaniye) engellendi — liste uyarıları giderildi',
+    ],
+  },
+  {
     version: '4.8.1',
     date: '18 Eyl 2026',
     tag: 'DÜZELTME',
@@ -230,4 +242,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '4.1.0';
+export const CURRENT_VERSION = '4.8.2';

@@ -534,7 +534,7 @@ export const useGameState = () => {
       const newMorale = (player as Player).morale ?? 75;
       let result: GameState = {
         ...prev,
-        bench: [...prev.bench, { ...player, id: Date.now(), value: price, wage: newWage, contract: newContract, morale: newMorale, suspension: 0 }],
+        bench: [...prev.bench, { ...player, id: Date.now() * 1000 + Math.floor(Math.random() * 1000), value: price, wage: newWage, contract: newContract, morale: newMorale, suspension: 0 }],
         marketList: prev.marketList.filter(p => p.id !== player.id),
         budget: prev.budget - price,
         clubStats: { ...prev.clubStats, transfers: (prev.clubStats.transfers || 0) + 1 },
@@ -831,7 +831,7 @@ export const useGameState = () => {
 
       const loaned: Player = {
         ...target.player,
-        id: Date.now(),
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
         wage: Math.max(1000, Math.round(target.player.wage * target.wageShare)),
         loanBaseWage: target.player.wage,
         loanFrom: target.fromClub,
@@ -945,7 +945,7 @@ export const useGameState = () => {
       }
 
       const loan = {
-        id: Date.now(),
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
         player: { ...player, t: undefined, l: undefined },
         playerId: player.id,
         playerName: player.name,
@@ -1654,7 +1654,7 @@ export const useGameState = () => {
         const buyer = buyers[Math.floor(Math.random() * buyers.length)];
         const multiplier = target.wantsOut ? 0.95 : 1.05 + Math.random() * 0.5;
         const offer: TransferOffer = {
-          id: Date.now(),
+          id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
           playerId: target.id,
           playerName: target.name,
           playerOvr: target.ovr,
@@ -2035,7 +2035,7 @@ export const useGameState = () => {
         analyst: 'Analist'
       };
 
-      const newStaff: Staff = { id: Date.now(), type, name: names[type], level: 1, salary: Math.floor(cost * 0.1) };
+      const newStaff: Staff = { id: Date.now() * 1000 + Math.floor(Math.random() * 1000), type, name: names[type], level: 1, salary: Math.floor(cost * 0.1) };
 
       const updates: Partial<GameState> = { staff: [...prev.staff, newStaff], budget: prev.budget - cost };
 
@@ -2144,7 +2144,7 @@ export const useGameState = () => {
       if (Math.random() < chance) {
         const posPool = ['KL', 'STP', 'SB', 'OS', 'FW'];
         const role = posPool[Math.floor(Math.random() * posPool.length)];
-        const player = generatePlayer(role, 55 + prev.academyLevel * 5, 70 + prev.academyLevel * 5, Date.now());
+        const player = generatePlayer(role, 55 + prev.academyLevel * 5, 70 + prev.academyLevel * 5, Date.now() * 1000 + Math.floor(Math.random() * 1000));
         player.age = 16 + Math.floor(Math.random() * 3);
 
         return {

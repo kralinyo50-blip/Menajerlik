@@ -84,6 +84,27 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       corner: bestPlayer?.id ?? null,
     },
     trainingFocus: state.trainingFocus ?? 'balanced',
+    // ⚠️ taktikler eski kayıtlarda (v2.x/3.0) yoktu — maç ekranı
+    // gameState.tactics.formation okuduğu için eksikse MAÇA GİRERKEN çöküyordu
+    tactics: state.tactics ?? {
+      formation: '4-3-3',
+      style: 'balanced',
+      pressing: 'medium',
+      tempo: 'normal',
+      defensiveLine: 50,
+      width: 50,
+      creativity: 50,
+      pressingIntensity: 50,
+      tempoValue: 50,
+    },
+    // maç geçmişi yoksa boş dizi — PreMatchScreen slice(-5) yapıyor
+    matchHistory: state.matchHistory ?? [],
+    league: state.league ?? [],
+    cupMatches: state.cupMatches ?? [],
+    marketList: state.marketList ?? [],
+    academyPlayers: state.academyPlayers ?? [],
+    news: state.news ?? [],
+    trophies: state.trophies ?? [],
     leagueScorers: state.leagueScorers ?? [],
     transferOffers: state.transferOffers ?? [],
     weather: state.weather ?? randomWeather(),
