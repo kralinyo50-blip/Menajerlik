@@ -333,6 +333,32 @@ if (levelTiles.length > 0) {
   console.log(`\n📄 ${composeSheet(levelTiles, 2, `${OUT_DIR}/preview-antrenman-seviyeler.png`)}`);
 }
 
+// Bölge yakın çekimleri: güney altyapı alanı + kuzey bina sırası (düzen kontrolü)
+{
+  const zoneCases: { name: string; facility: FacilityState; theta: number; zoom: number; target: { x: number; z: number }; dPhi?: number }[] = [
+    { name: 'preview-antrenman-bolge-guney.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 4 }, theta: 0.15, zoom: 0.62, target: { x: 0, z: 92 }, dPhi: -0.18 },
+    { name: 'preview-antrenman-bolge-kuzey.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 4 }, theta: 0.9, zoom: 0.68, target: { x: 0, z: -48 }, dPhi: -0.2 },
+  ];
+  const zoneTiles: { buf: Uint8Array; label: string }[] = [];
+  zoneCases.forEach(z => {
+    const bundle = buildTrainingComplex({ facility: z.facility, logo: '🦁', night: false, clubColor: '#1d4ed8', accentColor: '#f8fafc' });
+    bundle.update(1.2, 0.016);
+    const buffer = renderToBuffer(bundle.group, {
+      radius: bundle.camera.radius * z.zoom,
+      phi: bundle.camera.phi + (z.dPhi ?? 0),
+      theta: z.theta,
+      targetX: z.target.x,
+      targetY: 3,
+      targetZ: z.target.z,
+      fov: 46,
+    }, { sky: bundle.sky, fog: bundle.fog, night: false });
+    writePNG(`${OUT_DIR}/${z.name}`, buffer, W, H);
+    zoneTiles.push({ buf: buffer, label: z.name });
+    console.log(`🔍 ${z.name} üretildi`);
+  });
+  console.log(`\n📄 ${composeSheet(zoneTiles, 2, `${OUT_DIR}/preview-antrenman-bolgeler.png`)}`);
+}
+
 // Özet montaj: gündüz (sv.3) • gece (sv.5) • sv.1 • sv.5 — tek görselde
 {
   const montage: { buf: Uint8Array; label: string }[] = [
