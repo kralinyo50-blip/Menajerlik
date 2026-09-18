@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { StandStyle, StadiumDesign } from '../../types/game';
+import { makePointLight, makeSpotLight, NightLightSpec, NightSpotSpec, pointLightPower } from '../three/lighting';
 
 const hasDom = typeof document !== 'undefined';
 
@@ -392,6 +393,75 @@ export interface StadiumSceneBundle {
   triCount: () => number;
 }
 
+/* ── Saha ölçüleri (sahne + ışık hesabı aynı sayıları kullanır) ── */
+const PITCH_L = 105;
+const PITCH_W = 68;
+const MARGIN = 8;
+
+/* ── Gece aydınlatması ─────────────────────────────────────────
+   Gece maçında sahanın okunabilir olması için hedef aydınlanma. Gündüz
+   (güneş 1.32 + gökyüzü 0.85) ≈ 1.8'e denk gelir; gece biraz altında kalır ki
+   saha aydınlık kalsın ama "gece" hissi kaybolmasın, hiçbir yüzey bembeyaz olmasın. */
+const NIGHT_PITCH_IRRADIANCE = 1.2;
+/** Giriş meydanı lambasının altındaki ışık havuzu + lamba başlığının yüksekliği (bkz. lampPost) */
+const PLAZA_POOL_IRRADIANCE = 2.2;
+const PLAZA_LAMP_HEIGHT = 6.7;
+/**
+ * Projektör hüzme yarı açısı (radyan). Kule sahanın köşesinde, tepeden bakıyor:
+ * uzak köşe bile bu koninin içinde kalır (~14°), tribünler ise dışında.
+ */
+const FLOODLIGHT_BEAM_ANGLE = 0.52;
+
+/**
+ * Stadyumun gece ışıklarını konum + şiddet olarak üretir.
+ * Şiddet, lambanın aydınlattığı noktaya uzaklığından hesaplanır (ters kare yasası);
+ * böylece kapasite/projektör yüksekliği büyüse de saha parlaklığı sabit kalır.
+ */
+export function stadiumNightLights(
+  design: StadiumDesign,
+  opts: { capacity: number; night?: boolean }
+): { points: NightLightSpec[]; spots: NightSpotSpec[] } {
+  const points: NightLightSpec[] = [];
+  const spots: NightSpotSpec[] = [];
+  if (!opts.night) return { points, spots };
+
+  const rows = Math.max(4, Math.min(30, Math.round(opts.capacity / 1600)));
+  const { depth, height } = standProfile(rows, design.stands, design.stands === 'double' || design.stands === 'bowl');
+
+  /* Giriş meydanı lambaları — sahayı etkilemez, sadece gezi/tribün görünümünde ışık havuzu */
+  const halfZ = PITCH_W / 2 + MARGIN + depth + 4;
+  [-34, 34].forEach(lx => {
+    points.push({
+      x: lx, y: PLAZA_LAMP_HEIGHT, z: halfZ + 30,
+      intensity: pointLightPower(PLAZA_POOL_IRRADIANCE, PLAZA_LAMP_HEIGHT),
+      distance: 120, decay: 2, color: 0xffe3a8,
+    });
+  });
+
+  /* Projektör kuleleri: ışık sahaya yönlendirilir (spot hüzme).
+     Dört kule birlikte saha merkezinde hedef aydınlanmayı verir; koni tribünleri
+     yıkamaz, böylece gece maçında saha parlar, tribün normal seviyede kalır. */
+  if (design.floodlights) {
+    const lampY = height + 16.5;                  // direk kafasının yüksekliği
+    const armX = PITCH_L / 2 + MARGIN + depth * 0.75;
+    const armZ = PITCH_W / 2 + MARGIN + depth * 0.75;
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+      const x = sx * armX;
+      const z = sz * armZ;
+      const d = Math.hypot(x, lampY, z);          // lamba → saha merkezi
+      const cosIncidence = lampY / d;             // saha normali yukarı: N·L
+      spots.push({
+        x, y: lampY, z, target: { x: 0, y: 0, z: 0 },
+        intensity: pointLightPower(NIGHT_PITCH_IRRADIANCE / 4 / cosIncidence, d),
+        distance: 340, decay: 2, color: 0xffe9a8,
+        angle: FLOODLIGHT_BEAM_ANGLE, penumbra: 0.45,
+      });
+    });
+  }
+
+  return { points, spots };
+}
+
 /** 3D stadyum modelini prosedürel olarak kurar (WebGL gerektirmez) */
 export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptions): StadiumSceneBundle {
   const group = new THREE.Group();
@@ -403,10 +473,6 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
 
   const rows = Math.max(4, Math.min(30, Math.round(opts.capacity / 1600)));
   const seats = rows * 4 * 42;
-
-  const PITCH_L = 105;
-  const PITCH_W = 68;
-  const MARGIN = 8;
 
   /* ── Zemin (dış alan) ── */
   const plazaTex = plazaTexture(!!opts.night);
@@ -440,9 +506,10 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     color: pitchTex ? 0xffffff : 0x37994a,
     roughness: opts.wet ? 0.52 : 0.95,
     metalness: opts.wet ? 0.08 : 0.0,
-    // Gece projektör altında çim hafifçe kendi kendine aydınlanır (gerçekte de parlak görünür)
+    // Gece projektör altında çim hafifçe kendi kendine aydınlanır (gerçekte de parlak görünür).
+    // Not: esas aydınlanmayı projektörler verir — bu değer yalnızca dip karanlığı açar.
     emissive: opts.wet ? new THREE.Color(0x1a3a25) : (opts.night && design.floodlights ? new THREE.Color(0x14351f) : new THREE.Color(0x000000)),
-    emissiveIntensity: opts.wet ? (opts.night ? 0.22 : 0.08) : (opts.night && design.floodlights ? 0.5 : 0),
+    emissiveIntensity: opts.wet ? (opts.night ? 0.18 : 0.08) : (opts.night && design.floodlights ? 0.3 : 0),
   });
   if (pitchTex) pitchMat.map = pitchTex;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(PITCH_L, PITCH_W), pitchMat);
@@ -1145,10 +1212,10 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   }
 
   /* ── Işıklandırma ── */
-  const hemi = new THREE.HemisphereLight(opts.night ? 0x1a2540 : 0xbcd9ff, opts.night ? 0x0d1328 : 0x3f5233, opts.night ? 0.52 : 0.85);
+  const hemi = new THREE.HemisphereLight(opts.night ? 0x2b3c60 : 0xbcd9ff, opts.night ? 0x101a2c : 0x3f5233, opts.night ? 0.62 : 0.85);
   group.add(hemi);
   // Gece güneşi kısık ve soğuk — bembeyaz yıkamayı engeller
-  const sun = new THREE.DirectionalLight(opts.night ? 0x8da0c2 : 0xfff4d6, opts.night ? 0.32 : 1.32);
+  const sun = new THREE.DirectionalLight(opts.night ? 0x9fb0cc : 0xfff4d6, opts.night ? 0.4 : 1.32);
   sun.position.set(90, 130, 70);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -1161,24 +1228,13 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   sun.shadow.normalBias = 0.9;
   group.add(sun);
 
-  if (opts.night) {
-    // Giriş meydanı aydınlatması (lambaların altında sıcak ışık havuzu)
-    [-34, 34].forEach(lx => {
-      const lamp = new THREE.PointLight(0xffe3a8, 22000, 120, 1.9);
-      lamp.position.set(lx, 7, halfZ + 30);
-      group.add(lamp);
-    });
-  }
-
-  if (opts.night && design.floodlights) {
-    const lightTargets: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
-    lightTargets.forEach(([lx, lz]) => {
-      // Önceki 180000 değeri sahayı bembeyaz yapıyordu — düşür, mesafeyi kaptır
-      const spot = new THREE.PointLight(0xffe9a8, 78000, 300, 1.85);
-      spot.position.set(lx * (PITCH_L / 2 + MARGIN + depth * 0.7), height + 16, lz * (PITCH_W / 2 + MARGIN + depth * 0.7));
-      group.add(spot);
-    });
-  }
+  /* Gece ışıkları: giriş meydanı lambaları + projektör kuleleri (şiddet mesafeden hesaplanır) */
+  const nightLights = stadiumNightLights(design, { capacity: opts.capacity, night: opts.night });
+  nightLights.points.forEach(spec => group.add(makePointLight(spec)));
+  nightLights.spots.forEach(spec => {
+    const spot = makeSpotLight(spec);
+    group.add(spot, spot.target);   // hedef de sahnede olmalı: three yönü matrisinden okur
+  });
 
   const skyTexture = skyGradientTexture(!!opts.night);
 
