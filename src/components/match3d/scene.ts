@@ -40,6 +40,7 @@ export interface BuildMatchOpts {
   awayName: string;
   sponsorText?: string;
   logo?: string;
+  facilities?: Record<string, number>;
 }
 
 export interface Match3DEvent {
@@ -173,9 +174,51 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     sponsorText: opts.sponsorText,
     teamName: opts.homeName,
     night: opts.night,
-    wet: ['rain', 'storm', 'snow'].includes(opts.weather)
+    wet: ['rain', 'storm', 'snow'].includes(opts.weather),
+    facilities: opts.facilities
   });
   group.add(stadium.group);
+
+  // ── Hava durumu zemin efektleri — yağmur ıslaklık, kar birikimi ──
+  const weatherType = opts.weather;
+  if (weatherType === 'rain' || weatherType === 'storm') {
+    // Islak zemin: yansıma ve su birikintileri
+    const puddleGeo = new THREE.CircleGeometry(2.5, 12);
+    const puddleMat = new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.15, metalness: 0.6, transparent: true, opacity: 0.35 });
+    for (let i = 0; i < 6; i++) {
+      const puddle = new THREE.Mesh(puddleGeo, puddleMat);
+      puddle.rotation.x = -Math.PI / 2;
+      puddle.position.set((Math.random()-0.5)*60, 0.06, (Math.random()-0.5)*30);
+      puddle.scale.set(0.6 + Math.random()*1.2, 0.6 + Math.random()*1.2, 1);
+      group.add(puddle);
+    }
+    // Çim daha koyu ve parlak
+    stadium.group.traverse((o: any) => {
+      if (o.isMesh && o.material && o.material.roughness !== undefined) {
+        const name = (o.name || '').toLowerCase();
+        if (name.includes('pitch') || o.geometry?.type === 'PlaneGeometry') {
+          // roughness düşür
+          try { o.material.roughness = Math.max(0.15, (o.material.roughness || 0.8) * 0.45); o.material.metalness = Math.min(0.3, (o.material.metalness || 0) + 0.15); } catch {}
+        }
+      }
+    });
+  } else if (weatherType === 'snow') {
+    // Karlı saha: beyaz overlay
+    const snowGeo = new THREE.PlaneGeometry(105, 68);
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xe6f0ff, roughness: 0.9, transparent: true, opacity: 0.55 });
+    const snowMesh = new THREE.Mesh(snowGeo, snowMat);
+    snowMesh.rotation.x = -Math.PI / 2;
+    snowMesh.position.set(0, 0.08, 0);
+    group.add(snowMesh);
+    // Kar birikintileri kenarlarda
+    const edgeSnowGeo = new THREE.BoxGeometry(110, 0.15, 2);
+    const edgeSnowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+    [-35, 35].forEach(z => {
+      const edge = new THREE.Mesh(edgeSnowGeo, edgeSnowMat);
+      edge.position.set(0, 0.08, z);
+      group.add(edge);
+    });
+  }
 
   // Gece: kamera tarafındaki oyuncular silüet olmasın diye yumuşak dolgu ışığı.
   // Sahanın asıl aydınlanmasını projektörler verir (stadyum kurucusu, ters kare yasasına

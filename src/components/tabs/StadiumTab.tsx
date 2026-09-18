@@ -3,7 +3,8 @@ import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff
 import { Stadium3D } from '../Stadium3D';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
-  ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked, TRIBUNES, STADIUM_EVENTS
+  ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked, TRIBUNES, STADIUM_EVENTS,
+  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost, defaultFacilities
 } from '../../data/stadium';
 import { formatMoney } from '../../utils/pricing';
 import { previewHomeMatch, stadiumCapacity } from '../../utils/stadium';
@@ -19,6 +20,7 @@ interface StadiumTabProps {
   onUpgradeStadiumLevel: (cost: number) => void;
   onUpgradeTribune?: (side: 'north'|'south'|'east'|'west') => void;
   onHostEvent?: (eventId: 'concert'|'fair') => void;
+  onUpgradeStadiumFacility?: (id: import('../../types/game').StadiumFacilityId) => void;
   /* ── 3D Antrenman Kompleksi & tesis yönetimi (eski Tesisler sekmesi buraya taşındı) ── */
   onUpgradeFacilityModule?: (id: FacilityModuleId) => void;
   onHireStaff?: (type: Staff['type'], cost: number) => void;
@@ -30,7 +32,7 @@ interface StadiumTabProps {
   onCancelScoutMission?: (missionId: string) => void;
 }
 
-type SubTab = 'design' | 'capacity' | 'tribunes' | 'tickets' | 'shop' | 'complex' | 'staff' | 'youth';
+type SubTab = 'design' | 'capacity' | 'tribunes' | 'facilities' | 'tickets' | 'shop' | 'complex' | 'staff' | 'youth';
 
 const SubTabButton: React.FC<{ id: SubTab; icon: string; label: string }> = ({ id, icon, label }) => (
   <span className="flex items-center gap-1.5" data-tab={id}>
@@ -134,7 +136,7 @@ const OptionCard: React.FC<OptionCardProps> = ({
 );
 
 export const StadiumTab: React.FC<StadiumTabProps> = ({
-  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent,
+  gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent, onUpgradeStadiumFacility,
   onUpgradeFacilityModule, onHireStaff, onDiscoverYouth, onPromoteYouth,
   onSendScout, onClaimScoutReport, onDismissScoutReport, onCancelScoutMission
 }) => {
@@ -275,6 +277,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             height={400}
             crowdIntensity={fillRate}
             wet={isRainy && !roofProtects}
+            facilities={(gameState.stadium as any)?.facilities || {}}
           />
           {/* Yağmur / sis — çatıya göre hafif overlay, performans dostu */}
           {isRainy && !roofProtects && (
@@ -388,6 +391,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             ['design', '🎨', 'Renkler & Mimari'],
             ['capacity', '🏗️', 'Kapasite & Büyüme'],
             ['tribunes', '🏟️', 'Tribünler & Etkinlik'],
+            ['facilities', '🍔', 'İç Tesisler (Büfe vb)'],
             ['tickets', '🎟️', 'Bilet Fiyatı'],
             ['shop', '🛍️', 'Kozmetik Mağazası'],
           ] as [SubTab, string, string][]],
@@ -915,6 +919,64 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                 ))}
               </div>
               <div className="text-[11px] text-slate-500 mt-2">Mild mod: sadece küçük bonus, çılgın protesto yok. Etkinlik her hafta yapılabilir.</div>
+            </div>
+          </div>
+        )}
+
+
+        {/* ── İÇ TESİSLER — Büfe, Mağaza, Otopark vb (detaylı ve güzel) ── */}
+        {sub === 'facilities' && (
+          <div className="space-y-4">
+            <div className="bg-gradient-to-br from-amber-900/30 to-slate-800/60 backdrop-blur-xl rounded-2xl border border-amber-500/20 p-5 shadow-xl">
+              <h3 className="text-sm font-black text-amber-300 mb-1">🍔 Stadyum İç Tesisler — Detaylı & Kazançlı</h3>
+              <p className="text-[11px] text-slate-300 mb-3">
+                Her tesis seviye 0-5 arası gelişir. <b>Her iç saha maçında taraftar başına gelir</b> getirir + taraftar mutluluğu + yönetim güveni.
+                Toplam {(() => { const f = (gameState.stadium as any)?.facilities || defaultFacilities(); return Object.values(f).reduce((a:any,b:any)=>a+(b||0),0); })()} seviye tesis kurulu.
+                Tahmini maç başı tesis geliri: <b className="text-emerald-300">{(() => { try { const { facilityIncomePerFan } = require('../../utils/stadium'); const per = facilityIncomePerFan(gameState); const att = Math.round((gameState.stadiumLvl*5000+2000)*0.75); return `$${Math.round(per*att).toLocaleString()} ($${per.toFixed(1)}/taraftar)`; } catch { return 'hesaplanıyor'; } })()}</b>
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {STADIUM_FACILITY_DEFS.map(def => {
+                  const facs = (gameState.stadium as any)?.facilities || defaultFacilities();
+                  const lvl = (facs as any)[def.id] ?? 0;
+                  const isMax = lvl >= 5;
+                  const cost = facilityUpgradeCost(def.id, lvl);
+                  const canAfford = gameState.budget >= cost;
+                  const incomePerFan = def.incomePerFan * lvl;
+                  const totalIncomeEst = Math.round(incomePerFan * 15000); // örnek 15k seyirci
+                  return (
+                    <div key={def.id} className={`rounded-xl p-3 border-2 transition-all ${isMax ? 'bg-emerald-500/10 border-emerald-500/30' : lvl > 0 ? 'bg-slate-700/50 border-slate-600/40' : 'bg-slate-800/40 border-slate-700/30'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-white font-black text-sm">{def.icon} {def.name}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${lvl===0 ? 'bg-slate-700 text-slate-400' : isMax ? 'bg-emerald-500 text-white' : 'bg-amber-500/20 text-amber-200'}`}>Sv. {lvl}/5</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mb-2 min-h-[28px]">{def.desc}</div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-2">
+                        <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500" style={{width: `${(lvl/5)*100}%`}} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-[10px] mb-2">
+                        <div className="bg-black/30 rounded px-1.5 py-1"><span className="text-slate-400">Gelir/taraftar</span><br/><span className="text-emerald-300 font-bold">${def.incomePerFan} × {lvl} = ${incomePerFan.toFixed(1)}</span></div>
+                        <div className="bg-black/30 rounded px-1.5 py-1"><span className="text-slate-400">Mutluluk</span><br/><span className="text-cyan-300 font-bold">+{def.happiness * lvl}</span>{def.boardBonus ? <span className="text-amber-300"> • Board +{def.boardBonus * lvl}</span> : null}</div>
+                      </div>
+                      <div className="text-[9px] text-slate-500 mb-2">Örnek 15k seyirci: ~${totalIncomeEst.toLocaleString()} gelir</div>
+                      <button disabled={isMax || !canAfford} onClick={()=> onUpgradeStadiumFacility?.(def.id as any)} className={`w-full py-2 rounded-lg text-xs font-black transition-all ${isMax ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : canAfford ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}>
+                        {isMax ? 'Maks Seviye ✓' : `⬆️ Seviye ${lvl+1} — $${cost.toLocaleString()}`}
+                      </button>
+                      {!canAfford && !isMax && <div className="text-[9px] text-red-300 mt-1">Eksik: ${(cost - gameState.budget).toLocaleString()}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 bg-black/30 rounded-xl p-3 border border-slate-700/40">
+                <div className="text-[11px] font-bold text-white mb-1">💡 Tesis Stratejisi</div>
+                <div className="text-[10px] text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-1">
+                  <span>🍔 Büfe + 🍺 Bar = genç taraftar mutluluğu yüksek, maç günü geliri patlar</span>
+                  <span>👕 Fan Shop yıldızlarla sinerji: dünya yıldızı varsa forma satış bonusu</span>
+                  <span>🅿️ Otopark kötü havada doluluk kaybını %40 azaltır</span>
+                  <span>🚻 Tuvalet + 🛡️ Güvenlik = temel memnuniyet, yoksa taraftar kaçar</span>
+                  <span>📺 LED Ekran + 🔊 Ses = sponsor geliri + atmosfer</span>
+                  <span>🏛️ Müze + 🎈 Çocuk Alanı = marka değeri + aile tribünü dolar</span>
+                </div>
+              </div>
             </div>
           </div>
         )}

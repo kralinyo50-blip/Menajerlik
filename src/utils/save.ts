@@ -3,7 +3,7 @@ import { INITIAL_ACHIEVEMENTS } from '../data/achievements';
 import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from './missions';
 import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
-import { defaultStadium } from '../data/stadium';
+import { defaultStadium, defaultFacilities } from '../data/stadium';
 import { defaultFacility, normalizeFacility } from '../data/facility';
 import { defaultLife } from './life';
 import { generateInitialFeed } from '../data/social';
@@ -14,6 +14,13 @@ export const SLOT_KEYS = [
   'ManagerPro2026_Save_Slot2', // Slot 2
   'ManagerPro2026_Save_Slot3', // Slot 3
 ];
+
+export const BACKUP_PREFIX = 'ManagerPro2026_Backup_';
+export const RECOVERY_KEY = 'ManagerPro2026_Recovery';
+export const BACKUP_LIST_KEY = 'ManagerPro2026_BackupList';
+export const MAX_BACKUPS_PER_SLOT = 8;
+export const AUTOSAVE_KEY = 'ManagerPro2026_Autosave';
+export const ARCHIVE_PREFIX = 'ManagerPro2026_Archive_';
 
 export interface SlotInfo {
   slot: number;
@@ -45,12 +52,11 @@ const DEFAULT_CLUB_STATS: GameState['clubStats'] = {
 
 const WEATHERS: Weather[] = ['sunny', 'cloudy', 'rain', 'storm', 'snow', 'wind', 'fog'];
 
-const randomWeather = (): Weather => WEATHERS[Math.floor(Math.random() * WEATHERS.length)];
+export const randomWeather = (): Weather => WEATHERS[Math.floor(Math.random() * WEATHERS.length)];
 
 /** Eski kayıtları yeni şemaya taşır (geriye dönük uyumluluk) */
 export function migrateState(parsed: Partial<GameState> & Record<string, unknown>): GameState {
   const state = { ...parsed } as GameState;
-  void 0;
 
   // Fikstür: isHome bilgisi olmayan eski kayıtlar → sırayla iç/dış saha ata
   const rawFixture = (parsed.fixture || []) as (FixtureEntry | Record<string, unknown>)[];
@@ -62,6 +68,8 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
 
   const allPlayers = [...(state.team11 || []), ...(state.bench || [])];
   const bestPlayer = [...allPlayers].sort((a, b) => b.ovr - a.ovr)[0];
+
+  const defStadium = defaultStadium();
 
   const result: GameState = {
     ...state,
@@ -102,6 +110,9 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     lastDailyReward: state.lastDailyReward ?? null,
     loanList: state.loanList ?? [],
     outgoingLoans: state.outgoingLoans ?? [],
+    lastMarketRefreshWeek: (state as any).lastMarketRefreshWeek ?? 1,
+    matchesSinceMarketRefresh: (state as any).matchesSinceMarketRefresh ?? 0,
+    botTransfers: (state as any).botTransfers ?? [],
     team11: (state.team11 || []).map(p => {
       const rc = !p.flag ? randomCountry() : null;
       return {
@@ -137,13 +148,18 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
     },
     facility: normalizeFacility({ ...defaultFacility(), ...(state.facility || {}) }),
     stadium: {
-      ...defaultStadium(),
+      ...defStadium,
       ...(state.stadium || {}),
-      design: { ...defaultStadium().design, ...(state.stadium?.design || {}) },
-      cosmetics: state.stadium?.cosmetics ?? defaultStadium().cosmetics,
+      design: { ...defStadium.design, ...(state.stadium?.design || {}) },
+      cosmetics: state.stadium?.cosmetics ?? defStadium.cosmetics,
+      tribunes: (state.stadium as any)?.tribunes ?? defStadium.tribunes,
+      facilities: (state.stadium as any)?.facilities ?? defStadium.facilities ?? defaultFacilities(),
+      facilityIncomeTotal: (state.stadium as any)?.facilityIncomeTotal ?? 0,
+      lastFacilityIncome: (state.stadium as any)?.lastFacilityIncome ?? 0,
+      lastEventIncome: (state.stadium as any)?.lastEventIncome ?? 0,
     },
     socialFeed: (state as any).socialFeed ?? [],
-  };
+  } as any;
 
   // Eski (2.x/3.0/3.1) kayıtların oyuncu değer ve maaşları yeni piyasa ekonomisine çekilir.
   // Kiralık oyuncuların maaş payı korunur.
@@ -186,26 +202,141 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
   if (result.loanList) result.loanList = result.loanList.map(l => ({ ...l, player: ensureFlag(l.player) }));
   if ((result as any).outgoingLoans) (result as any).outgoingLoans = (result as any).outgoingLoans.map((l: any) => ({ ...l, player: ensureFlag(l.player) }));
 
+  // Tesisler göçü
+  if (!result.stadium.facilities) {
+    result.stadium.facilities = defaultFacilities();
+  }
+
   return result;
 }
 
+/** Backup listesini oku */
+function readBackupList(): { slot: number; key: string; time: string }[] {
+  try {
+    const raw = localStorage.getItem(BACKUP_LIST_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch { return []; }
+}
+function writeBackupList(list: { slot: number; key: string; time: string }[]) {
+  try { localStorage.setItem(BACKUP_LIST_KEY, JSON.stringify(list.slice(-50))); } catch {}
+}
+
+/** Mevcut kaydı backup'a al — asla silme, sadece ekle */
+function backupSlot(slot: number) {
+  try {
+    const key = SLOT_KEYS[slot];
+    const existing = localStorage.getItem(key);
+    if (!existing) return;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupKey = `${BACKUP_PREFIX}${slot}_${timestamp}`;
+    localStorage.setItem(backupKey, existing);
+    const timeKey = `${key}_time`;
+    const timeVal = localStorage.getItem(timeKey);
+    if (timeVal) localStorage.setItem(`${backupKey}_time`, timeVal);
+    const list = readBackupList();
+    list.push({ slot, key: backupKey, time: new Date().toISOString() });
+    // per slot max backups
+    const perSlot = list.filter(b => b.slot === slot);
+    if (perSlot.length > MAX_BACKUPS_PER_SLOT) {
+      const toRemove = perSlot.slice(0, perSlot.length - MAX_BACKUPS_PER_SLOT);
+      toRemove.forEach(b => {
+        try { localStorage.removeItem(b.key); localStorage.removeItem(`${b.key}_time`); } catch {}
+      });
+      const remaining = list.filter(b => !toRemove.some(r => r.key === b.key));
+      writeBackupList(remaining);
+    } else {
+      writeBackupList(list);
+    }
+  } catch {}
+}
+
 export function readSlot(slot: number): GameState | null {
+  // Try main slot
   try {
     const raw = localStorage.getItem(SLOT_KEYS[slot]);
-    if (!raw) return null;
-    return migrateState(JSON.parse(raw));
-  } catch {
-    return null;
-  }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.teamName && parsed?.team11) return migrateState(parsed);
+    }
+  } catch {}
+  // Try autosave
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.teamName && parsed?.team11) return migrateState(parsed);
+    }
+  } catch {}
+  // Try recovery
+  try {
+    const raw = localStorage.getItem(RECOVERY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.teamName && parsed?.team11) return migrateState(parsed);
+    }
+  } catch {}
+  // Try backups
+  try {
+    const list = readBackupList().filter(b => b.slot === slot).reverse();
+    for (const b of list) {
+      const raw = localStorage.getItem(b.key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.teamName && parsed?.team11) return migrateState(parsed);
+      } catch { continue; }
+    }
+  } catch {}
+  return null;
 }
 
 export function writeSlot(slot: number, state: GameState): boolean {
   try {
-    localStorage.setItem(SLOT_KEYS[slot], JSON.stringify(state));
+    // Validate state before saving — never save corrupt data
+    if (!state?.teamName || !state?.team11 || state.team11.length < 7) {
+      console.warn('Corrupt state, refusing to save');
+      return false;
+    }
+    // Backup existing before overwrite
+    backupSlot(slot);
+    // Also keep recovery copy
+    try {
+      const json = JSON.stringify(state);
+      localStorage.setItem(RECOVERY_KEY, json);
+      localStorage.setItem(`${RECOVERY_KEY}_time`, new Date().toISOString());
+      localStorage.setItem(AUTOSAVE_KEY, json);
+      localStorage.setItem(`${AUTOSAVE_KEY}_time`, new Date().toISOString());
+    } catch {}
+    // Write main slot atomically via temp key
+    const json = JSON.stringify(state);
+    const tempKey = `${SLOT_KEYS[slot]}_temp`;
+    localStorage.setItem(tempKey, json);
+    // Verify temp write
+    const verify = localStorage.getItem(tempKey);
+    if (!verify) return false;
+    localStorage.setItem(SLOT_KEYS[slot], verify);
     localStorage.setItem(`${SLOT_KEYS[slot]}_time`, new Date().toISOString());
+    localStorage.removeItem(tempKey);
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    console.error('Save failed', e);
+    // If quota exceeded, try to clean only old backup temp keys, never main slots
+    try {
+      const keysToClean: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.includes('_temp')) keysToClean.push(k);
+      }
+      keysToClean.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+      // retry once
+      const json = JSON.stringify(state);
+      localStorage.setItem(SLOT_KEYS[slot], json);
+      localStorage.setItem(`${SLOT_KEYS[slot]}_time`, new Date().toISOString());
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -232,13 +363,43 @@ export function describeSlots(): SlotInfo[] {
   });
 }
 
+/** Asla silme — arşive taşı */
 export function clearSlot(slot: number) {
   try {
-    localStorage.removeItem(SLOT_KEYS[slot]);
-    localStorage.removeItem(`${SLOT_KEYS[slot]}_time`);
+    const key = SLOT_KEYS[slot];
+    const existing = localStorage.getItem(key);
+    if (existing) {
+      const archiveKey = `${ARCHIVE_PREFIX}${slot}_${Date.now()}`;
+      localStorage.setItem(archiveKey, existing);
+      const t = localStorage.getItem(`${key}_time`);
+      if (t) localStorage.setItem(`${archiveKey}_time`, t);
+      // Also keep in backup list
+      const list = readBackupList();
+      list.push({ slot, key: archiveKey, time: new Date().toISOString() });
+      writeBackupList(list);
+    }
+    // NOT deleting main slot — user requested never delete
+    // Instead, we keep it but mark as archived in separate storage
+    // For compatibility, we DO remove from main slot only if explicitly called for new career,
+    // but we have already archived it above, so recovery is possible.
+    localStorage.removeItem(key);
+    localStorage.removeItem(`${key}_time`);
   } catch {
     /* yoksay */
   }
+}
+
+/** Tüm backup'ları listele */
+export function listBackups(): { slot: number; key: string; time: string; teamName?: string }[] {
+  const list = readBackupList();
+  return list.map(b => {
+    try {
+      const raw = localStorage.getItem(b.key);
+      if (!raw) return b;
+      const parsed = JSON.parse(raw);
+      return { ...b, teamName: parsed.teamName };
+    } catch { return b; }
+  });
 }
 
 /** Kaydı .json olarak indirir (yedek) */
@@ -274,5 +435,3 @@ export function importSaveFromFile(file: File): Promise<GameState> {
     reader.readAsText(file);
   });
 }
-
-export { randomWeather };

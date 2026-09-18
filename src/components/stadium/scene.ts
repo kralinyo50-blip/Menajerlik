@@ -371,6 +371,8 @@ export interface StadiumBuildOptions {
   wet?: boolean;
   /** Kulüp adı — skorbord ve giriş tabelasında görünür */
   teamName?: string;
+  /** Tesis seviyeleri — 3D temsili */
+  facilities?: Record<string, number>;
 }
 
 export interface StadiumSceneBundle {
@@ -1183,6 +1185,175 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       t.position.set(x, 0, z);
       group.add(t);
     });
+  }
+
+  /* ── Stadyum tesisleri 3D temsili — DIŞ + İÇ (seviye arttıkça büyür ve içeride görünür) ── */
+  {
+    const facs: Record<string, number> = (opts.facilities as any) || {};
+    const plazaFacMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
+    const buffetMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 });
+    const shopMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(design.seatColor), roughness: 0.6 });
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.7 });
+    const toiletMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.6 });
+    const secMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.7 });
+    const soundMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5 });
+    // ── DIŞ TESİSLER ──
+    // Büfe: giriş meydanı çevresinde küçük kulübeler
+    const buffetLvl = facs.buffet || 0;
+    for (let i = 0; i < Math.min(buffetLvl, 5); i++) {
+      const kiosk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 2.8), i % 2 === 0 ? buffetMat : plazaFacMat);
+      kiosk.position.set(-40 + i * 18, 1.2, halfZ + 18 + (i % 2) * 4);
+      kiosk.castShadow = true;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 3.2), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
+      roof.position.set(0, 1.35, 0);
+      kiosk.add(roof);
+      // İçerideki tezgah: sosis ızgara dumanı (küçük kutu)
+      if (opts.night) {
+        const glow = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.15, 0.5), new THREE.MeshStandardMaterial({ color: 0xffedd5, emissive: new THREE.Color(0xff8c42), emissiveIntensity: 0.8 }));
+        glow.position.set(0, 0.6, 0);
+        kiosk.add(glow);
+      }
+      group.add(kiosk);
+    }
+    // Fan Shop dış
+    if ((facs.fanShop || 0) > 0) {
+      const shop = new THREE.Mesh(new THREE.BoxGeometry(8 + facs.fanShop * 1.5, 4.2, 6), shopMat);
+      shop.position.set(halfX + 12, 2.1, halfZ - 10);
+      shop.castShadow = true;
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.9, 0.4), new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: new THREE.Color(design.seatColor), emissiveIntensity: opts.night ? 0.8 : 0.2 }));
+      sign.position.set(0, 2.4, 3.2);
+      shop.add(sign);
+      // vitrin: forma mankenleri (küçük silindir)
+      for (let m = 0; m < Math.min(facs.fanShop, 3); m++) {
+        const mannequin = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.2, 8), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+        mannequin.position.set(-2 + m * 2, 0.6, 2.8);
+        shop.add(mannequin);
+      }
+      group.add(shop);
+    }
+    // Restoran dış
+    if ((facs.restaurant || 0) > 0) {
+      const rest = new THREE.Mesh(new THREE.BoxGeometry(10 + facs.restaurant * 2, 4.5, 8), new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 }));
+      rest.position.set(-halfX - 14, 2.25, halfZ - 8);
+      rest.castShadow = true;
+      // cam cephe
+      const glassFront = new THREE.Mesh(new THREE.BoxGeometry(10 + facs.restaurant * 2 - 1, 2.2, 0.3), new THREE.MeshStandardMaterial({ color: 0xbae6fd, transparent: true, opacity: 0.6 }));
+      glassFront.position.set(0, 0.5, 4.1);
+      rest.add(glassFront);
+      group.add(rest);
+    }
+    // Bar dış
+    if ((facs.bar || 0) > 0) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(7, 3.8, 5), barMat);
+      bar.position.set(-halfX - 10, 1.9, -halfZ + 12);
+      bar.castShadow = true;
+      // neon tabela
+      const neon = new THREE.Mesh(new THREE.BoxGeometry(5, 0.6, 0.2), new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: new THREE.Color(0xf59e0b), emissiveIntensity: opts.night ? 1.5 : 0.3 }));
+      neon.position.set(0, 1.8, 2.6);
+      bar.add(neon);
+      group.add(bar);
+    }
+    // LED Ekran (ikinci)
+    if ((facs.ledScreen || 0) > 0) {
+      const extraScreen = new THREE.Mesh(new THREE.BoxGeometry(12 + facs.ledScreen * 2, 6, 0.8), new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: new THREE.Color(0x22d3ee), emissiveIntensity: opts.night ? 1.2 : 0.4 }));
+      extraScreen.position.set(0, height + 8 + facs.ledScreen, halfZ + 2);
+      group.add(extraScreen);
+    }
+    // Müze dış
+    if ((facs.museum || 0) > 0) {
+      const museum = new THREE.Mesh(new THREE.BoxGeometry(9, 5, 7), new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.5 }));
+      museum.position.set(halfX + 10, 2.5, -halfZ + 20);
+      museum.castShadow = true;
+      // kupa vitrini
+      const trophy = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 }));
+      trophy.position.set(0, 3.2, 0);
+      museum.add(trophy);
+      group.add(museum);
+    }
+    // Çocuk alanı dış
+    if ((facs.kidsZone || 0) > 0) {
+      for (let i = 0; i < facs.kidsZone; i++) {
+        const slide = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0xf472b6 }));
+        slide.position.set(halfX - 20 - i * 4, 0.9, halfZ + 25);
+        slide.castShadow = true;
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5, 6), new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
+        pole.position.set(0, 1.2, 0);
+        slide.add(pole);
+        group.add(slide);
+      }
+    }
+    // Otopark genişletmesi
+    if ((facs.parking || 0) > 1) {
+      const extraPark = new THREE.Mesh(new THREE.BoxGeometry(20 + facs.parking * 5, 0.12, 30), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+      extraPark.position.set(halfX + 30, 0.07, 45);
+      group.add(extraPark);
+    }
+
+    // ── İÇ TESİSLER — tribün alt koridorlarında (maç sırasında içeriden görünür) ──
+    // Koridor yüksekliği tribün derinliğinin ortası
+    const concourseY = Math.max(2.2, height * 0.28);
+    const innerDepth = depth * 0.85;
+    // İç büfe: her tribün arkasında
+    if (buffetLvl > 0) {
+      const sides = [
+        { x: 0, z: -(PITCH_W/2 + MARGIN + innerDepth), rot: 0 },
+        { x: 0, z: (PITCH_W/2 + MARGIN + innerDepth), rot: Math.PI },
+        { x: -(PITCH_L/2 + MARGIN + innerDepth), z: 0, rot: Math.PI/2 },
+        { x: (PITCH_L/2 + MARGIN + innerDepth), z: 0, rot: -Math.PI/2 },
+      ];
+      sides.forEach((side, idx) => {
+        if (idx >= buffetLvl) return;
+        const innerKiosk = new THREE.Mesh(new THREE.BoxGeometry(6, 2.2, 1.2), buffetMat);
+        innerKiosk.position.set(side.x, concourseY, side.z);
+        innerKiosk.rotation.y = side.rot;
+        // tezgah
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.6, 0.8), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+        counter.position.set(0, 0.1, 0.6);
+        innerKiosk.add(counter);
+        // tabela
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 0.15), new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: new THREE.Color(0xf59e0b), emissiveIntensity: opts.night ? 0.9 : 0.2 }));
+        sign.position.set(0, 1.1, 0.7);
+        innerKiosk.add(sign);
+        group.add(innerKiosk);
+      });
+    }
+    // İç tuvaletler — mavi kapı
+    if ((facs.toilets || 0) > 0) {
+      for (let i = 0; i < Math.min(facs.toilets, 4); i++) {
+        const wc = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 2.2), toiletMat);
+        wc.position.set(-30 + i * 18, concourseY - 0.3, halfZ - 2 - innerDepth);
+        wc.castShadow = true;
+        const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.1), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+        door.position.set(0, -0.1, 1.15);
+        wc.add(door);
+        group.add(wc);
+      }
+    }
+    // İç güvenlik & turnikeler
+    if ((facs.security || 0) > 0) {
+      for (let i = 0; i < Math.min(facs.security * 2, 8); i++) {
+        const turnstile = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 1.6), secMat);
+        turnstile.position.set(-35 + i * 9, 0.9, halfZ + 8);
+        group.add(turnstile);
+      }
+    }
+    // İç ses sistemi — hoparlörler tribün üstünde
+    if ((facs.soundSystem || 0) > 0) {
+      for (let i = 0; i < Math.min(facs.soundSystem, 4); i++) {
+        const speaker = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.2, 0.7), soundMat);
+        speaker.position.set(-40 + i * 26, height + 1.5, -(PITCH_W/2 + MARGIN + depth * 0.2));
+        group.add(speaker);
+      }
+    }
+    // İç tıbbi oda — yeşil haç
+    if ((facs.medicalRoom || 0) > 0) {
+      const med = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.6, 3), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+      med.position.set(halfX - 6, concourseY - 0.2, -halfZ + 6 + innerDepth);
+      const cross = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.2), new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: new THREE.Color(0xef4444), emissiveIntensity: opts.night ? 0.8 : 0.2 }));
+      cross.position.set(0, 0.4, 1.55);
+      med.add(cross);
+      group.add(med);
+    }
   }
 
   /* ── Karşı skorbord (büyük stadyumlarda denge) ── */

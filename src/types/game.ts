@@ -23,6 +23,47 @@ export interface StadiumDesign {
   floodlights: boolean;
 }
 
+/* ══════════ STADYUM TESİSLERİ — Büfe, Mağaza, Otopark vs (detaylı) ══════════ */
+export type StadiumFacilityId =
+  | 'buffet'        // Büfe — yiyecek/içecek
+  | 'fanShop'       // Taraftar mağazası
+  | 'restaurant'    // Restoran
+  | 'bar'           // Spor bar
+  | 'parking'       // Otopark
+  | 'toilets'       // Tuvalet & temizlik
+  | 'security'      // Güvenlik & turnike
+  | 'ledScreen'     // Dev LED ekran
+  | 'soundSystem'   // Ses sistemi
+  | 'museum'        // Kulüp müzesi
+  | 'kidsZone'      // Çocuk eğlence alanı
+  | 'medicalRoom';  // İlk yardım & sağlık
+
+export interface StadiumFacilityDef {
+  id: StadiumFacilityId;
+  name: string;
+  icon: string;
+  desc: string;
+  baseCost: number;
+  incomePerFan: number; // her seyirci başına gelir
+  happiness: number;    // seviye başına taraftar mutluluğu
+  boardBonus?: number;
+}
+
+export interface StadiumFacilities {
+  buffet: number;
+  fanShop: number;
+  restaurant: number;
+  bar: number;
+  parking: number;
+  toilets: number;
+  security: number;
+  ledScreen: number;
+  soundSystem: number;
+  museum: number;
+  kidsZone: number;
+  medicalRoom: number;
+}
+
 export interface StadiumState {
   design: StadiumDesign;
   /** Satın alınan ek koltuklar */
@@ -37,6 +78,24 @@ export interface StadiumState {
   tribunes?: { north: number; south: number; east: number; west: number };
   /** Son stadyum etkinliği geliri */
   lastEventIncome?: number;
+  /** Stadyum içi tesisler (büfe, mağaza, otopark vs) — her biri 0-5 seviye */
+  facilities?: StadiumFacilities;
+  /** Tesislerden toplam birikmiş gelir */
+  facilityIncomeTotal?: number;
+  /** Son tesis geliri */
+  lastFacilityIncome?: number;
+}
+
+/** Rakip kulüp transfer hareketi */
+export interface BotTransfer {
+  week: number;
+  season: number;
+  club: string;
+  logo: string;
+  type: 'in' | 'out';
+  playerName: string;
+  ovrChange: number;
+  fee?: number;
 }
 
 /* ══════════ ANTRENMAN KOMPLEKSİ (v4.6) — 3D tesisler ══════════ */
@@ -654,6 +713,10 @@ export interface GameState {
   outgoingLoans: OutgoingLoan[];
   // ── v3.3: Stadyum Stüdyosu (3D) ──
   stadium: StadiumState;
+  // ── v3.4: Pazar otomatik yenileme & rakip transferleri ──
+  lastMarketRefreshWeek: number;
+  matchesSinceMarketRefresh: number;
+  botTransfers: BotTransfer[];
   // ── v4.6: 3D Antrenman Kompleksi (tesisler) ──
   facility: FacilityState;
   // ── v4.2: Kulüp Kimliği & Müze ──
@@ -712,8 +775,9 @@ export interface SocialPost {
 
 export interface MatchEvent {
   minute: number;
-  type: 'goal' | 'save' | 'chance' | 'foul' | 'injury' | 'substitution' | 'card' | 'penalty' | 'var' | 'info';
+  type: 'goal' | 'save' | 'chance' | 'foul' | 'injury' | 'substitution' | 'card' | 'penalty' | 'var' | 'info' | 'offside' | 'corner' | 'freekick' | 'tackle' | 'interception';
   team: 'home' | 'away';
   player?: string;
   description: string;
+  xg?: number;
 }
