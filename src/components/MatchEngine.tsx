@@ -8,6 +8,7 @@ import { PenaltyShootout } from './PenaltyShootout';
 import { sfx } from '../utils/sound';
 import { skillInjuryReduction, skillTacticsBonus } from '../utils/progression';
 import { LivePitch } from './LivePitch';
+import { Match3D } from './Match3D';
 import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
 import { adaptationPct, effectiveOvr } from '../utils/adaptation';
@@ -23,7 +24,6 @@ export interface MatchExtras {
   corners: { home: number; away: number };
   fouls: { home: number; away: number };
   xg: { home: number; away: number };
-  shotMap?: { x:number; y:number; team:'home'|'away'; minute:number; xg:number }[];
   teamTalkMorale: number;
   penaltyWinner?: 'user' | 'opponent';
 }
@@ -45,6 +45,17 @@ interface MatchEngineProps {
 type Phase = 'pre' | 'first' | 'half' | 'second' | 'et' | 'pens' | 'done';
 type Talk = 'praise' | 'hairdryer' | 'calm';
 
+/** Kompakt istatistik çipi — maç ekranında az yer kaplar */
+const MiniStat: React.FC<{ label: string; value: string; hint?: string; wide?: boolean }> = ({ label, value, hint, wide }) => (
+  <div
+    title={hint}
+    className={`bg-slate-700/50 rounded-lg px-2 py-1 border border-slate-600/20 text-center ${wide ? 'min-w-[92px]' : 'min-w-[58px]'}`}
+  >
+    <div className="text-[8px] tracking-widest font-bold text-slate-400 leading-none">{label}</div>
+    <div className="text-white font-black text-[11px] leading-tight mt-0.5">{value}</div>
+  </div>
+);
+
 const randomOpponentName = () =>
   `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
 
@@ -60,12 +71,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [showSubModal, setShowSubModal] = useState(false);
   const [subOut, setSubOut] = useState<number | null>(null);
   const [scorers, setScorers] = useState<Map<number, { goals: number; assists: number }>>(new Map());
-  const [speed, setSpeed] = useState<1 | 2 | 4>(2);
+  const [speed, setSpeed] = useState<1 | 2>(1);
   const [possession, setPossession] = useState(50);
   const [shots, setShots] = useState({ home: 0, away: 0 });
   const [xg, setXg] = useState({ home: 0, away: 0 });
   const [spiker, setSpiker] = useState<string | null>(null);
-  const [shotMap, setShotMap] = useState<{ x:number; y:number; team:'home'|'away'; minute:number; xg:number }[]>([]);
   const [corners, setCorners] = useState({ home: 0, away: 0 });
   const [fouls, setFouls] = useState({ home: 0, away: 0 });
   const [activeLineup, setActiveLineup] = useState<Player[]>(() => fixLineup(gameState).team11);
@@ -84,6 +94,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [celebration, setCelebration] = useState<{ team: 'home' | 'away'; player?: string; key: number } | null>(null);
   const [subBoard, setSubBoard] = useState<{ outName: string; inName: string; outRole: string; inRole: string; key: number } | null>(null);
   const [cardPop, setCardPop] = useState<{ player: string; kind: 'yellow' | 'red' | 'second'; key: number } | null>(null);
+  /** ⏸️ Simülasyon dondurma — değişiklik ekranı açıkken dakika akışı tamamen durur */
+  const [freeze, setFreeze] = useState<{ icon: string; reason: string } | null>(null);
+  /** 🐢 Kart sonrası yavaş çekim — kısa süre sonra kendiliğinden normal hıza döner */
+  const [slowMo, setSlowMo] = useState(false);
+  /** 📜 Olay akışı kutusu — yer kaplamasın diye kapatılabilir */
+  const [consoleOpen, setConsoleOpen] = useState(true);
+  // 🎥 3D maç görünümü (düşük performanslı cihazlarda 2D'ye düşer)
+  const [view3d, setView3d] = useState(!gameState.life?.lowPerf);
 
   const consoleRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef({ u: 0, o: 0 });
@@ -97,6 +115,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const injuryMapRef = useRef<Map<number, number>>(new Map());
   const sentOffRef = useRef<number[]>([]);
   const handlerRef = useRef<(m: number, extra: boolean) => void>(() => {});
+  const slowMoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Gecikmeli devam ettirme sırasında fazı doğru okumak için */
+  const phaseRef = useRef<Phase>('pre');
 
   const pushSpiker = useCallback((txt: string) => {
     setSpiker(txt);
@@ -105,6 +127,47 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   const soundOn = gameState.soundOn !== false;
   const play = useCallback((fn: () => void) => { if (soundOn) fn(); }, [soundOn]);
+
+  /* ══════════ SİMÜLASYON KONTROLÜ ══════════
+     ⏸️ freeze : sen bir şey yaparken (ör. oyuncu değişikliği) dakika akışı tamamen durur,
+                 işlemi bitirince kaldığı yerden devam eder.
+     🐢 slowMo : kart gösterildiğinde simülasyon yavaş çekime geçer, birkaç saniye sonra
+                 kendiliğinden normal hızına döner. */
+  const pauseSim = useCallback((icon: string, reason: string) => {
+    if (resumeTimer.current) { clearTimeout(resumeTimer.current); resumeTimer.current = null; }
+    pausedRef.current = true;
+    setFreeze({ icon, reason });
+  }, []);
+
+  const resumeSim = useCallback((delay = 0) => {
+    if (resumeTimer.current) { clearTimeout(resumeTimer.current); resumeTimer.current = null; }
+    const running = () => phaseRef.current === 'first' || phaseRef.current === 'second' || phaseRef.current === 'et';
+    if (delay <= 0) {
+      if (running() || phaseRef.current === 'pre') pausedRef.current = false;
+      setFreeze(null);
+      return;
+    }
+    resumeTimer.current = setTimeout(() => {
+      resumeTimer.current = null;
+      // devre arası / maç sonu gibi durumlarda akışı kendimiz başlatmayız
+      if (running()) pausedRef.current = false;
+      setFreeze(null);
+    }, delay);
+  }, []);
+
+  const triggerSlowMo = useCallback((ms = 2800) => {
+    setSlowMo(true);
+    if (slowMoTimer.current) clearTimeout(slowMoTimer.current);
+    slowMoTimer.current = setTimeout(() => {
+      slowMoTimer.current = null;
+      setSlowMo(false);
+    }, ms);
+  }, []);
+
+  useEffect(() => () => {
+    if (slowMoTimer.current) clearTimeout(slowMoTimer.current);
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+  }, []);
 
   const difficulty = gameState.difficulty || 'normal';
   const diffCfg = DIFFICULTY_CONFIG[difficulty];
@@ -344,7 +407,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setShots(s => ({ ...s, home: s.home + 1 }));
         const thisXg = 0.08 + Math.random()*0.32;
         setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
-        setShotMap(m => [...m, { x: 72 + Math.random()*20, y: 20 + Math.random()*60, team: 'home', minute: currentMinute, xg: thisXg }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
         const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01)) + userStrength.starAttack * 0.005) * goalMult);
@@ -399,7 +461,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setShots(s => ({ ...s, away: s.away + 1 }));
         const thisXgA = 0.06 + Math.random()*0.28;
         setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
-        setShotMap(m => [...m, { x: 8 + Math.random()*20, y: 20 + Math.random()*60, team: 'away', minute: currentMinute, xg: thisXgA }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
         const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008)) - userStrength.starDefense * 0.004) * goalMult);
         const roll = Math.random();
@@ -452,6 +513,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         play(sfx.card);
         setCardPop({ player: player.name, kind: 'red', key: Date.now() });
         setTimeout(() => setCardPop(null), 2600);
+        // 🐢 kırmızı kart → simülasyon yavaş çekime geçer, sonra devam eder
+        triggerSlowMo(3600);
+        pushSpiker(`🟥 ${player.name} kırmızı kart! Hakem oyunu durdurdu — yavaş çekim...`);
         addEvent({
           minute: currentMinute, type: 'card', team: 'home', player: player.name,
           description: `🟥 ${player.name} kırmızı kart gördü! ${gameState.teamName} 10 kişi kaldı!`
@@ -469,6 +533,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         const secondYellow = record.yellow >= 2;
         setCardPop({ player: player.name, kind: secondYellow ? 'second' : 'yellow', key: Date.now() });
         setTimeout(() => setCardPop(null), 2600);
+        // 🐢 kart anı → kısa yavaş çekim, ardından simülasyon normal devam eder
+        triggerSlowMo(secondYellow ? 3400 : 2600);
+        pushSpiker(secondYellow
+          ? `🟨🟥 ${player.name} ikinci sarıdan atıldı — oyun yavaşlıyor...`
+          : `🟨 ${player.name} sarı kart gördü — hakem oyunu yavaşlattı`);
         if (secondYellow) {
           record.red += 1;
           cardMapRef.current.set(player.id, record);
@@ -568,7 +637,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [
     userStrength, oppStrength, opponent.name, gameState.teamName, gameState.setPieceTakers,
     addEvent, getRandomPlayer, diffCfg, weatherInfo, weather, addUserGoal, activeLineup, activeBench,
-    substitutions, sentOff, play
+    substitutions, sentOff, play, triggerSlowMo, pushSpiker
   ]);
 
   /* ══════════ MAÇ AKIŞI ══════════ */
@@ -674,6 +743,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [phase, isCup, pauseForHalfTime, startExtraTime, finishMatch, toPenalties, simulateMinute]);
 
   useEffect(() => { handlerRef.current = handleMinute; });
+  useEffect(() => { phaseRef.current = phase; });
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopTimer = () => {
@@ -688,6 +758,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   useEffect(() => {
     if (!matchRunning) { stopTimer(); return; }
     stopTimer();
+    // ⏱️ 1x = maç ~2 dk sürer (1333 ms/dk), 2x = ~1 dk (667 ms/dk)
+    // 🐢 yavaş çekim — kart anında dakika aralığı uzar, sonra normale döner
+    const tickMs = (1333 / speed) * (slowMo ? 3.2 : 1);
     timerRef.current = setInterval(() => {
       if (pausedRef.current || finishedRef.current) return;
       const next = minuteRef.current + 1;
@@ -695,9 +768,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       minuteRef.current = next;
       setMinute(next);
       handlerRef.current(next, extraTimeRef.current);
-    }, 1000 / speed / 2.5);
+    }, tickMs);
     return stopTimer;
-  }, [matchRunning, speed, phase]);
+  }, [matchRunning, speed, phase, slowMo]);
 
   useEffect(() => () => stopTimer(), []);
 
@@ -760,6 +833,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   const skipMatch = () => {
     disableMinigames();
+    // atlanırken yavaş çekim / dondurma olmaz
+    if (slowMoTimer.current) { clearTimeout(slowMoTimer.current); slowMoTimer.current = null; }
+    setSlowMo(false);
+    resumeSim(0);
     const isExtra = extraTimeRef.current;
     const endMinute = isExtra ? 120 : 90;
     let m = minuteRef.current;
@@ -811,10 +888,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [pendingScorer, addEvent, addUserGoal, resumeFromMinigame, play, opponent.name]);
 
   const makeSubstitution = (outId: number, inId: number) => {
-    if (substitutions.length >= 5) return;
+    if (substitutions.length >= 5) { setShowSubModal(false); setSubOut(null); resumeSim(0); return; }
     const outPlayer = activeLineup.find(p => p.id === outId);
     const inPlayer = activeBench.find(p => p.id === inId);
-    if (!outPlayer || !inPlayer) return;
+    if (!outPlayer || !inPlayer) { setShowSubModal(false); setSubOut(null); resumeSim(0); return; }
 
     playedRef.current.add(inPlayer.id);
     setActiveLineup(prev => prev.map(p =>
@@ -829,6 +906,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     setTimeout(() => setSubBoard(null), 2800);
     setShowSubModal(false);
     setSubOut(null);
+    // ▶️ değişiklik tamam — simülasyon kısa bir duraksamanın ardından kaldığı yerden devam eder
+    addEvent({ minute: minuteRef.current, type: 'info', team: 'home', description: `▶️ Değişiklik tamamlandı, oyun yeniden başladı (${inPlayer.name} sahada).` });
+    resumeSim(900);
   };
 
   const handleFinishClick = () => {
@@ -849,7 +929,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       corners,
       fouls,
       xg,
-      shotMap,
       teamTalkMorale: talkBonus.morale,
       penaltyWinner
     };
@@ -910,11 +989,22 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               🧑‍💼 {managerMatchBonus(gameState).label}
             </span>
           </div>
-          <div className="flex gap-1 shrink-0">
-            {([1, 2, 4] as const).map(s => (
+          <div className="flex items-center gap-1 shrink-0">
+            {/* ⏸️ / 🐢 simülasyon durumu */}
+            {freeze ? (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-sky-500 text-white flex items-center gap-1" title="Sen işlem yaparken maç durur">
+                {freeze.icon} DONDURULDU
+              </span>
+            ) : slowMo ? (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black flex items-center gap-1 animate-pulse" title="Kart gösterildi — yavaş çekim">
+                🐢 YAVAŞ ÇEKİM
+              </span>
+            ) : null}
+            {([1, 2] as const).map(s => (
               <button
                 key={s}
                 onClick={() => setSpeed(s)}
+                title={s === 1 ? '1x — maç ~2 dakika sürer' : '2x — maç ~1 dakika sürer'}
                 className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
                   speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70 hover:bg-emerald-800'
                 }`}
@@ -922,8 +1012,35 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 {s}x
               </button>
             ))}
+            {/* 4x yerine: maçı doğrudan atla */}
+            <button
+              onClick={skipMatch}
+              disabled={!matchRunning}
+              title="Kalan dakikaları anında simüle et"
+              className="px-2 py-0.5 rounded text-xs font-bold transition-all bg-slate-600/70 text-white/85 hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ⏭️ Atla
+            </button>
           </div>
         </div>
+
+        {/* ⏸️ Dondurma / 🐢 yavaş çekim şeridi */}
+        {(freeze || slowMo) && phase !== 'pre' && phase !== 'done' && (
+          <div
+            className={`px-3 py-1 text-[11px] font-black flex items-center justify-center gap-2 ${
+              freeze ? 'bg-sky-500/90 text-white' : 'bg-amber-400/90 text-black'
+            }`}
+          >
+            {freeze ? (
+              <>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                {freeze.icon} {freeze.reason} — dakika {String(minute).padStart(2, '0')}' sabit, bitirince devam eder
+              </>
+            ) : (
+              <>🐢 KART! Simülasyon yavaş çekimde — birazdan normal hızına dönecek</>
+            )}
+          </div>
+        )}
 
         {/* Spiker */}
         {spiker && (
@@ -933,10 +1050,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         )}
         {/* Scoreboard — her zaman görünür (sticky skor) */}
-        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0 sticky top-0 z-20 shadow-[0_8px_24px_rgba(0,0,0,0.45)] border-b border-emerald-500/20">
+        <div className="bg-gradient-to-b from-slate-800 to-slate-900 px-2 py-2 lg:px-4 lg:py-3 flex-shrink-0 sticky top-0 z-20 shadow-[0_8px_24px_rgba(0,0,0,0.45)] border-b border-emerald-500/20">
           <div className="flex items-center justify-between max-w-xl mx-auto">
             <div className="text-center flex-1">
-              <div className="text-3xl lg:text-4xl mb-1">{gameState.teamLogo}</div>
+              <div className="text-2xl lg:text-3xl">{gameState.teamLogo}</div>
               <div className="text-white font-bold text-xs lg:text-base truncate px-1">{gameState.teamName}</div>
               <div className="text-emerald-400 text-xs font-bold" title={userStrength.penaltyTotal > 0.5 ? `Takım uyumu %${userStrength.teamAdaptPct} — bazı oyuncular henüz alışamadı` : `Takım uyumu %${userStrength.teamAdaptPct}`}>
                 {userStrength.penaltyTotal > 0.5 ? (
@@ -949,13 +1066,13 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             </div>
 
             <div className="px-2 lg:px-6">
-              <div className="text-4xl lg:text-6xl font-black text-white flex items-center gap-2 lg:gap-4">
+              <div className="text-3xl lg:text-5xl font-black text-white flex items-center gap-2 lg:gap-4">
                 <span className={score.u > score.o ? 'text-emerald-400' : ''}>{score.u}</span>
                 <span className="text-slate-500">-</span>
                 <span className={score.o > score.u ? 'text-red-400' : ''}>{score.o}</span>
               </div>
               <div className="text-center mt-1">
-                <div className="text-2xl lg:text-3xl font-black text-amber-400 font-mono">
+                <div className="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none">
                   {String(minute).padStart(2, '0')}'
                 </div>
                 <div className="text-[10px] text-slate-500">
@@ -970,98 +1087,99 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             </div>
 
             <div className="text-center flex-1">
-              <div className="text-3xl lg:text-4xl mb-1">{opponent.logo}</div>
+              <div className="text-2xl lg:text-3xl">{opponent.logo}</div>
               <div className="text-white font-bold text-xs lg:text-base truncate px-1">{opponent.name}</div>
               <div className="text-slate-400 text-xs">OVR: {oppOvr}{!isHome && <span className="text-amber-300"> • ev sahibi</span>}</div>
             </div>
           </div>
 
           {(phase !== 'pre') && (
-            <div className="mt-3 grid grid-cols-2 lg:grid-cols-6 gap-2 max-w-3xl mx-auto text-center text-xs">
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20 hover:border-emerald-500/30 transition-colors">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">TOP HAKİMİYETİ</div>
-                <div className="text-white font-black text-sm">%{Math.round(possession)} - %{Math.round(100 - possession)}</div>
-                <div className="mt-1.5 h-2 bg-slate-800 rounded-full overflow-hidden flex p-0.5">
-                  <div className="bg-gradient-to-r from-emerald-500 to-emerald-400 h-full rounded-full transition-all duration-700" style={{ width: `${possession}%` }} />
-                  <div className="bg-gradient-to-r from-red-500 to-red-400 h-full rounded-full transition-all duration-700" style={{ width: `${100 - possession}%` }} />
-                </div>
+            <div className="mt-2 max-w-3xl mx-auto">
+              {/* Kompakt istatistik şeridi — tek satır, az yer kaplar */}
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                <MiniStat wide label="TOP HAKİMİYETİ" value={`%${Math.round(possession)} - %${Math.round(100 - possession)}`} hint="Top hakimiyeti" />
+                <MiniStat label="ŞUT" value={`${shots.home} - ${shots.away}`} hint="Şutlar" />
+                <MiniStat label="KORNER" value={`${corners.home} - ${corners.away}`} />
+                <MiniStat label="FAUL" value={`${fouls.home} - ${fouls.away}`} />
+                <MiniStat wide label="xG" value={`${xg.home.toFixed(2)} - ${xg.away.toFixed(2)}`} hint="Beklenen gol (xG)" />
+                <MiniStat label="DEĞİŞİKLİK" value={`${substitutions.length}/5`} hint="Kullanılan değişiklik hakkı" />
               </div>
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">ŞUTLAR</div>
-                <div className="text-white font-black text-lg">{shots.home} <span className="text-slate-500 text-xs">-</span> {shots.away}</div>
-                <div className="text-[10px] text-slate-500">toplam</div>
-              </div>
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">KORNER</div>
-                <div className="text-white font-black text-lg">{corners.home} <span className="text-slate-500 text-xs">-</span> {corners.away}</div>
-              </div>
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">FAUL</div>
-                <div className="text-white font-black text-lg">{fouls.home} <span className="text-slate-500 text-xs">-</span> {fouls.away}</div>
-              </div>
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">xG</div>
-                <div className="text-white font-black text-sm">{xg.home.toFixed(2)} <span className="text-slate-500 text-xs">-</span> {xg.away.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-500">beklenen gol (xG)</div>
-              </div>
-              <div className="bg-slate-700/50 backdrop-blur rounded-xl p-2.5 border border-slate-600/20">
-                <div className="text-[10px] tracking-widest font-bold text-slate-400">DEĞİŞİKLİK</div>
-                <div className="text-white font-black text-lg">{substitutions.length}<span className="text-slate-500 text-sm">/5</span></div>
-                <div className="h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div className="h-full bg-blue-500 transition-all" style={{ width: `${(substitutions.length/5)*100}%` }} /></div>
+              <div className="mt-1 h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div className="bg-emerald-500 h-full transition-all duration-700" style={{ width: `${possession}%` }} />
+                <div className="bg-red-500 h-full transition-all duration-700" style={{ width: `${100 - possession}%` }} />
               </div>
             </div>
           )}
         </div>
 
-        {/* Canlı 2D saha - büyütüldü, ekrana uyumlu */}
-        {phase !== 'pre' && (
+        {/* 🎥 Canlı saha — 3D (menajer kamerası) veya 2D yedek görünüm */}
+        {phase !== 'pre' && phase !== 'pens' && (
           <div className="px-2 lg:px-4 pt-3 flex-shrink-0">
-            <LivePitch
-              minute={minute}
-              possession={possession}
-              events={events}
-              homeLogo={gameState.teamLogo}
-              awayLogo={opponent.logo}
-              homeName={gameState.teamName}
-              awayName={opponent.name}
-              isHome={isHome}
-              lineup={activeLineup}
-              sentOff={sentOff}
-              phase={phase}
-              weather={weather}
-            />
+            {view3d ? (
+              <Match3D
+                gameState={gameState}
+                opponent={opponent}
+                userIsHome={isHome}
+                weather={weather}
+                minute={minute}
+                possession={possession}
+                phase={phase}
+                scoreUser={score.u}
+                scoreOpp={score.o}
+                lineup={activeLineup}
+                userOnPitch={Math.max(7, 11 - sentOff.length - activeLineup.filter(p => p.injured || p.redCard).length)}
+                oppOnPitch={11}
+                events={events}
+                paused={freeze !== null}
+                slowMo={slowMo}
+                lowPerf={!!gameState.life?.lowPerf}
+                onFallback={() => setView3d(false)}
+                className="h-[46vh] min-h-[300px] max-h-[520px]"
+              />
+            ) : (
+              <>
+                <div className="mb-1 flex justify-end">
+                  <button
+                    onClick={() => setView3d(true)}
+                    className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-700/70 hover:bg-emerald-600 text-white"
+                  >
+                    🎥 3D Görünüme Dön
+                  </button>
+                </div>
+                <LivePitch
+                  minute={minute}
+                  possession={possession}
+                  events={events}
+                  homeLogo={gameState.teamLogo}
+                  awayLogo={opponent.logo}
+                  homeName={gameState.teamName}
+                  awayName={opponent.name}
+                  isHome={isHome}
+                  lineup={activeLineup}
+                  sentOff={sentOff}
+                  phase={phase}
+                  weather={weather}
+                  paused={freeze !== null}
+                  slowMo={slowMo}
+                />
+              </>
+            )}
           </div>
         )}
 
-        {/* Şut Haritası — ortalama görsel, sade */}
-        {phase !== 'pre' && shotMap.length > 0 && (
-          <div className="px-2 lg:px-4 pt-2">
-            <div className="bg-slate-900/60 border border-slate-700/40 rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] tracking-widest font-bold text-slate-400">ŞUT HARİTASI — xG {xg.home.toFixed(2)} : {xg.away.toFixed(2)}</div>
-                <div className="text-[10px] text-slate-500">{shotMap.length} şut • yeşil senin, kırmızı rakip</div>
-              </div>
-              <div className="relative h-28 bg-gradient-to-b from-emerald-900/30 to-emerald-800/20 rounded-lg border border-emerald-700/30 overflow-hidden">
-                {/* saha çizgileri */}
-                <div className="absolute inset-2 border border-white/20 rounded-sm" />
-                <div className="absolute top-1/2 left-2 right-2 h-px bg-white/20 -translate-y-1/2" />
-                <div className="absolute top-1/2 left-1/2 w-12 h-16 border border-white/15 rounded-sm -translate-x-1/2 -translate-y-1/2" />
-                <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 bg-white/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
-                <div className="absolute top-2 bottom-2 left-2 w-6 border-r border-white/15 bg-white/[0.03]" />
-                <div className="absolute top-2 bottom-2 right-2 w-6 border-l border-white/15 bg-white/[0.03]" />
-                {shotMap.slice(-18).map((s,i)=> (
-                  <div key={i} title={`${s.team==='home'?gameState.teamName:opponent.name} ${s.minute}' xG ${s.xg.toFixed(2)}`} className={`absolute w-2.5 h-2.5 rounded-full border border-white/60 shadow-sm -translate-x-1/2 -translate-y-1/2 ${s.team==='home' ? 'bg-emerald-400' : 'bg-red-500'}`} style={{ left: `${s.x}%`, top: `${s.y}%`, opacity: 0.82 }} />
-                ))}
-              </div>
-              <div className="text-[10px] text-slate-500 mt-1.5 flex gap-3">
-                <span>● Yeşil = sen ({shots.home} şut)</span><span>● Kırmızı = rakip ({shots.away})</span><span className="ml-auto hidden sm:inline">Son 18 şut gösterilir — ortalama mod sade</span>
-              </div>
-            </div>
+        {/* Match Console - kompakt + kapatılabilir (yer kazanmak için) */}
+        <div className="px-2 pt-2 lg:px-4 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2 mb-1 px-1">
+            <span className="text-[10px] tracking-widest font-black text-slate-400">📜 MAÇ ANLATIMI</span>
+            <button
+              onClick={() => setConsoleOpen(o => !o)}
+              className="text-[10px] font-bold text-slate-300 bg-slate-700/60 hover:bg-slate-600 px-2 py-0.5 rounded-full border border-slate-600/40"
+            >
+              {consoleOpen ? '▲ Kapat' : `▼ Aç (${events.length})`}
+            </button>
           </div>
-        )}
-        {/* Match Console - büyütüldü */}
-        <div className="p-2 lg:p-4 flex-shrink-0">
-          <div ref={consoleRef} className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 h-52 lg:h-64 overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">
+          {consoleOpen && (
+          <div ref={consoleRef} className="bg-black/50 rounded-xl border border-emerald-500/30 h-28 lg:h-36 overflow-y-auto custom-scroll p-2 lg:p-3 font-mono text-[11px] lg:text-xs">
             {events.map((event, i) => (
               <div
                 key={i}
@@ -1078,6 +1196,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Controls */}
@@ -1105,7 +1224,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           {(phase === 'first' || phase === 'second' || phase === 'et') && (
             <>
               <button
-                onClick={() => setShowSubModal(true)}
+                onClick={() => { setShowSubModal(true); pauseSim('⏸️', 'Değişiklik yapılıyor — simülasyon donduruldu'); }}
                 disabled={substitutions.length >= 5}
                 className="px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 text-white font-medium rounded-xl transition-all text-sm"
               >
@@ -1187,8 +1306,12 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         {showSubModal && (
           <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-10">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
-              <h3 className="text-xl font-bold text-white mb-2">Oyuncu Değişikliği</h3>
-              <p className="text-slate-400 text-sm mb-4">Kalan hak: {5 - substitutions.length}</p>
+              <h3 className="text-xl font-bold text-white mb-1">Oyuncu Değişikliği</h3>
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-black text-sky-200 bg-sky-500/15 border border-sky-500/40 rounded-lg px-2 py-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-300 animate-pulse" />
+                ⏸️ SİMÜLASYON DONDURULDU — {String(minute).padStart(2, '0')}' sabit
+              </div>
+              <p className="text-slate-400 text-xs mb-3">Kalan hak: {5 - substitutions.length} • Değişikliği yapınca veya vazgeçince maç kaldığı yerden devam eder.</p>
 
               {!subOut ? (
                 <div>
@@ -1222,10 +1345,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               )}
 
               <button
-                onClick={() => { setShowSubModal(false); setSubOut(null); }}
+                onClick={() => { setShowSubModal(false); setSubOut(null); resumeSim(0); }}
                 className="w-full mt-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-xl"
               >
-                İptal
+                ✕ Vazgeç — simülasyon devam etsin
               </button>
             </div>
           </div>

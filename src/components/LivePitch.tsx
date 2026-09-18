@@ -14,6 +14,10 @@ interface LivePitchProps {
   sentOff: number[];
   phase: string;
   weather?: Weather;
+  /** ⏸️ Simülasyon donduruldu (ör. oyuncu değişikliği yapılırken) — sahadaki her şey durur */
+  paused?: boolean;
+  /** 🐢 Kart sonrası yavaş çekim — animasyonlar ağırlaşır */
+  slowMo?: boolean;
 }
 
 /** Rakip diziliş şablonu (kullanıcı takımı üst kaleye hücum eder) */
@@ -28,20 +32,22 @@ const ATTACK_TYPES: MatchEvent['type'][] = ['goal', 'penalty', 'chance', 'save']
 /** Maçın canlı 2D saha görünümü — top, diziliş ve son olaylar */
 export const LivePitch: React.FC<LivePitchProps> = ({
   minute, possession, events, homeLogo, awayLogo, homeName, awayName,
-  isHome, lineup, sentOff, phase, weather = 'sunny'
+  isHome, lineup, sentOff, phase, weather = 'sunny', paused = false, slowMo = false
 }) => {
   const [tick, setTick] = useState(0);
   const isWet = weather === 'rain' || weather === 'storm' || weather === 'snow';
   const [slipId, setSlipId] = useState<number | null>(null);
-  // 2.5Hz canlılık — oyuncular dribbling hissi için hafif zıplasın
+  // Canlılık tick'i — ⏸️ dondurulunca tamamen durur, 🐢 yavaş çekimde ağırlaşır
   useEffect(() => {
+    if (paused) return;
     if (phase === 'pre' || phase === 'half' || phase === 'done' || phase === 'pens') return;
-    const id = setInterval(() => setTick(t => t + 1), 380);
+    const id = setInterval(() => setTick(t => t + 1), slowMo ? 1150 : 380);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, paused, slowMo]);
 
   // Yağmurda kayma — her 7-11 tick’te bir oyuncu kayar (hafif, 900ms)
   useEffect(() => {
+    if (paused) return;
     if (!isWet || phase === 'pre' || phase === 'half' || phase === 'done' || phase === 'pens') return;
     const id = setInterval(() => {
       if (Math.random() < 0.38) {
@@ -54,7 +60,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
       }
     }, 2600);
     return () => clearInterval(id);
-  }, [isWet, phase, lineup, sentOff]);
+  }, [isWet, phase, lineup, sentOff, paused]);
 
   const lastAttack = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
@@ -75,6 +81,9 @@ export const LivePitch: React.FC<LivePitchProps> = ({
     return Math.max(0.42, 0.58 - (minute - 90) / 30 * 0.16);
   }, [minute]);
   const effectiveEnergy = (p: Player) => Math.max(10, Math.min(100, p.energy - minute * 0.42 - (phase === 'et' ? 10 : 0)));
+
+  // 🐢 Yavaş çekim: hareket süreleri uzar, her şey ağırlaşır (⏸️ dondurmada tick zaten durur)
+  const motionMs = (base: number) => Math.round(base * (slowMo ? 2.8 : 1));
 
   // Sürekli top sürme — possession + son atak + tick jitter
   const ball = useMemo(() => {
@@ -178,8 +187,8 @@ export const LivePitch: React.FC<LivePitchProps> = ({
         </span>
       </div>
 
-      {/* Saha - büyütüldü: maç simülasyonu artık ekrana uyumlu ve geniş + premium ışık */}
-      <div className={`relative w-full h-64 sm:h-72 lg:h-[380px] xl:h-[440px] rounded-xl overflow-hidden border-2 shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.12)] ${lastGoal ? 'animate-goal-flash border-emerald-400/60 shadow-[0_0_32px_rgba(16,185,129,0.5)]' : 'border-white/30'}`}
+      {/* Saha - kompakt: ekranda daha az yer kaplar, premium ışık korunur */}
+      <div className={`relative w-full h-52 sm:h-60 lg:h-[300px] xl:h-[340px] rounded-xl overflow-hidden border-2 shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.12)] ${lastGoal ? 'animate-goal-flash border-emerald-400/60 shadow-[0_0_32px_rgba(16,185,129,0.5)]' : paused ? 'border-sky-400/70' : slowMo ? 'border-amber-400/70' : 'border-white/30'}`}
         style={{
           background:
             'repeating-linear-gradient(0deg, #15803d 0px, #15803d 22px, #16a34a 22px, #16a34a 44px)',
@@ -231,7 +240,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
             <div
               key={`away-${i}`}
               className="absolute w-4 h-4 lg:w-5 lg:h-5 rounded-full bg-red-600 border border-white/80 shadow flex items-center justify-center text-[7px] font-bold text-white"
-              style={{ top: `${Math.max(6, Math.min(94, tgtY))}%`, left: `${Math.max(8, Math.min(92, tgtX))}%`, transform: 'translate(-50%, -50%)', transition: `all ${420 + (1 - fatigueFactor) * 180}ms ease-out` }}
+              style={{ top: `${Math.max(6, Math.min(94, tgtY))}%`, left: `${Math.max(8, Math.min(92, tgtX))}%`, transform: 'translate(-50%, -50%)', transition: `all ${motionMs(420 + (1 - fatigueFactor) * 180)}ms ease-out` }}
             >
               {i + 1}
             </div>
@@ -262,7 +271,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
               <div
                 className={`w-5 h-5 lg:w-6 lg:h-6 rounded-full border shadow flex items-center justify-center text-[8px] font-black ${p.injured ? 'bg-orange-500 text-black border-white' : isSlipping ? 'bg-sky-200 text-sky-900 border-sky-400' : isCarrier ? 'bg-white text-emerald-700 border-emerald-400 scale-110' : tired ? 'bg-emerald-300/90 text-black border-white/80' : 'bg-emerald-400 text-black border-white'}`}
                 style={{
-                  transition: isCarrier ? 'all 320ms cubic-bezier(0.34,1.2,0.64,1)' : isSlipping ? 'all 260ms ease' : `all ${520 + (1 - fatigueFactor) * 220}ms ease-out`,
+                  transition: isCarrier ? `all ${motionMs(320)}ms cubic-bezier(0.34,1.2,0.64,1)` : isSlipping ? `all ${motionMs(260)}ms ease` : `all ${motionMs(520 + (1 - fatigueFactor) * 220)}ms ease-out`,
                   boxShadow: isSlipping ? '0 0 0 2px rgba(125,211,252,0.8), 0 2px 10px rgba(0,0,0,0.3)' : isCarrier ? '0 0 10px rgba(16,185,129,0.9), 0 2px 8px rgba(0,0,0,0.35)' : tired ? '0 0 6px rgba(251,146,60,0.35)' : undefined,
                   opacity: isSlipping ? 1 : tired ? 0.92 : 1,
                 }}
@@ -290,16 +299,16 @@ export const LivePitch: React.FC<LivePitchProps> = ({
             top: `${ball.y}%`,
             left: `${ball.x}%`,
             transform: 'translate(-50%, -50%)',
-            transition: isWet ? 'all 560ms cubic-bezier(0.22,0.9,0.36,1)' : 'all 380ms cubic-bezier(0.22,1,0.36,1)',
+            transition: isWet ? `all ${motionMs(560)}ms cubic-bezier(0.22,0.9,0.36,1)` : `all ${motionMs(380)}ms cubic-bezier(0.22,1,0.36,1)`,
             boxShadow: isWet ? '0 2px 10px rgba(0,0,0,0.35), 0 0 0 2px rgba(125,211,252,0.9)' : '0 2px 8px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.9)',
-            animation: phase !== 'half' && phase !== 'pre' ? `ballBounce 380ms ease ${tick % 2 ? '0ms' : '80ms'} infinite alternate` : undefined,
+            animation: !paused && phase !== 'half' && phase !== 'pre' ? `ballBounce ${motionMs(380)}ms ease ${tick % 2 ? '0ms' : '80ms'} infinite alternate` : undefined,
           }}
         >
           ⚽
         </div>
         {/* Top izi — 2 hayalet */}
-        <div className="absolute w-2 h-2 rounded-full bg-white/55 border border-white/60 pointer-events-none" style={{ top: `${ball.y}%`, left: `${ball.x}%`, transform: `translate(-50%, -50%) translate(${Math.sin(tick)*2}px, ${Math.cos(tick)*1.5}px) scale(0.7)`, transition: 'all 520ms ease-out', opacity: 0.45 }} />
-        <div className="absolute w-1.5 h-1.5 rounded-full bg-white/35 pointer-events-none" style={{ top: `${ball.y}%`, left: `${ball.x}%`, transform: `translate(-50%, -50%) translate(${Math.cos(tick*0.8)*3}px, ${Math.sin(tick*0.7)*2}px) scale(0.6)`, transition: 'all 650ms ease-out', opacity: 0.3 }} />
+        <div className="absolute w-2 h-2 rounded-full bg-white/55 border border-white/60 pointer-events-none" style={{ top: `${ball.y}%`, left: `${ball.x}%`, transform: `translate(-50%, -50%) translate(${Math.sin(tick)*2}px, ${Math.cos(tick)*1.5}px) scale(0.7)`, transition: `all ${motionMs(520)}ms ease-out`, opacity: paused ? 0.2 : 0.45 }} />
+        <div className="absolute w-1.5 h-1.5 rounded-full bg-white/35 pointer-events-none" style={{ top: `${ball.y}%`, left: `${ball.x}%`, transform: `translate(-50%, -50%) translate(${Math.cos(tick*0.8)*3}px, ${Math.sin(tick*0.7)*2}px) scale(0.6)`, transition: `all ${motionMs(650)}ms ease-out`, opacity: paused ? 0.12 : 0.3 }} />
 
         {/* Ev sahibi / deplasman etiketi */}
         <div className="absolute top-1 right-1 bg-black/50 rounded px-1.5 py-0.5 text-[9px] text-white font-bold">
@@ -311,6 +320,23 @@ export const LivePitch: React.FC<LivePitchProps> = ({
         {phase === 'half' && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-bold">
             ⏸️ Devre arası
+          </div>
+        )}
+        {/* ⏸️ Simülasyon donduruldu — sen değişiklik yaparken saha tamamen durur */}
+        {paused && phase !== 'half' && (
+          <div className="absolute inset-0 z-20 bg-sky-950/45 backdrop-blur-[1.5px] flex flex-col items-center justify-center gap-1 pointer-events-none">
+            <div className="bg-sky-500 text-white text-[11px] font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2">
+              ⏸️ SİMÜLASYON DONDURULDU
+            </div>
+            <div className="text-[10px] text-sky-100 font-bold">Değişikliğini yap — bitince maç kaldığı yerden devam eder</div>
+          </div>
+        )}
+        {/* 🐢 Kart yavaş çekimi — hafif amber ton + köşe karartması */}
+        {slowMo && !paused && phase !== 'half' && (
+          <div className="absolute inset-0 z-20 pointer-events-none" style={{ background: 'radial-gradient(120% 90% at 50% 50%, transparent 45%, rgba(245,158,11,0.22) 100%)' }}>
+            <div className="absolute top-1.5 left-1/2 -translate-x-1/2 bg-amber-400 text-black text-[10px] font-black px-2.5 py-1 rounded-full shadow animate-pulse">
+              🐢 YAVAŞ ÇEKİM — KART
+            </div>
           </div>
         )}
       </div>
