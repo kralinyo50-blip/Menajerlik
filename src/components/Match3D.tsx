@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GameState, MatchEvent, Player, StadiumDesign, Weather } from '../types/game';
 import { FORMATIONS, WEATHER_INFO } from '../data/constants';
 import { stadiumCapacity } from '../utils/stadium';
+import { isSoftwareWebGL } from '../utils/webgl';
 import { buildMatchScene, Match3DInput, ShapeSlot, Side } from './match3d/scene';
 import { awayVenue, hashText, homeVenue, kitFrom, opponentKit, Venue } from './match3d/venue';
 
@@ -184,9 +185,14 @@ export const Match3D: React.FC<Match3DProps> = ({
   useEffect(() => {
     const host = hostRef.current;
     if (!host || failed) return;
+    // 🩺 Yazılımsal WebGL (SwiftShader/llvmpipe) tespiti: bu cihazlarda ağır sahne
+    // ana thread'i saniyelerce kilitler → sayfa donar/çöker. Tespit edilirse sahne
+    // baştan düşük kaliteyle kurulur; yine kaldırmazsa aşağıdaki bekçi 2D'ye düşer.
+    const softGl = isSoftwareWebGL();
+    const perf = lowPerf || softGl;
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: !lowPerf, alpha: false, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({ antialias: !perf, alpha: false, powerPreference: 'high-performance' });
     } catch {
       setFailed(true);
       fallbackRef.current?.();
@@ -195,7 +201,8 @@ export const Match3D: React.FC<Match3DProps> = ({
 
     const width = Math.max(320, host.clientWidth);
     const height = Math.max(240, host.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowPerf ? 1 : 1.5));
+    // Piksel oranı: 1.25 üstü bu sahne boyutunda göz farkı yaratmaz, GPU'yu gereksiz şişirir
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, perf ? 1 : 1.25));
     renderer.setSize(width, height, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -216,7 +223,7 @@ export const Match3D: React.FC<Match3DProps> = ({
       awayKit: kits.away,
       weather,
       night: venue.night,
-      lowPerf,
+      lowPerf: perf,
       homeShape,
       awayShape,
       homeName: userIsHome ? gameState.teamName : opponent.name,
@@ -240,6 +247,14 @@ export const Match3D: React.FC<Match3DProps> = ({
         });
       });
     });
+    // 🩺 Gölge haritasını makula indir: 2048² PCFSoft pişirme zayıf GPU'da sayfayı
+    // kilitler. Statik sahneye 512/1024 görsel olarak yeter, bellek/dolgu maliyeti 4-16× azalır.
+    // (İlk render'dan ÖNCE ayarlanmalı — harita ilk karede bu boyutta tahsis edilir.)
+    const shadowRes = perf ? 512 : 1024;
+    scene.traverse(o => {
+      const light = o as THREE.DirectionalLight;
+      if (light.isDirectionalLight && light.castShadow) light.shadow.mapSize.set(shadowRes, shadowRes);
+    });
     if (bundle.skyTexture) scene.background = bundle.skyTexture;
     else scene.background = new THREE.Color(bundle.sky);
     if (bundle.fog) scene.fog = new THREE.Fog(bundle.fog[0], bundle.fog[1], bundle.fog[2]);
@@ -248,12 +263,14 @@ export const Match3D: React.FC<Match3DProps> = ({
     camera.position.copy(bundle.cam.position);
     camera.lookAt(bundle.cam.target);
 
-    // Gölgeler bir kez pişirilir (stadyum statik) → kare başına gölge maliyeti yok
+    // Gölgeler bir kez pişirilir (stadyum statik) → kare başına gölge maliyeti yok.
+    // Pişirme, kurulumu kilitlememesi için İLK ANİMASYON KARESİ'nde olur (aşağıda).
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
-    renderer.render(scene, camera);
 
     /* — etkileşim: sürükle = etrafa bak, tekerlek = yakınlaştır, çift tık = sıfırla — */
+    /** Bekçi/context-kaybı sonrası çift geçişi önler (tek seferlik 2D düşüş) */
+    const fellBackRef = { current: false };
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
@@ -277,11 +294,22 @@ export const Match3D: React.FC<Match3DProps> = ({
       lookRef.current.zoom = Math.max(0.55, Math.min(1.8, lookRef.current.zoom + e.deltaY * 0.0011));
     };
     const onDbl = () => { lookRef.current.yaw = 0; lookRef.current.pitch = 0; lookRef.current.zoom = 1; };
+    // 🧯 GPU context kaybolduğunda (zayıf GPU'da bellek baskısı) stadyum donuk karede
+    // kalakalır. preventDefault + otomatik 2D geçiş ile maç sorunsuz devam eder.
+    const onCtxLost = (e: Event) => {
+      e.preventDefault();
+      if (!fellBackRef.current) {
+        fellBackRef.current = true;
+        setFailed(true);
+        fallbackRef.current?.();
+      }
+    };
     el.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('dblclick', onDbl);
+    el.addEventListener('webglcontextlost', onCtxLost);
 
     const ro = new ResizeObserver(() => {
       const w = Math.max(320, host.clientWidth);
@@ -295,10 +323,20 @@ export const Match3D: React.FC<Match3DProps> = ({
     let raf = 0;
     let prev = performance.now();
     let hudT = 0;
+    let readyShown = false;
+    // 🩺 Kare süresi bekçisi: kurulduktan sonraki ilk 6 saniyede ortalama kare süresi
+    // 350 ms'yi aşarsa (yazılımsal WebGL / çok zayıf GPU) 3D yerine sorunsuz çalışan
+    // 2D sahaya otomatik geçilir — maç asla donup kalmaz. İlk pişirmede yavaşlayıp
+    // sonra rahatlayan cihazlar affedilir (bekçi kare sayısına da bakar).
+    const guardStart = performance.now();
+    let guardFrames = 0;
+    let guardDone = false;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
+      if (document.hidden) return;            // sekme arka planda → GPU'yu yorma
+
       bundle.setCameraMode(camModeRef.current);
       bundle.update(now / 1000, dt, inputRef.current);
 
@@ -313,6 +351,24 @@ export const Match3D: React.FC<Match3DProps> = ({
       }
       renderer.render(scene, camera);
 
+      // İlk kare başarıyla çizildi → "Stadyum hazırlanıyor…" perdesini kaldır
+      if (!readyShown) { readyShown = true; setReady(true); }
+
+      if (!guardDone) {
+        guardFrames++;
+        if (guardFrames > 150) {
+          guardDone = true;                   // 150 kareyi gördüyse makul sayılır
+        } else if (now - guardStart > 6000) {
+          guardDone = true;
+          const avgMs = (now - guardStart) / Math.max(1, guardFrames);
+          if (avgMs > 350 && !fellBackRef.current) {
+            fellBackRef.current = true;
+            setFailed(true);
+            fallbackRef.current?.();          // 🎬 2D sahaya otomatik geç
+          }
+        }
+      }
+
       hudT += dt;
       if (hudT > 0.25) {
         hudT = 0;
@@ -323,7 +379,6 @@ export const Match3D: React.FC<Match3DProps> = ({
       }
     };
     raf = requestAnimationFrame(loop);
-    setReady(true);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -333,10 +388,25 @@ export const Match3D: React.FC<Match3DProps> = ({
       window.removeEventListener('pointerup', onUp);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('dblclick', onDbl);
+      el.removeEventListener('webglcontextlost', onCtxLost);
       bundle.dispose();
       scene.remove(bundle.group);
+      // 🧹 GPU kaynaklarını TAM bırak: geometri + materyaller (dokular bundle.dispose'ta).
+      // Eskiden yalnızca birkaç doku serbest bırakılıyordu; her maç yüzlerce MB'lik yeni
+      // bir WebGL bağlamı açıyor, eskiler GC'yi beklerken birikip GPU sürecini
+      // çökertebiliyordu ("birkaç maç sonrası sekme çökmesi").
+      bundle.group.traverse(obj => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+        else mat?.dispose();
+      });
+      bundle.group.clear();
       bundle.skyTexture?.dispose();
       renderer.dispose();
+      // Bağlamı hemen terk et — GC'ye güvenip GPU belleğinde bekleme
+      renderer.forceContextLoss();
       if (el.parentElement) el.parentElement.removeChild(el);
       setReady(false);
     };

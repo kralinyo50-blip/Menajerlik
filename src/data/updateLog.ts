@@ -9,6 +9,20 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.8.2',
+    date: '18 Eyl 2026',
+    tag: 'DÜZELTME',
+    title: '🏟️ Maç 3D Donma/Çökme Düzeltmesi (Stadyum Yüklenirken Kilitlenme)',
+    items: [
+      '🛠️ Maça girilirken stadyum yüklendikten sonra sayfanın donup çökmesi giderildi: ilk kare artık kurulumu kilitlemiyor, gölge pişirme ilk animasyon karesine taşındı',
+      '🩺 Yazılımsal WebGL (SwiftShader/llvmpipe) otomatik tespit ediliyor: bu cihazlarda 3D düşük kaliteyle kurulur, kaldırmazsa maç sorunsuz 2D sahaya düşer — donma yok',
+      '🧯 GPU bağlamı kaybolduğunda (webglcontextlost) maç artık donuk karede kalmıyor, otomatik 2D sahaya geçiyor',
+      '🧹 Maç sonunda GPU belleği tam boşaltılıyor (geometri/materyal dispose + forceContextLoss): art arda oynanan maçlarda biriken GPU belleği sekmeyi çökertemiyor',
+      '🏟️ Maç ekranı açıkken alttaki sekmelerin 3D sahneleri (Stadyum/Antrenman/Hayat) gereksiz yere çizilmiyor — GPU yükü yarıya iniyor',
+      '⚖️ Gölge haritası 2048²den 1024²ye (zayıf cihazda 512²ye) indirildi: görünüm aynı, bellek ve dolgu maliyeti 4-16× daha az',
+    ],
+  },
+  {
     version: '4.8.1',
     date: '18 Eyl 2026',
     tag: 'DÜZELTME',
