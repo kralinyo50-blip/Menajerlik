@@ -29,6 +29,7 @@ import {
 } from '../utils/loan';
 import { readSlot, writeSlot, randomWeather } from '../utils/save';
 import { fixLineup } from '../utils/lineup';
+import { effectiveOvr } from '../utils/adaptation';
 import { renewalCost, renewalWage } from '../utils/contract';
 import { createCareerMissions, createSeasonMissions, createWeeklyMissions, evaluateMissions, refreshWeeklyIfNeeded } from '../utils/missions';
 import {
@@ -1256,6 +1257,7 @@ export const useGameState = () => {
         const formDelta = r.rating >= 7.5 ? 1 : r.rating >= 6.5 ? 0 : -1;
         return {
           ...p,
+          matchesPlayed: (p.matchesPlayed ?? 0) + 1,
           form: Math.max(1, Math.min(10, (p.form || 5) + formDelta)),
           morale: Math.max(0, Math.min(100, p.morale + (r.rating >= 7 ? 4 : r.rating < 5.5 ? -4 : 0)))
         };
@@ -3042,7 +3044,8 @@ export const useGameState = () => {
       const pool = [...prev.team11, ...prev.bench].filter(p => !p.injured && (p.suspension ?? 0) === 0);
       if (pool.length < 11) return prev;
 
-      const score = (p: Player) => p.ovr * 2 + (p.form ?? 5) * 1.6 + p.energy * 0.15 + p.morale * 0.05;
+      const poolAvgPick = pool.reduce((a, p) => a + p.ovr, 0) / Math.max(1, pool.length);
+      const score = (p: Player) => effectiveOvr(p, poolAvgPick, prev.teamChemistry ?? 55) * 2 + (p.form ?? 5) * 1.6 + p.energy * 0.15 + p.morale * 0.05;
       const used = new Set<number>();
       const chosen: Player[] = [];
 

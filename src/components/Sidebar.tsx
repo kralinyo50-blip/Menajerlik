@@ -9,7 +9,6 @@ interface SidebarProps {
   onPlayMatch: () => void;
   onSave: () => void;
   onSignSponsor: (sponsor: Sponsor) => void;
-  onOpenAchievements?: () => void;
   onSaveToSlot: (slot: number) => void;
   onLoadFromSlot: (slot: number) => void;
   onExportSave: () => void;
@@ -18,7 +17,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  gameState, onPlayMatch, onSave, onSignSponsor, onOpenAchievements,
+  gameState, onPlayMatch, onSave, onSignSponsor,
   onSaveToSlot, onLoadFromSlot, onExportSave, onImportSave, onToggleSound
 }) => {
   const [showSponsorModal, setShowSponsorModal] = React.useState(false);
@@ -289,7 +288,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => { setShowSponsorModal(true); refreshSlots(); }}
               disabled={!!gameState.activeSponsor}
@@ -311,13 +310,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               title="Ses aç/kapat"
             >
               {gameState.soundOn !== false ? '🔊' : '🔇'}
-            </button>
-            <button
-              onClick={onOpenAchievements}
-              className="py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-lg transition-all text-xs"
-              title="Başarımlar"
-            >
-              🏅
             </button>
           </div>
         </div>

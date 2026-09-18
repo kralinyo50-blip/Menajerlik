@@ -30,9 +30,6 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ gameState }) => {
           </div>
           <div className="flex gap-2 text-xs">
             <span className="bg-slate-700/50 px-3 py-1.5 rounded-lg text-slate-300">
-              🏅 {(gameState.achievements || []).filter(a => a.unlocked).length}/{(gameState.achievements || []).length} başarım
-            </span>
-            <span className="bg-slate-700/50 px-3 py-1.5 rounded-lg text-slate-300">
               🎮 {gameState.clubStats.minigamesWon || 0} mini oyun
             </span>
           </div>

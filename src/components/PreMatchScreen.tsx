@@ -5,6 +5,7 @@ import { TIER_INFO } from '../data/stars';
 import { Stadium3D } from './Stadium3D';
 import { stadiumCapacity } from '../utils/stadium';
 import { lineupWarnings } from '../utils/lineup';
+import { adaptationInfo } from '../utils/adaptation';
 import { sfx } from '../utils/sound';
 
 interface PreMatchScreenProps {
@@ -24,6 +25,17 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
 }) => {
   const weatherInfo = WEATHER_INFO[weather] || WEATHER_INFO.cloudy;
   const warnings = lineupWarnings(gameState);
+  const pmAvg = gameState.team11.reduce((a, p) => a + p.ovr, 0) / Math.max(1, gameState.team11.length);
+  const pmChem = gameState.teamChemistry ?? 55;
+  // 🧩 Uyum uyarıları: alışamamış yıldızlar düşük oynar
+  gameState.team11
+    .filter(p => !p.injured && !(p.suspension ?? 0))
+    .forEach(p => {
+      const info = adaptationInfo(p, pmAvg, pmChem);
+      if (!info.adapted && info.penalty > 2) {
+        warnings.push(`🧩 ${p.name} henüz uyum sağlayamadı (%${info.pct}) — sahada ~${Math.round(info.effective)} oynar`);
+      }
+    });
 
   const userOvr = Math.floor(
     gameState.team11.filter(p => !p.injured && !(p.suspension ?? 0))
@@ -225,6 +237,9 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
                     {ROLE_NAMES[p.role]} {p.ovr}
                     {p.injured && ' 🏥'}
                     {(p.suspension ?? 0) > 0 && ' 🟥'}
+                    {!p.injured && !(p.suspension ?? 0) && adaptationInfo(p, pmAvg, pmChem).penalty > 2 && (
+                      <span title="Takıma alışıyor"> 🧩</span>
+                    )}
                   </span>
                 </div>
               ))}

@@ -7,6 +7,7 @@ import { TIER_INFO } from '../../data/stars';
 import { formatMoney } from '../../utils/pricing';
 import { generateLoanOutOffers } from '../../utils/loan';
 import { LoanOutOffer } from '../../types/game';
+import { adaptationInfo, adaptationPct } from '../../utils/adaptation';
 
 interface SquadTabProps {
   gameState: GameState;
@@ -191,6 +192,7 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                       {player.starTier && <span className="text-[10px]" title={TIER_INFO[player.starTier].label}>{TIER_INFO[player.starTier].icon}</span>}
                       {gameState.captainId === player.id && <span className="text-[10px]">🎽</span>}
                       {player.wantsOut && <span className="text-[10px]" title="Kulüpten ayrılmak istiyor">😠</span>}
+                      {adaptationPct(player) < 0.6 && <span className="text-[10px]" title={`Takıma alışıyor (%${Math.round(adaptationPct(player) * 100)})`}>🧩</span>}
                       {player.loanFrom && <span className="text-[9px] bg-cyan-500/30 text-cyan-200 px-1 rounded" title={`${player.loanFrom} kulübünden kiralık`}>KİRALIK</span>}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-400 leading-relaxed">
@@ -285,6 +287,28 @@ export const SquadTab: React.FC<SquadTabProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Takım uyumu */}
+            {(() => {
+              const squadAvg = Math.floor(gameState.team11.reduce((a, p) => a + p.ovr, 0) / Math.max(1, gameState.team11.length));
+              const info = adaptationInfo(selectedPlayer, squadAvg, gameState.teamChemistry ?? 55);
+              return (
+                <div className="bg-violet-500/10 border border-violet-500/30 rounded-xl p-3 mb-4">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-violet-300 font-bold">🧩 Takım Uyumu</span>
+                    <span className="text-white font-bold">%{info.pct}{info.penalty > 0.5 ? ` • sahada ~${Math.round(info.effective)}` : ' • tam uyum'}</span>
+                  </div>
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div className={`h-full ${info.pct >= 100 ? 'bg-emerald-500' : info.pct >= 50 ? 'bg-violet-500' : 'bg-amber-500'}`} style={{ width: `${info.pct}%` }} />
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1.5">
+                    {info.adapted
+                      ? 'Takımla bütünleşti — gerçek gücünde oynuyor.'
+                      : `${info.matchesLeft} maç sonra tam uyum. ${info.penalty > 2 ? `Şu an takım seviyesinin üstünde olduğu için düşük oynuyor (~${Math.round(info.effective)}).` : 'Yeni — biraz zamana ihtiyacı var.'}`}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Kiralık bilgisi */}
             {selectedPlayer.loanFrom && (
