@@ -160,6 +160,7 @@ function renderToBuffer(
     gain: l.intensity / (4 * Math.PI),
     distance: l.distance,
   }));
+  const _tmpVec = new THREE.Vector3();
   const pointLightAt = (p: THREE.Vector3) => {
     const acc = new THREE.Color(0, 0, 0);
     for (const l of pointLights) {
@@ -182,6 +183,10 @@ function renderToBuffer(
     map?: THREE.Texture | null;
     emap?: THREE.Texture | null;
     em: number[];
+    /** Piksel başına ışık için: albedo, gölgesiz gölge çarpanı ve dünya konumları */
+    albedo: number[];
+    shade: number;
+    wp: THREE.Vector3[];
   }
   const tris: Tri[] = [];
   const near = camera.near + 0.01;
@@ -275,15 +280,7 @@ function renderToBuffer(
         if (n.lengthSq() < 1e-9) continue;
         n.normalize();
         const shade = ambient + diffuse * Math.abs(n.dot(lightDir));
-        const col = baseCol.clone().multiplyScalar(shade);
-        if (pointLights.length) {
-          const centroid = new THREE.Vector3().add(w0).add(w1).add(w2).multiplyScalar(1 / 3);
-          const pl = pointLightAt(centroid);
-          col.r += baseCol.r * pl.r;
-          col.g += baseCol.g * pl.g;
-          col.b += baseCol.b * pl.b;
-        }
-        const shaded = [Math.min(255, col.r * 255), Math.min(255, col.g * 255), Math.min(255, col.b * 255)];
+        const shaded = [Math.min(255, baseCol.r * shade * 255), Math.min(255, baseCol.g * shade * 255), Math.min(255, baseCol.b * shade * 255)];
         const uv = ua ? [ua.getX(i0), ua.getY(i0), ua.getX(i1), ua.getY(i1), ua.getX(i2), ua.getY(i2)] : null;
         // Kamera uzayında yakın düzleme göre kırp
         const clipped = clipNear([viewOf(w0), viewOf(w1), viewOf(w2)]);
@@ -292,6 +289,13 @@ function renderToBuffer(
           const q1 = projOf(clipped[k]);
           const q2 = projOf(clipped[k + 1]);
           if (!q0 || !q1 || !q2) continue;
+          const wpTri = pointLights.length
+            ? [
+                clipped[0].clone().applyMatrix4(camera.matrixWorld),
+                clipped[k].clone().applyMatrix4(camera.matrixWorld),
+                clipped[k + 1].clone().applyMatrix4(camera.matrixWorld),
+              ]
+            : [];
           tris.push({
             x: [q0.x, q1.x, q2.x],
             y: [q0.y, q1.y, q2.y],
@@ -302,6 +306,9 @@ function renderToBuffer(
             map: hasMap ? map : null,
             emap: hasEmap ? emap : null,
             em: emArr,
+            albedo: [baseCol.r, baseCol.g, baseCol.b],
+            shade: shade * (inst ? 1 : 1),
+            wp: wpTri,
           });
         }
       }
@@ -339,6 +346,16 @@ function renderToBuffer(
         zbuf[pi] = z;
         const i3 = pi * 3;
         let cr = t.col[0], cg = t.col[1], cb = t.col[2];
+        if (t.wp.length === 3) {
+          // Dünya konumunu barycentric interpolasyonla bul → nokta ışığını pikselde hesapla
+          const wx = l0 * t.wp[0].x + l1 * t.wp[1].x + l2 * t.wp[2].x;
+          const wy = l0 * t.wp[0].y + l1 * t.wp[1].y + l2 * t.wp[2].y;
+          const wz = l0 * t.wp[0].z + l1 * t.wp[1].z + l2 * t.wp[2].z;
+          const pl = pointLightAt(_tmpVec.set(wx, wy, wz));
+          cr = Math.min(255, t.albedo[0] * (t.shade + pl.r) * 255);
+          cg = Math.min(255, t.albedo[1] * (t.shade + pl.g) * 255);
+          cb = Math.min(255, t.albedo[2] * (t.shade + pl.b) * 255);
+        }
         if ((mapData || emapData) && (u0 !== 0 || v0 !== 0 || u1 !== 0 || v1 !== 0 || u2 !== 0 || v2 !== 0)) {
           const uu = l0 * u0 + l1 * u1 + l2 * u2;
           const vv = l0 * v0 + l1 * v1 + l2 * v2;
@@ -408,19 +425,53 @@ function composeSheet(tiles: { buf: Uint8Array; label: string }[], cols: number,
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const clubColor = '#1d4ed8';
 
-const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number }[] = [
+const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number; pointLights?: boolean }[] = [
   { name: 'preview-stadyum-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 17000, night: false, dPhi: 0, dTheta: 0, zoom: 1 },
-  { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05 },
+  { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05, pointLights: true },
+  // Tasarım seçenekleri galerisi: her kare farklı bir özelleştirme seçimini gösterir
+  { name: 'preview-stadyum-tasarim-cati-yok.png', design: { seatColor: '#2563eb', accentColor: '#f8fafc', roof: 'none', stands: 'classic', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: false }, capacity: 9000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
+  { name: 'preview-stadyum-tasarim-canopy.png', design: { seatColor: '#16a34a', accentColor: '#facc15', roof: 'canopy', stands: 'stepped', pitchPattern: 'plain', flags: true, logoOnPitch: true, floodlights: true }, capacity: 17000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
+  { name: 'preview-stadyum-tasarim-cam-cati.png', design: { seatColor: '#7c3aed', accentColor: '#e5e7eb', roof: 'glass', stands: 'double', pitchPattern: 'rings', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
+  { name: 'preview-stadyum-tasarim-bowl.png', design: { seatColor: '#dc2626', accentColor: '#111827', roof: 'full', stands: 'bowl', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: true }, capacity: 34000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
 ];
 
+const stadiumTiles: { buf: Uint8Array; label: string }[] = [];
 stadiumPreviews.forEach(p => {
-  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', night: p.night });
+  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night });
   const rows = Math.max(4, Math.min(30, Math.round(p.capacity / 1600)));
   const baseRadius = Math.max(165, (105 + rows * 4.6) * 1.3);
+  const spotX = 105 / 2 + 8 + rows * 1.6 * 0.7;
+  const spotZ = 68 / 2 + 8 + rows * 1.6 * 0.7;
+  const spotY = rows * 1.6 + 16;
+  const depth = (p.design.stands === 'stepped' ? 1.9 : 1.55) * rows;
+  const halfZ = 68 / 2 + 8 + depth + 4;
   const buffer = renderToBuffer(bundle.group, {
     radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta, targetY: Math.max(6, rows * 1.1), fov: 46,
-  }, { sky: p.night ? '#0b1026' : '#7ab0e0', night: p.night });
+  }, {
+    sky: p.night ? '#0b1026' : '#7ab0e0',
+    night: p.night,
+    // Sahnedeki gece projektörleri (scene.ts ile aynı konum/şiddet)
+    pointLights: p.night
+      ? [
+          ...(p.pointLights
+            ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({
+                x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 56000, distance: 300, color: 0xffe9a8,
+              }))
+            : []),
+          // Giriş meydanı lambaları (scene.ts ile aynı)
+          { x: -34, y: 7, z: halfZ + 30, intensity: 22000, distance: 120, color: 0xffe3a8 },
+          { x: 34, y: 7, z: halfZ + 30, intensity: 22000, distance: 120, color: 0xffe3a8 },
+        ]
+      : undefined,
+  });
   writePNG(`${OUT_DIR}/${p.name}`, buffer, W, H);
+  if (p.name.includes('tasarim')) {
+    const label = p.design.roof === 'none' ? 'çatısız • klasik'
+      : p.design.roof === 'canopy' ? 'saçak çatı • basamaklı'
+      : p.design.roof === 'glass' ? 'cam çatı • çift kat'
+      : 'tam çatı • bowl';
+    stadiumTiles.push({ buf: buffer, label });
+  }
   console.log(`🏟️  ${p.name} üretildi`);
 });
 

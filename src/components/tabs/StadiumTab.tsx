@@ -177,6 +177,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             logo={gameState.teamLogo}
             sponsorText={gameState.activeSponsor ? `${gameState.activeSponsor.name.toUpperCase()} • RESMİ SPONSOR • ` : `${gameState.teamName.toUpperCase()} • RESMİ SPONSOR • `}
             night={night}
+            teamName={gameState.teamName}
             cinematic={cinematic}
             height={400}
             crowdIntensity={fillRate}
