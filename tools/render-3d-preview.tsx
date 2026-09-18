@@ -665,8 +665,10 @@ if (process.env.MATCH_ONLY) {
 /* ── Önizlemeler ── */
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const clubColor = '#1d4ed8';
+/** STADIUM_ONLY=1 → yalnızca stadyum kareleri (tesis 3D denetimi için hızlı mod) */
+const STADIUM_ONLY = !!process.env.STADIUM_ONLY;
 
-const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number }[] = [
+const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number; facilities?: Record<string, number>; focus?: { x: number; y: number; z: number; radius: number } }[] = [
   { name: 'preview-stadyum-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 17000, night: false, dPhi: 0, dTheta: 0, zoom: 1 },
   { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05 },
   // Tasarım seçenekleri galerisi: her kare farklı bir özelleştirme seçimini gösterir
@@ -677,16 +679,21 @@ const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; 
   { name: 'preview-stadyum-tasarim-canopy.png', design: { seatColor: '#16a34a', accentColor: '#facc15', roof: 'canopy', stands: 'stepped', pitchPattern: 'plain', flags: true, logoOnPitch: true, floodlights: true }, capacity: 17000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-cam-cati.png', design: { seatColor: '#7c3aed', accentColor: '#e5e7eb', roof: 'glass', stands: 'double', pitchPattern: 'rings', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-bowl.png', design: { seatColor: '#dc2626', accentColor: '#111827', roof: 'full', stands: 'bowl', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: true }, capacity: 34000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
+  // ── İç tesisler (büfe, mağaza, restoran…) — 3D'de görünürlük denetimi ──
+  // theta ≈ -0.85 → kamera giriş meydanının (büfe çarşısı) karşısına gelir
+  { name: 'preview-stadyum-tesisler-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 34000, night: false, dPhi: 0.04, dTheta: -0.15, zoom: 1, focus: { x: 0, y: 2, z: 104.55, radius: 162 }, facilities: { buffet: 5, fanShop: 4, restaurant: 3, bar: 3, parking: 3, toilets: 3, security: 4, ledScreen: 2, soundSystem: 3, museum: 2, kidsZone: 3, medicalRoom: 2 } },
+  { name: 'preview-stadyum-tesisler-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'glass', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 46000, night: true, dPhi: 0.04, dTheta: -0.15, zoom: 1, focus: { x: 0, y: 2, z: 116.95, radius: 186 }, facilities: { buffet: 5, fanShop: 5, restaurant: 4, bar: 5, parking: 4, toilets: 4, security: 5, ledScreen: 4, soundSystem: 4, museum: 3, kidsZone: 4, medicalRoom: 3 } },
 ];
 
 const stadiumTiles: { buf: Uint8Array; label: string }[] = [];
 stadiumPreviews.forEach(p => {
-  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night });
+  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night, facilities: p.facilities });
   const rows = Math.max(4, Math.min(30, Math.round(p.capacity / 1600)));
   const baseRadius = Math.max(165, (105 + rows * 4.6) * 1.3);
   const buffer = renderToBuffer(bundle.group, {
-    radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
-    targetY: Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
+    radius: p.focus ? p.focus.radius : baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
+    targetX: p.focus?.x, targetZ: p.focus?.z,
+    targetY: p.focus ? p.focus.y : Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
   }, {
     sky: p.night ? '#0b1026' : '#7ab0e0',
     night: p.night,
@@ -703,6 +710,11 @@ stadiumPreviews.forEach(p => {
   }
   console.log(`🏟️  ${p.name} üretildi`);
 });
+
+if (STADIUM_ONLY) {
+  console.log(`\n🏟️  Stadyum kareleri hazır: ${stadiumPreviews.map(p => p.name).join(', ')}`);
+  process.exit(0);
+}
 
 const lifeScenes: { activity: LifeActivityId; variant: string; time: number; name: string }[] = [
   { activity: 'gym', variant: 'run', time: 0.4, name: 'preview-hayat-spor-kosu.png' },

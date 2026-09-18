@@ -208,7 +208,8 @@ export const Match3D: React.FC<Match3DProps> = ({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = venue.night ? 0.92 : 1.04;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // ⚠️ PCFSoftShadowMap r186'da kaldırıldı → PCFShadowMap (konsol uyarısı yok)
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
@@ -248,7 +249,7 @@ export const Match3D: React.FC<Match3DProps> = ({
         });
       });
     });
-    // 🩺 Gölge haritasını makula indir: 2048² PCFSoft pişirme zayıf GPU'da sayfayı
+    // 🩺 Gölge haritasını makula indir: 2048² PCF pişirme zayıf GPU'da sayfayı
     // kilitler. Statik sahneye 512/1024 görsel olarak yeter, bellek/dolgu maliyeti 4-16× azalır.
     // (İlk render'dan ÖNCE ayarlanmalı — harita ilk karede bu boyutta tahsis edilir.)
     const shadowRes = perf ? 512 : 1024;

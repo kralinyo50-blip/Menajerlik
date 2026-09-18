@@ -9,6 +9,24 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.8.3',
+    date: '18 Eyl 2026',
+    tag: 'DÜZELTME',
+    title: '🍔 Tesisler Artık 3D\'de Görünüyor + 3D Tam Ekran + Konsol Uyarıları Temizlendi',
+    items: [
+      '🍔 Büfe, taraftar mağazası, restoran, bar, müze, çocuk alanı ve otopark artık stadyumun 3D sahnesinde gerçekten görünüyor (büfe seviyesi arttıkça kulübe + masa + şemsiye sayısı da artar)',
+      '👁️ İç Tesisler sekmesindeki her tesisin yanına "Ön İzle" tuşu eklendi: bir üst seviyeyi satın almadan 3D\'de görürsün — yeni yapı sarı halka + ışık sütunu ile işaretlenir, kamera oraya bakar',
+      '🎯 Tesis yükseltmesi satın alınınca 3D sahne anında tazelenir ve yeni yapı 12 saniye boyunca işaretli kalır (eskiden sahne yeniden kurulmadığı için büfe alınsa bile görünmüyordu)',
+      '📺 Stadyum sekmesine "3D Tam Ekran" tuşu eklendi: sahne tüm pencereyi kaplar, ESC veya ✕ ile çıkılır',
+      '🎥 Kamera ön ayarları: Genel Görünüm / Çarşı & Büfeler / Saha — tek tıkla büfelere ya da sahaya odaklan',
+      '🎬 Maç ekranındaki stadyum da artık tesisleri gösteriyor: iç saha maçlarında büfe, mağaza, otopark sahanın çevresinde görünür',
+      '🧪 Konsoldaki "Download the React DevTools" bilgisi yalnızca geliştirme modunda çıkar; `npm run build` ile üretim sürümünde konsol tamamen sessizdir',
+      '🧹 Maçtaki konsol uyarıları temizlendi: THREE.Clock (kaldırıldı) yerine THREE.Timer, PCFSoftShadowMap (kaldırıldı) yerine PCFShadowMap kullanılıyor — aynı görüntü, sıfır uyarı',
+      '🔗 /favicon.ico 404 hatası giderildi (ikon artık sayfanın içinde gömülü)',
+      '⚡ Sekme kaydırma göstergesi 800 ms\'de bir gereksiz yeniden çizim yapmıyor — maç sırasındaki mikro takılmalar azaldı',
+    ],
+  },
+  {
     version: '4.8.2',
     date: '18 Eyl 2026',
     tag: 'DÜZELTME',

@@ -1,9 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { StadiumDesign } from '../types/game';
 import { buildStadiumGroup } from './stadium/scene';
 import { isBackgroundRenderPaused } from '../utils/renderGate';
 import { isSoftwareWebGL } from '../utils/webgl';
+
+/** Stadyum 3D izleyicinin dışarıdan kumandası (kamera ön ayarları) */
+export interface StadiumViewerApi {
+  focusPreset: (preset: 'overview' | 'plaza' | 'pitch') => void;
+}
 
 interface Stadium3DProps {
   design: StadiumDesign;
@@ -23,16 +28,67 @@ interface Stadium3DProps {
   wet?: boolean;
   /** Kulüp adı — skorbord ve giriş tabelasında görünür */
   teamName?: string;
-  /** Tesis seviyeleri */
+  /** İç tesis seviyeleri (büfe, mağaza, otopark …) — 3D'de görünür */
   facilities?: Record<string, number>;
+  /** Ön izlenen / yeni alınan tesis — 3D'de halka + ışık sütunu ile işaretlenir */
+  highlightFacility?: string | null;
+  /** İşaretin üstünde görünen etiket (ör. "🍔 Büfe • Seviye 3 ön izleme") */
+  previewLabel?: string | null;
+  /** Kamera ön ayarı — sahne kurulduğunda uygulanır */
+  initialView?: 'overview' | 'plaza' | 'pitch';
+  /** Izleyici kumandası: tab buradan kamerayı istediği noktaya çevirir */
+  viewerApi?: React.MutableRefObject<StadiumViewerApi | null>;
+}
+
+/** Tesis işareti için canvas'tan metin etiketi üretir (sprite) */
+function makeLabelSprite(text: string, accent = '#fbbf24'): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+  if (ctx) {
+    ctx.fillStyle = 'rgba(2,6,23,0.82)';
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 6;
+    const r = 26;
+    ctx.beginPath();
+    ctx.moveTo(12 + r, 14);
+    ctx.lineTo(628 - r, 14);
+    ctx.quadraticCurveTo(628, 14, 628, 14 + r);
+    ctx.lineTo(628, 114 - r);
+    ctx.quadraticCurveTo(628, 114, 628 - r, 114);
+    ctx.lineTo(12 + r, 114);
+    ctx.quadraticCurveTo(12, 114, 12, 114 - r);
+    ctx.lineTo(12, 14 + r);
+    ctx.quadraticCurveTo(12, 14, 12 + r, 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = 'bold 56px Inter, Segoe UI, sans-serif';
+    ctx.fillStyle = accent;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text.slice(0, 34), 320, 67);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    sprite.material.map = tex;
+    sprite.material.needsUpdate = true;
+  }
+  sprite.scale.set(30, 6, 1);
+  return sprite;
 }
 
 /**
  * WebGL ile 3D stadyum görüntüleyici.
  * Kendi orbit kontrolü: sürükle = döndür, tekerlek/pinch = yakınlaştır, çift tık = sıfırla.
+ * İç tesisler (büfe, mağaza, otopark…) tesis seviyelerine göre sahneye eklenir; ön izleme
+ * yapılan tesis halka + ışık sütunu ile işaretlenir ve kamera oraya bakar.
  */
 export const Stadium3D: React.FC<Stadium3DProps> = ({
-  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false, teamName = 'STADYUM', facilities
+  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '',
+  crowdIntensity = 50, wet = false, teamName = 'STADYUM', facilities, highlightFacility = null, previewLabel = null,
+  initialView = 'overview', viewerApi,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -41,12 +97,19 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
   const cinematicRef = useRef(cinematic);
   const crowdRef = useRef(crowdIntensity);
   const wetRef = useRef(wet);
-  const facilitiesRef = useRef(facilities);
-  facilitiesRef.current = facilities;
   nightRef.current = night;
   cinematicRef.current = cinematic;
   crowdRef.current = crowdIntensity;
   wetRef.current = wet;
+
+  const viewRef = useRef(initialView);
+  viewRef.current = initialView;
+
+  /** Tesis imzası — seviye değişince sahne yeniden kurulur (büfe satın alınınca görünür) */
+  const facilityKey = useMemo(() => {
+    if (!facilities) return '';
+    return Object.keys(facilities).sort().map(k => `${k}:${facilities[k] ?? 0}`).join(',');
+  }, [facilities]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -67,7 +130,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // Geceyi bembeyaz yapmaması için pozlamayı kıs — gece daha loş, gündüz canlı
     renderer.toneMappingExposure = nightRef.current ? 0.88 : 1.02;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // ⚠️ PCFSoftShadowMap r186'da kaldırıldı (three.js konsola uyarı basıyor) → PCFShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = `${height}px`;
@@ -162,12 +226,85 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
 
     /* ── Sahne ── */
-    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current, facilities: facilities as any });
+    const bundle = buildStadiumGroup(design, {
+      capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current,
+      facilities: facilities as any,
+    });
     scene.add(bundle.group);
     // Gökyüzü: prosedürel gradyan dokusu (yoksa düz renk)
     scene.background = bundle.skyTexture ?? new THREE.Color(bundle.sky);
     // Sis rengini gökyüzünün ufuk tonuna eşitle → ufukta dikiş görünmez
     scene.fog = new THREE.Fog(nightRef.current ? 0x22314e : 0xd9eaf7, baseRadius * 1.35, baseRadius * 3.4);
+
+    /* ── Kamera ön ayarları: Genel / Çarşı (büfeler) / Saha ── */
+    const applyPreset = (preset: 'overview' | 'plaza' | 'pitch') => {
+      const anchor = preset === 'plaza' ? bundle.anchors.plaza : preset === 'pitch' ? bundle.anchors.pitch : { x: 0, y: targetY, z: 0 };
+      target.set(anchor.x, anchor.y, anchor.z);
+      if (preset === 'overview') {
+        spherical.radius = baseRadius; spherical.phi = 0.98; spherical.theta = 0.85;
+      } else if (preset === 'plaza') {
+        // Taraftar çarşısı: alçak ve yakın açı — büfe kulübeleri, masalar, mağaza görünür
+        spherical.radius = Math.max(minRadius, baseRadius * 0.62); spherical.phi = 1.02; spherical.theta = 0.7;
+      } else {
+        // Saha: tribünlerin üstünden sahaya bakış
+        spherical.radius = Math.max(minRadius, baseRadius * 0.95); spherical.phi = 1.22; spherical.theta = 0.85;
+      }
+      applyCamera();
+    };
+    if (viewerApi) viewerApi.current = { focusPreset: applyPreset };
+    if (initialView !== 'overview' && !highlightFacility) applyPreset(initialView);
+
+    /* ── Tesisi işaretle: halka + ışık sütunu + etiket + kamera odağı ──
+       Ön izlemede satın alınmamış tesisin 3D'de tam olarak nerede olacağını gösterir. */
+    const markers: { mesh: THREE.Mesh; baseOpacity: number; kind: 'ring' | 'beam' }[] = [];
+    if (highlightFacility) {
+      const all = bundle.facilities?.[highlightFacility] ?? [];
+      // İç (koridor) parçalar varsa yalnızca dıştakiler işaretlenir — halka meydanda kalsın
+      const outdoor = all.filter(o => !o.userData.facilityIndoor);
+      const use = outdoor.length ? outdoor : all;
+      if (use.length) {
+        const box = new THREE.Box3();
+        use.forEach(o => { o.updateWorldMatrix(true, true); box.expandByObject(o); });
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        // Halka tesisin etrafını sarar ama çarşı gibi uzun dizilerde devleşmez (üst sınır 26 m)
+        const radius = Math.min(26, Math.max(5.5, Math.max(size.x, size.z) * 0.55));
+        const top = Math.max(6, box.max.y);
+        const groundY = Math.max(0.14, box.min.y + 0.14);
+
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(radius, radius * 1.1, 56),
+          new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(center.x, groundY, center.z);
+        scene.add(ring);
+        markers.push({ mesh: ring, baseOpacity: 0.6, kind: 'ring' });
+
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius * 0.45, radius * 0.7, top + 26, 24, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: 0xfbbf24, transparent: true, opacity: 0.14, side: THREE.DoubleSide,
+            depthWrite: false, blending: THREE.AdditiveBlending,
+          })
+        );
+        beam.position.set(center.x, (top + 26) / 2, center.z);
+        scene.add(beam);
+        markers.push({ mesh: beam, baseOpacity: 0.14, kind: 'beam' });
+
+        if (previewLabel) {
+          const sprite = makeLabelSprite(previewLabel);
+          sprite.position.set(center.x, top + 20, center.z);
+          scene.add(sprite);
+        }
+
+        // Kamerayı tesise çevir: kullanıcı yeni büfeyi/mağazayı hemen görsün
+        target.set(center.x, Math.max(3, Math.min(top, size.y * 0.9 + 3)), center.z);
+        spherical.phi = Math.min(spherical.phi, 1.05);
+        spherical.radius = Math.max(minRadius, Math.min(maxRadius, Math.max(radius * 6, baseRadius * 0.5)));
+        applyCamera();
+      }
+    }
     setReady(true);
 
     const onResize = () => {
@@ -181,13 +318,17 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     observer?.observe(mount);
 
     let raf = 0;
-    const clock = new THREE.Clock();
+    // ⚠️ THREE.Clock r183'te kaldırıldı (konsola deprecation uyarısı basıyor) → THREE.Timer
+    const timer = new THREE.Timer();
+    if (typeof document !== 'undefined') timer.connect(document);
+    timer.reset();
     const animate = () => {
       raf = requestAnimationFrame(animate);
+      timer.update();
       // 🏟️ Maç ekranı açıkken (veya sekme arkadayken) GPU'yu yorma — kareyi atla
       if (isBackgroundRenderPaused() || document.hidden) return;
-      const t = clock.getElapsedTime();
-      const dt = clock.getDelta();
+      const t = timer.getElapsed();
+      const dt = Math.min(0.05, timer.getDelta());
 
       if (cinematicRef.current && !dragging) {
         spherical.theta += dt * 0.09;
@@ -216,6 +357,13 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
           }
         });
       }
+      // Tesis işareti nabız gibi atar (halka döner, ışık sütunu nefes alır)
+      markers.forEach(({ mesh, baseOpacity, kind }, i) => {
+        const pulse = 0.6 + Math.sin(t * 3 + i) * 0.35;
+        const mat = mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = kind === 'ring' ? baseOpacity * pulse : baseOpacity * (0.6 + pulse * 0.6);
+        if (kind === 'ring') mesh.rotation.z = t * 0.35;
+      });
 
       renderer.render(scene, camera);
     };
@@ -223,6 +371,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      timer.dispose();
       window.removeEventListener('resize', onResize);
       observer?.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
@@ -241,18 +390,21 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
         const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
         if (Array.isArray(mat)) mat.forEach(m => m.dispose());
         else mat?.dispose();
+        const spriteMap = (obj as THREE.Sprite).material?.map;
+        if (spriteMap) spriteMap.dispose();
       });
       bundle.group.clear();
       // Sahne arka planı olarak kullanılan gökyüzü dokusunu da serbest bırak
       bundle.skyTexture?.dispose();
       renderer.dispose();
+      if (viewerApi) viewerApi.current = null;
       // WebGL bağlamını hemen terk et — GPU belleği GC'yi beklemesin
       renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
-      void bundle;
       setReady(false);
     };
-  }, [design, capacity, logo, sponsorText, teamName, height, night, wet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [design, capacity, logo, sponsorText, teamName, height, night, wet, facilityKey, highlightFacility]);
 
   if (failed) {
     return (
@@ -272,6 +424,11 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       <div className="absolute bottom-2 left-2 bg-black/55 backdrop-blur px-2.5 py-1.5 rounded-lg text-[10px] text-slate-200 pointer-events-none">
         🖱️ Sürükle: döndür • Tekerlek: yakınlaştır • Çift tık: sıfırla
       </div>
+      {highlightFacility && previewLabel && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-3 py-1.5 rounded-full text-[11px] font-black shadow-lg whitespace-nowrap">
+          🎯 {previewLabel}
+        </div>
+      )}
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="text-slate-300 text-sm animate-pulse">🏟️ Stadyum yükleniyor…</span>

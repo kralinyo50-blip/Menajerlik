@@ -193,10 +193,14 @@ function App() {
     const el = tabsRef.current;
     if (!el) return;
     const { scrollLeft, scrollWidth, clientWidth } = el;
-    setTabsScrollFade({
+    const next = {
       left: scrollLeft > 8,
       right: scrollLeft + clientWidth < scrollWidth - 8
-    });
+    };
+    // ⚠️ Değer değişmediyse state'i güncelleme: bu fonksiyon 800 ms'de bir çalışıyor,
+    // her çağrıda yeni nesne yazmak tüm oyunu (maç sahnesi dahil) gereksiz yeniden
+    // çiziyor ve maç sırasında mikro takılmalar yaratıyordu.
+    setTabsScrollFade(prev => (prev.left === next.left && prev.right === next.right ? prev : next));
   }, []);
   useEffect(() => {
     const el = tabsRef.current;

@@ -388,6 +388,10 @@ export interface StadiumSceneBundle {
   seats: number;
   /** Tribün ve köşe blokları (geometri doğrulaması için) */
   standMeshes: THREE.Object3D[];
+  /** Tesise göre gruplanmış nesneler — UI ön izlemede vurgular (userData.facility ile de erişilebilir) */
+  facilities: Record<string, THREE.Object3D[]>;
+  /** Kamera ön ayarları için sahne çıpaları (saha merkezi / giriş meydanı çarşısı) */
+  anchors: { pitch: { x: number; y: number; z: number }; plaza: { x: number; y: number; z: number } };
   /** Gökyüzü dokusu (izleyici arka planı için) */
   skyTexture: THREE.Texture | null;
   /** Yedek gökyüzü rengi (doku üretilemezse) */
@@ -1187,9 +1191,24 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     });
   }
 
-  /* ── Stadyum tesisleri 3D temsili — DIŞ + İÇ (seviye arttıkça büyür ve içeride görünür) ── */
+  /* ── Stadyum tesisleri 3D temsili — DIŞ + İÇ (seviye arttıkça büyür ve içeride görünür) ──
+     Her tesis nesnesi `userData.facility` ile etiketlenir ve facilityGroups'a yazılır:
+     UI (Stadium3D) bu sayede ön izlenen / yeni alınan tesisi ışık halkasıyla işaretler.
+     ⚠️ Seviye değişince sahne yeniden kurulmalı — Stadium3D tesis imzasını bağımlılığa
+     koyar; yoksa büfe satın alındığı hâlde 3D'de görünmez (eski hata). */
+  const facilityGroups: Record<string, THREE.Object3D[]> = {};
   {
     const facs: Record<string, number> = (opts.facilities as any) || {};
+    /** Tesisten doğan nesneyi sahneye ekler + tesis kimliğiyle etiketler */
+    const addFacilityObj = <T extends THREE.Object3D>(obj: T, id: string, level: number, indoor = false): T => {
+      obj.userData.facility = id;
+      obj.userData.facilityLevel = level;
+      if (indoor) obj.userData.facilityIndoor = true;
+      (facilityGroups[id] ||= []).push(obj);
+      group.add(obj);
+      return obj;
+    };
+
     const plazaFacMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
     const buffetMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 });
     const shopMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(design.seatColor), roughness: 0.6 });
@@ -1197,25 +1216,67 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     const toiletMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.6 });
     const secMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.7 });
     const soundMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5 });
-    // ── DIŞ TESİSLER ──
-    // Büfe: giriş meydanı çevresinde küçük kulübeler
-    const buffetLvl = facs.buffet || 0;
-    for (let i = 0; i < Math.min(buffetLvl, 5); i++) {
-      const kiosk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 2.8), i % 2 === 0 ? buffetMat : plazaFacMat);
-      kiosk.position.set(-40 + i * 18, 1.2, halfZ + 18 + (i % 2) * 4);
-      kiosk.castShadow = true;
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 3.2), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
-      roof.position.set(0, 1.35, 0);
-      kiosk.add(roof);
-      // İçerideki tezgah: sosis ızgara dumanı (küçük kutu)
-      if (opts.night) {
-        const glow = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.15, 0.5), new THREE.MeshStandardMaterial({ color: 0xffedd5, emissive: new THREE.Color(0xff8c42), emissiveIntensity: 0.8 }));
-        glow.position.set(0, 0.6, 0);
-        kiosk.add(glow);
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+    const counterMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.85 });
+    const awnMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.75, side: THREE.DoubleSide });
+    const parasolMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.7, side: THREE.DoubleSide });
+
+    /* ── DIŞ TESİSLER — giriş meydanı (taraftar çarşısı) ── */
+    // 🍔 BÜFE: seviye başına bir kulübe + oturma grupları. Meydanda en görünür yapı.
+    const buffetLvl = Math.min(5, facs.buffet || 0);
+    if (buffetLvl > 0) {
+      const buffetGroup = new THREE.Group();
+      for (let i = 0; i < buffetLvl; i++) {
+        const kiosk = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(5.8, 3.0, 3.8), i % 2 === 0 ? buffetMat : plazaFacMat);
+        base.position.y = 1.5;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.3, 4.5), awnMat);
+        roof.position.y = 3.12;
+        roof.castShadow = true;
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 0.6), counterMat);
+        counter.position.set(0, 1.32, 2.05);
+        // tezgâh üstü tepsi (sosisli/patates) — büfenin çalıştığı uzaktan belli olsun
+        const tray = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.24, 1.8), new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.7 }));
+        tray.position.set(0, 1.62, 0.85);
+        // menü tabelası — gece yanar
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.9, 0.2), new THREE.MeshStandardMaterial({
+          color: 0xfef3c7,
+          emissive: new THREE.Color(0xf59e0b),
+          emissiveIntensity: opts.night ? 1.0 : 0.25,
+        }));
+        sign.position.set(0, 2.45, 2.02);
+        kiosk.add(base, roof, counter, tray, sign);
+        if (opts.night) {
+          const glow = new THREE.Mesh(new THREE.BoxGeometry(5, 0.18, 0.6), new THREE.MeshStandardMaterial({ color: 0xffedd5, emissive: new THREE.Color(0xff8c42), emissiveIntensity: 0.9 }));
+          glow.position.set(0, 1.18, 2.02);
+          kiosk.add(glow);
+        }
+        kiosk.position.set(-48 + i * 22, 0, halfZ + 22 + (i % 2) * 5);
+        buffetGroup.add(kiosk);
+
+        // Masa + şemsiye: seviye yükseldikçe meydan dolar (kalabalık büfe hissi)
+        for (let s = 0; s < Math.min(3, i + 1); s++) {
+          const seat = new THREE.Group();
+          const table = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.12, 14), whiteMat);
+          table.position.y = 0.76;
+          table.castShadow = true;
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.76, 8), counterMat);
+          leg.position.y = 0.38;
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.3, 6), whiteMat);
+          pole.position.y = 1.3;
+          const parasol = new THREE.Mesh(new THREE.ConeGeometry(1.8, 0.6, 12), parasolMat);
+          parasol.position.y = 2.4;
+          parasol.castShadow = true;
+          seat.add(table, leg, pole, parasol);
+          seat.position.set(-48 + i * 22 + (s - 1) * 5.6, 0, halfZ + 28.5 + (i % 2) * 5);
+          buffetGroup.add(seat);
+        }
       }
-      group.add(kiosk);
+      addFacilityObj(buffetGroup, 'buffet', buffetLvl);
     }
-    // Fan Shop dış
+    // 👕 Fan Shop dış
     if ((facs.fanShop || 0) > 0) {
       const shop = new THREE.Mesh(new THREE.BoxGeometry(8 + facs.fanShop * 1.5, 4.2, 6), shopMat);
       shop.position.set(halfX + 12, 2.1, halfZ - 10);
@@ -1229,9 +1290,9 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         mannequin.position.set(-2 + m * 2, 0.6, 2.8);
         shop.add(mannequin);
       }
-      group.add(shop);
+      addFacilityObj(shop, 'fanShop', facs.fanShop || 0);
     }
-    // Restoran dış
+    // 🍽️ Restoran dış
     if ((facs.restaurant || 0) > 0) {
       const rest = new THREE.Mesh(new THREE.BoxGeometry(10 + facs.restaurant * 2, 4.5, 8), new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 }));
       rest.position.set(-halfX - 14, 2.25, halfZ - 8);
@@ -1240,9 +1301,15 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       const glassFront = new THREE.Mesh(new THREE.BoxGeometry(10 + facs.restaurant * 2 - 1, 2.2, 0.3), new THREE.MeshStandardMaterial({ color: 0xbae6fd, transparent: true, opacity: 0.6 }));
       glassFront.position.set(0, 0.5, 4.1);
       rest.add(glassFront);
-      group.add(rest);
+      // teras masaları
+      for (let t = 0; t < Math.min(4, facs.restaurant + 1); t++) {
+        const tTable = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.12, 12), whiteMat);
+        tTable.position.set(-3 + t * 2, 0.76, 5.2);
+        rest.add(tTable);
+      }
+      addFacilityObj(rest, 'restaurant', facs.restaurant || 0);
     }
-    // Bar dış
+    // 🍺 Bar dış
     if ((facs.bar || 0) > 0) {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(7, 3.8, 5), barMat);
       bar.position.set(-halfX - 10, 1.9, -halfZ + 12);
@@ -1251,15 +1318,15 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       const neon = new THREE.Mesh(new THREE.BoxGeometry(5, 0.6, 0.2), new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: new THREE.Color(0xf59e0b), emissiveIntensity: opts.night ? 1.5 : 0.3 }));
       neon.position.set(0, 1.8, 2.6);
       bar.add(neon);
-      group.add(bar);
+      addFacilityObj(bar, 'bar', facs.bar || 0);
     }
-    // LED Ekran (ikinci)
+    // 📺 LED Ekran (ikinci)
     if ((facs.ledScreen || 0) > 0) {
       const extraScreen = new THREE.Mesh(new THREE.BoxGeometry(12 + facs.ledScreen * 2, 6, 0.8), new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: new THREE.Color(0x22d3ee), emissiveIntensity: opts.night ? 1.2 : 0.4 }));
       extraScreen.position.set(0, height + 8 + facs.ledScreen, halfZ + 2);
-      group.add(extraScreen);
+      addFacilityObj(extraScreen, 'ledScreen', facs.ledScreen || 0);
     }
-    // Müze dış
+    // 🏛️ Müze dış
     if ((facs.museum || 0) > 0) {
       const museum = new THREE.Mesh(new THREE.BoxGeometry(9, 5, 7), new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.5 }));
       museum.position.set(halfX + 10, 2.5, -halfZ + 20);
@@ -1268,10 +1335,11 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       const trophy = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 8), new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 }));
       trophy.position.set(0, 3.2, 0);
       museum.add(trophy);
-      group.add(museum);
+      addFacilityObj(museum, 'museum', facs.museum || 0);
     }
-    // Çocuk alanı dış
+    // 🎈 Çocuk alanı dış
     if ((facs.kidsZone || 0) > 0) {
+      const kidsGroup = new THREE.Group();
       for (let i = 0; i < facs.kidsZone; i++) {
         const slide = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0xf472b6 }));
         slide.position.set(halfX - 20 - i * 4, 0.9, halfZ + 25);
@@ -1279,71 +1347,99 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 2.5, 6), new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
         pole.position.set(0, 1.2, 0);
         slide.add(pole);
-        group.add(slide);
+        kidsGroup.add(slide);
       }
+      addFacilityObj(kidsGroup, 'kidsZone', facs.kidsZone || 0);
     }
-    // Otopark genişletmesi
-    if ((facs.parking || 0) > 1) {
-      const extraPark = new THREE.Mesh(new THREE.BoxGeometry(20 + facs.parking * 5, 0.12, 30), new THREE.MeshStandardMaterial({ color: 0x475569 }));
-      extraPark.position.set(halfX + 30, 0.07, 45);
-      group.add(extraPark);
+    // 🅿️ Otopark — seviye 1'den itibaren asfalt alan + park çizgileri (seviye arttıkça büyür)
+    const parkLvl = Math.min(5, facs.parking || 0);
+    if (parkLvl > 0) {
+      const parkGroup = new THREE.Group();
+      const lotW = 20 + parkLvl * 5;
+      const lot = new THREE.Mesh(new THREE.BoxGeometry(lotW, 0.12, 30), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+      lot.position.set(halfX + 30, 0.07, 45);
+      lot.receiveShadow = true;
+      parkGroup.add(lot);
+      // park çizgileri + birkaç araç (doluluk hissi)
+      const lineMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8 });
+      const carColors = [0xef4444, 0x3b82f6, 0xf8fafc, 0x111827, 0x22c55e];
+      for (let i = 0; i <= parkLvl * 2; i++) {
+        const line = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 5), lineMat);
+        line.position.set(halfX + 30 - lotW / 2 + (i * lotW) / (parkLvl * 2), 0.15, 33);
+        parkGroup.add(line);
+        if (i < parkLvl * 2) {
+          const car = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 4.2), new THREE.MeshStandardMaterial({ color: carColors[i % carColors.length], roughness: 0.4, metalness: 0.3 }));
+          car.position.set(halfX + 30 - lotW / 2 + ((i + 0.5) * lotW) / (parkLvl * 2), 0.7, 33);
+          car.castShadow = true;
+          parkGroup.add(car);
+        }
+      }
+      addFacilityObj(parkGroup, 'parking', parkLvl);
     }
 
-    // ── İÇ TESİSLER — tribün alt koridorlarında (maç sırasında içeriden görünür) ──
+    /* ── İÇ TESİSLER — tribün alt koridorlarında (maç sırasında içeriden görünür) ── */
     // Koridor yüksekliği tribün derinliğinin ortası
     const concourseY = Math.max(2.2, height * 0.28);
     const innerDepth = depth * 0.85;
     // İç büfe: her tribün arkasında
     if (buffetLvl > 0) {
-      const sides = [
+      const innerGroup = new THREE.Group();
+      const innerSides = [
         { x: 0, z: -(PITCH_W/2 + MARGIN + innerDepth), rot: 0 },
         { x: 0, z: (PITCH_W/2 + MARGIN + innerDepth), rot: Math.PI },
         { x: -(PITCH_L/2 + MARGIN + innerDepth), z: 0, rot: Math.PI/2 },
         { x: (PITCH_L/2 + MARGIN + innerDepth), z: 0, rot: -Math.PI/2 },
       ];
-      sides.forEach((side, idx) => {
+      innerSides.forEach((side, idx) => {
         if (idx >= buffetLvl) return;
         const innerKiosk = new THREE.Mesh(new THREE.BoxGeometry(6, 2.2, 1.2), buffetMat);
         innerKiosk.position.set(side.x, concourseY, side.z);
         innerKiosk.rotation.y = side.rot;
         // tezgah
-        const counter = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.6, 0.8), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.6, 0.8), counterMat);
         counter.position.set(0, 0.1, 0.6);
         innerKiosk.add(counter);
         // tabela
         const sign = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 0.15), new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: new THREE.Color(0xf59e0b), emissiveIntensity: opts.night ? 0.9 : 0.2 }));
         sign.position.set(0, 1.1, 0.7);
         innerKiosk.add(sign);
-        group.add(innerKiosk);
+        innerGroup.add(innerKiosk);
       });
+      addFacilityObj(innerGroup, 'buffet', buffetLvl, true);
     }
     // İç tuvaletler — mavi kapı
     if ((facs.toilets || 0) > 0) {
+      const wcGroup = new THREE.Group();
       for (let i = 0; i < Math.min(facs.toilets, 4); i++) {
         const wc = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, 2.2), toiletMat);
         wc.position.set(-30 + i * 18, concourseY - 0.3, halfZ - 2 - innerDepth);
         wc.castShadow = true;
-        const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.1), new THREE.MeshStandardMaterial({ color: 0xf8fafc }));
+        const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.1), whiteMat);
         door.position.set(0, -0.1, 1.15);
         wc.add(door);
-        group.add(wc);
+        wcGroup.add(wc);
       }
+      addFacilityObj(wcGroup, 'toilets', facs.toilets || 0, true);
     }
     // İç güvenlik & turnikeler
     if ((facs.security || 0) > 0) {
+      const secGroup = new THREE.Group();
       for (let i = 0; i < Math.min(facs.security * 2, 8); i++) {
         const turnstile = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 1.6), secMat);
         turnstile.position.set(-35 + i * 9, 0.9, halfZ + 8);
-        group.add(turnstile);
+        secGroup.add(turnstile);
       }
+      addFacilityObj(secGroup, 'security', facs.security || 0);
     }
     // İç ses sistemi — hoparlörler tribün üstünde
     if ((facs.soundSystem || 0) > 0) {
+      const soundGroup = new THREE.Group();
       for (let i = 0; i < Math.min(facs.soundSystem, 4); i++) {
         const speaker = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.2, 0.7), soundMat);
         speaker.position.set(-40 + i * 26, height + 1.5, -(PITCH_W/2 + MARGIN + depth * 0.2));
-        group.add(speaker);
+        soundGroup.add(speaker);
       }
+      addFacilityObj(soundGroup, 'soundSystem', facs.soundSystem || 0, true);
     }
     // İç tıbbi oda — yeşil haç
     if ((facs.medicalRoom || 0) > 0) {
@@ -1352,7 +1448,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       const cross = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.2), new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: new THREE.Color(0xef4444), emissiveIntensity: opts.night ? 0.8 : 0.2 }));
       cross.position.set(0, 0.4, 1.55);
       med.add(cross);
-      group.add(med);
+      addFacilityObj(med, 'medicalRoom', facs.medicalRoom || 0, true);
     }
   }
 
@@ -1418,6 +1514,12 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     rows,
     seats,
     standMeshes,
+    facilities: facilityGroups,
+    anchors: {
+      pitch: { x: 0, y: 3, z: 0 },
+      // Giriş meydanı: büfe çarşısı / mağaza / restoran sırası burada (dış tesisler)
+      plaza: { x: 0, y: 2, z: halfZ + 26 },
+    },
     skyTexture,
     sky: opts.night ? 0x0a102a : 0x7fb2e5,
     triCount: () => {
