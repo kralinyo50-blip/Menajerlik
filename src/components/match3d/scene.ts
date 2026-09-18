@@ -3,7 +3,7 @@ import { buildStadiumGroup } from '../stadium/scene';
 import { Venue, Kit } from './venue';
 import {
   buildFootballer, Footballer, poseRun, poseIdle, poseKick, poseCelebrate, poseLying,
-  poseDive, poseSeated, poseCard, poseCoach, makeCardMesh
+  poseDive, poseGroundSave, poseSeated, poseCard, poseCoach, makeCardMesh
 } from './actors';
 
 export const PITCH_L = 105;
@@ -671,12 +671,15 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     return time;
   };
 
-  const shootAtGoal = (shooter: Actor, willScore: boolean, celebrate = false) => {
+  const shootAtGoal = (shooter: Actor, willScore: boolean, celebrate = false, saved = false) => {
     const goalX = goalLineFor(shooter.team);
-    const aimZ = willScore
-      ? (Math.random() - 0.5) * (GOAL_HALF * 1.4)
+    // Kurtarılacak şut kalenin dışına kaçmaz: kalecinin gerçekten topa
+    // uzanıp tutması/çelmesi görünür. Kaçan şut ise ayrı olarak dışarı gider.
+    const aimZ = willScore || saved
+      ? (Math.random() - 0.5) * (GOAL_HALF * 1.35)
       : (Math.random() < 0.5 ? -1 : 1) * (GOAL_HALF + 1.2 + Math.random() * 2.4);
-    const aimY = willScore ? 0.35 + Math.random() * (GOAL_H - 0.7) : 1.2 + Math.random() * 2.6;
+    const aimY = willScore ? 0.35 + Math.random() * (GOAL_H - 0.7)
+      : saved ? 0.16 + Math.random() * 0.55 : 1.2 + Math.random() * 2.6;
     const target = new THREE.Vector3(goalX, aimY, aimZ);
     const start = shooter.pos.clone().setY(0.4);
     ball.pos.copy(start);
@@ -701,7 +704,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     gk.modeT = 0;
     gk.target.copy(gk.pos);
     gk.diveZ = clamp(willScore ? aimZ * 0.35 : aimZ, -GOAL_HALF - 1.5, GOAL_HALF + 1.5);
-    gk.diveCatch = !willScore && Math.random() < 0.7;
+    gk.diveCatch = saved || (!willScore && Math.random() < 0.7);
     allowCatch = !willScore;
     if (celebrate) crowdHype = 1;
     return time;
@@ -731,7 +734,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       case 'save': {
         const shooters = onPitch(team).filter(a => !a.gk);
         const shooter = shooters.length ? shooters[Math.floor(Math.random() * shooters.length)] : home[9];
-        startSeq('shot', team, 3.2, { shooter });
+        const saved = ev.type === 'save' || /kaleci kurtardı|kaleci.*(tuttu|çeldi)|kurtarış/i.test(ev.text ?? '');
+        startSeq('shot', team, 3.2, { shooter, saved });
         break;
       }
       case 'card': {
@@ -933,7 +937,12 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         const shooter = (s.data.shooter as Actor) ?? home[9];
         if (s.t < 0.05) {
           shooter.pos.set(attackX * (HL - 18) + (Math.random() - 0.5) * 6, 0, (Math.random() - 0.5) * 16);
-          shootAtGoal(shooter, false);
+          shootAtGoal(shooter, false, false, Boolean(s.data.saved));
+        }
+        if (s.data.saved && s.t > 0.82 && s.t < 1.6) {
+          const gk = shooter.team === 'home' ? awayGk : homeGk;
+          ball.pos.set(gk.pos.x, 0.72, gk.pos.z + (gk.team === 'home' ? 0.22 : -0.22));
+          ball.vel.set(0, 0, 0);
         }
         if (s.t > 1.6) {
           const gk = shooter.team === 'home' ? awayGk : homeGk;
@@ -1214,7 +1223,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           // olduğundan root ve gölgeyi burada senkron tutuyoruz.
           a.f.root.position.set(a.pos.x, 0, a.pos.z);
           a.f.shadow.position.set(a.pos.x, 0.045, a.pos.z);
-          poseDive(a.f.rig, side, clamp(a.modeT / 0.75, 0, 1));
+          if (a.diveCatch) poseGroundSave(a.f.rig, side, clamp(a.modeT / 0.75, 0, 1));
+          else poseDive(a.f.rig, side, clamp(a.modeT / 0.75, 0, 1));
           if (a.modeT > 1.5) { a.mode = 'play'; a.f.root.rotation.z = 0; }
           break;
         }

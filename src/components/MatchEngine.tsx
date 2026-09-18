@@ -112,6 +112,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const pausedRef = useRef(false);
   const extraTimeRef = useRef(false);
   const mgCountRef = useRef(0);
+  // Aynı akışta art arda gelen goller gerçekçi değildir; bir golden sonra
+  // oyunun yeniden kurulması için en az iki simülasyon dakikası bırakılır.
+  const lastGoalMinuteRef = useRef(-99);
   const playedRef = useRef<Set<number>>(new Set(gameState.team11.map(p => p.id)));
   const cardMapRef = useRef<Map<number, { yellow: number; red: number }>>(new Map());
   const injuryMapRef = useRef<Map<number, number>>(new Map());
@@ -316,6 +319,13 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     defense: oppOvr * (isHome ? 1 : 1.03),
     overall: oppOvr
   };
+  // Kaleciyi takım ortalamasından ayrı ele alıyoruz. Böylece iyi bir kaleci
+  // sadece savunma puanını değil, net pozisyonların sonucunu da etkiler.
+  const userKeeper = activeLineup.find(p => p.role === 'KL' && !p.injured && !sentOff.includes(p.id));
+  const userKeeperSaveBonus = userKeeper
+    ? Math.max(-0.035, Math.min(0.06, (userKeeper.ovr - 72) * 0.002 + ((userKeeper.energy - 55) * 0.00035) + ((userKeeper.morale - 50) * 0.0002)))
+    : -0.01;
+  const oppKeeperSaveBonus = Math.max(-0.035, Math.min(0.06, (oppOvr - 72) * 0.002));
 
   const addEvent = useCallback((event: MatchEvent) => {
     setEvents(prev => [...prev, event]);
@@ -353,6 +363,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [activeLineup, sentOff, gameState.setPieceTakers, gameState.teamChemistry]);
 
   const addUserGoal = useCallback((player: Player | null, assist: Player | null, description: string) => {
+    lastGoalMinuteRef.current = minuteRef.current;
     scoreRef.current.u += 1;
     setUserScore(scoreRef.current.u);
     if (player) {
@@ -419,10 +430,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
-        const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01)) + userStrength.starAttack * 0.005) * goalMult);
+        const goalChance = Math.max(0.035, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01)) + userStrength.starAttack * 0.005 - oppKeeperSaveBonus) * goalMult);
         const roll = Math.random();
 
-        if (roll < goalChance) {
+        if (roll < goalChance && currentMinute - lastGoalMinuteRef.current >= 2) {
           // İnteraktif duran top — maç başına en fazla 2 kez
           if (mgCountRef.current < 2 && Math.random() < 0.22 && !pausedRef.current) {
             const isPen = Math.random() < 0.55;
@@ -449,6 +460,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             });
             return;
           }
+          lastGoalMinuteRef.current = currentMinute;
           const scorer = getRandomPlayer(true);
           const assister = Math.random() > 0.35 ? getRandomPlayer(false) : null;
           const template = MATCH_EVENTS.goals[Math.floor(Math.random() * MATCH_EVENTS.goals.length)];
@@ -472,10 +484,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         const thisXgA = 0.06 + Math.random()*0.28;
         setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
-        const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008)) - userStrength.starDefense * 0.004) * goalMult);
+        const goalChance = Math.max(0.035, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008)) - userStrength.starDefense * 0.004 - userKeeperSaveBonus) * goalMult);
         const roll = Math.random();
 
-        if (roll < goalChance) {
+        if (roll < goalChance && currentMinute - lastGoalMinuteRef.current >= 2) {
           if (mgCountRef.current < 2 && Math.random() < 0.28 && !pausedRef.current) {
             mgCountRef.current += 1;
             pausedRef.current = true;
@@ -490,6 +502,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             });
             return;
           }
+          lastGoalMinuteRef.current = currentMinute;
           scoreRef.current.o += 1;
           setOppScore(scoreRef.current.o);
           play(sfx.conceded);
@@ -504,7 +517,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         } else if (roll < goalChance + 0.25) {
           addEvent({ minute: currentMinute, type: 'chance', team: 'away', description: `${opponent.name} tehlikeli bir atak geliştiriyor...` });
         } else if (roll < goalChance + 0.4) {
-          addEvent({ minute: currentMinute, type: 'save', team: 'home', description: `Savunma araya girdi! ${opponent.name} atağı boşa çıktı.` });
+          addEvent({ minute: currentMinute, type: 'save', team: 'home', description: `🧤 Kalecimiz ${opponent.name} şutunu yerden kontrol etti!` });
         }
       }
     }
@@ -645,7 +658,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       });
     }
   }, [
-    userStrength, oppStrength, opponent.name, gameState.teamName, gameState.setPieceTakers,
+    userStrength, oppStrength, userKeeperSaveBonus, oppKeeperSaveBonus, opponent.name, gameState.teamName, gameState.setPieceTakers,
     addEvent, getRandomPlayer, diffCfg, weatherInfo, weather, addUserGoal, activeLineup, activeBench,
     substitutions, sentOff, play, triggerSlowMo, pushSpiker
   ]);
