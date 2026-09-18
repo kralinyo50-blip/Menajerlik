@@ -27,7 +27,6 @@ import { NewsTicker } from './components/NewsTicker';
 import { PostMatchEvent, PostMatchEventData, generatePostMatchEvent } from './components/PostMatchEvent';
 import { TeamActivityEvent, shouldTriggerTeamActivity } from './components/TeamActivityEvent';
 import { Tutorial } from './components/Tutorial';
-import { AchievementsPanel } from './components/AchievementsPanel';
 import AiAssistant from './components/AiAssistant';
 import { PressConference } from './components/PressConference';
 import {
@@ -157,7 +156,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [postMatchEvent, setPostMatchEvent] = useState<PostMatchEventData | null>(null);
   const [showTeamActivity, setShowTeamActivity] = useState(false);
-  const [showAchievements, setShowAchievements] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [storyMinigame, setStoryMinigame] = useState<MinigameContext | null>(null);
@@ -943,13 +941,6 @@ function App() {
         </div>
       )}
 
-      {showAchievements && (
-        <AchievementsPanel
-          achievements={gameState.achievements || []}
-          onClose={() => setShowAchievements(false)}
-        />
-      )}
-
       {/* Kariyer bitti */}
       {gameState.careerOver && (
         <GameOverScreen
@@ -1085,18 +1076,6 @@ function App() {
         <span className="text-xl w-6 h-6 flex items-center justify-center">{sidebarOpen ? '✕' : '☰'}</span>
       </button>
 
-      {/* Başarımlar - premium */}
-      <button
-        onClick={() => setShowAchievements(true)}
-        className="fixed top-4 right-4 z-50 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black px-3.5 py-2 rounded-xl shadow-lg shadow-amber-500/20 text-sm flex items-center gap-1.5 active:scale-95 transition-all border border-amber-400/20"
-        title="Başarımlar"
-      >
-        <span className="text-base">🏅</span>
-        <span className="hidden sm:inline tracking-tight">
-          {(gameState.achievements || []).filter(a => a.unlocked).length}/{(gameState.achievements || []).length}
-        </span>
-      </button>
-
       {/* Ana Yerleşim */}
       <div className="flex h-screen pb-8">
         <div className={`
@@ -1111,7 +1090,6 @@ function App() {
               onPlayMatch={handlePlayMatch}
               onSave={handleSave}
               onSignSponsor={handleSignSponsor}
-              onOpenAchievements={() => setShowAchievements(true)}
               onSaveToSlot={handleSaveToSlot}
               onLoadFromSlot={handleLoadFromSlot}
               onExportSave={handleExportSave}
@@ -1143,14 +1121,14 @@ function App() {
                     (e.currentTarget as HTMLElement).style.setProperty('--x', `${e.clientX - r.left}px`);
                     (e.currentTarget as HTMLElement).style.setProperty('--y', `${e.clientY - r.top}px`);
                   }}
-                  className={`tab-btn snap-start relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 btn-press ${
+                  className={`tab-btn snap-start shrink-0 relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 btn-press ${
                     activeTab === tab.id
                       ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
                       : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
                   }`}
                 >
                   <span className="text-base">{tab.icon}</span>
-                  <span className="hidden sm:inline tracking-wide">{tab.label}</span>
+                  <span className="tracking-wide">{tab.label}</span>
                   {!!tab.badge && tab.badge > 0 && (
                     <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600 animate-badge-pop':'bg-red-500 text-white'}`}>
                       {tab.badge > 9 ? '9+' : tab.badge}
@@ -1162,6 +1140,20 @@ function App() {
             {/* sol/sağ fade - kaydırılabilir olduğunu gösterir */}
             <div className={`pointer-events-none absolute inset-y-1.5 left-1.5 w-8 rounded-l-2xl transition-opacity ${tabsScrollFade.left ? 'opacity-100' : 'opacity-0'} tabs-fade-left`} />
             <div className={`pointer-events-none absolute inset-y-1.5 right-1.5 w-8 rounded-r-2xl transition-opacity ${tabsScrollFade.right ? 'opacity-100' : 'opacity-0'} tabs-fade-right`} />
+            {tabsScrollFade.left && (
+              <button
+                onClick={() => tabsRef.current?.scrollBy({ left: -240, behavior: 'smooth' })}
+                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-emerald-500/40 text-emerald-300 text-base leading-none shadow-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center"
+                aria-label="Sekmeleri sola kaydır"
+              >‹</button>
+            )}
+            {tabsScrollFade.right && (
+              <button
+                onClick={() => tabsRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-emerald-500/40 text-emerald-300 text-base leading-none shadow-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center"
+                aria-label="Sekmeleri sağa kaydır"
+              >›</button>
+            )}
             {/* küçük ipucu */}
             {tabsScrollFade.right && (
               <div className="pointer-events-none hidden sm:flex absolute -bottom-1 right-3 text-[10px] text-slate-500 items-center gap-1">

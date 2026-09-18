@@ -335,13 +335,6 @@ export const AiAssistant: React.FC = () => {
         </div>
       </div>
 
-      {/* Küçük yardım balonu - FAB kapalıyken dikkat çekici */}
-      {!isOpen && (
-        <div className="fixed z-[60] right-4 bottom-[6.75rem] lg:bottom-[5.5rem] bg-slate-900/90 backdrop-blur border border-slate-700/50 text-white text-xs px-3 py-2 rounded-xl shadow-xl pointer-events-none hidden sm:flex items-center gap-2 animate-fade-in">
-          <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-          <span>Takıldın mı? <b>AI’a sor</b> → hazır cevaplar seni bekliyor</span>
-        </div>
-      )}
     </>
   );
 };

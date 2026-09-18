@@ -9,6 +9,7 @@ import { skillInjuryReduction, skillTacticsBonus } from '../utils/progression';
 import { LivePitch } from './LivePitch';
 import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
+import { adaptationPct, effectiveOvr } from '../utils/adaptation';
 
 export interface MatchExtras {
   cards: { playerId: number; type: 'yellow' | 'red' }[];
@@ -83,7 +84,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [subBoard, setSubBoard] = useState<{ outName: string; inName: string; outRole: string; inRole: string; key: number } | null>(null);
   const [cardPop, setCardPop] = useState<{ player: string; kind: 'yellow' | 'red' | 'second'; key: number } | null>(null);
 
-  const eventsEndRef = useRef<HTMLDivElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef({ u: 0, o: 0 });
   const minuteRef = useRef(0);
   const finishedRef = useRef(false);
@@ -113,6 +114,27 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const available = activeLineup.filter(p => !p.injured && !sentOff.includes(p.id));
     const pool = available.length > 0 ? available : activeLineup;
     const avgOvr = pool.length > 0 ? pool.reduce((acc, p) => acc + p.ovr, 0) / pool.length : 0;
+    // 🧩 Takım uyumu: yeni transferler (özellikle takımın çok üstündeki yıldızlar)
+    // alışana kadar düşük oynar — ~8 maçta tam uyum
+    const chemistryVal = gameState.teamChemistry ?? 55;
+    const effOf = (p: Player) => effectiveOvr(p, avgOvr, chemistryVal);
+    const effAvg = pool.length > 0 ? pool.reduce((acc, p) => acc + effOf(p), 0) / pool.length : avgOvr;
+    const teamAdaptPct = pool.length > 0
+      ? Math.round(pool.reduce((acc, p) => acc + adaptationPct(p), 0) / pool.length * 100)
+      : 100;
+    // ⭐ Yıldız etkisi: uyumlu ve formda yıldızlar ortalamanın üstünde katkı verir
+    let starAttack = 0;
+    let starDefense = 0;
+    pool.forEach(p => {
+      const eff = effOf(p);
+      const bonus = eff >= 87 ? 1.6 : eff >= 83 ? 1.0 : eff >= 80 ? 0.5 : 0;
+      if (bonus <= 0) return;
+      const gate = 0.6 + ((p.form ?? 5) / 10) * 0.4;
+      if (p.role === 'FW' || p.role === 'OS') starAttack += bonus * gate;
+      else starDefense += bonus * gate;
+    });
+    starAttack = Math.min(8, starAttack);
+    starDefense = Math.min(8, starDefense);
 
     const avgEnergy = pool.reduce((acc, p) => acc + p.energy, 0) / Math.max(1, pool.length);
     const avgMorale = pool.reduce((acc, p) => acc + p.morale, 0) / Math.max(1, pool.length);
@@ -183,15 +205,24 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     attackBonus -= redPenalty;
     defenseBonus -= redPenalty;
 
+    // Yıldız katkısı
+    attackBonus += starAttack;
+    defenseBonus += starDefense;
+
     const energyMultiplier = 0.7 + (avgEnergy / 100) * 0.3;
     const moraleMultiplier = 0.85 + (avgMorale / 100) * 0.15;
     const chemBonus = 0.9 + chemistry * 0.1;
 
     return {
-      attack: (avgOvr + attackBonus) * energyMultiplier * moraleMultiplier * chemBonus,
-      defense: (avgOvr + defenseBonus) * energyMultiplier * moraleMultiplier * chemBonus,
+      attack: (effAvg + attackBonus) * energyMultiplier * moraleMultiplier * chemBonus,
+      defense: (effAvg + defenseBonus) * energyMultiplier * moraleMultiplier * chemBonus,
       overall: Math.round(avgOvr),
-      effectiveOverall: avgOvr * energyMultiplier * moraleMultiplier * chemBonus
+      effectiveRounded: Math.round(effAvg),
+      penaltyTotal: Math.max(0, avgOvr - effAvg),
+      teamAdaptPct,
+      starAttack,
+      starDefense,
+      effectiveOverall: effAvg * energyMultiplier * moraleMultiplier * chemBonus
     };
   }, [gameState, activeLineup, isHome, sentOff, talkBonus]);
 
@@ -211,12 +242,22 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const available = activeLineup.filter(p => !p.injured && !sentOff.includes(p.id));
     const pool = available.length > 0 ? available : activeLineup;
     if (forGoal) {
+      // İyi oyuncular gerçekten daha çok skor yapar: efektif OVR + form + moral + enerji
+      const tAvg = pool.reduce((a, p) => a + p.ovr, 0) / Math.max(1, pool.length);
+      const chem = gameState.teamChemistry ?? 55;
       const weights = pool.map(p => {
-        if (gameState.setPieceTakers?.penalty === p.id) return 5.5;
-        if (p.role === 'FW') return 5;
-        if (p.role === 'OS') return 2.5;
-        if (p.role === 'SB') return 1.2;
-        return 0.5;
+        let base: number;
+        if (gameState.setPieceTakers?.penalty === p.id) base = 5.5;
+        else if (p.role === 'FW') base = 5;
+        else if (p.role === 'OS') base = 2.5;
+        else if (p.role === 'SB') base = 1.2;
+        else base = 0.5;
+        const eff = effectiveOvr(p, tAvg, chem);
+        const ovrF = 0.4 + eff / 100;
+        const formF = 0.7 + (p.form ?? 5) / 16.6;
+        const moraleF = 0.85 + p.morale / 500;
+        const energyF = 0.85 + p.energy / 500;
+        return Math.max(0.05, base * ovrF * formF * moraleF * energyF);
       });
       const totalWeight = weights.reduce((a, b) => a + b, 0);
       let random = Math.random() * totalWeight;
@@ -226,7 +267,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
     }
     return pool[Math.floor(Math.random() * pool.length)];
-  }, [activeLineup, sentOff, gameState.setPieceTakers]);
+  }, [activeLineup, sentOff, gameState.setPieceTakers, gameState.teamChemistry]);
 
   const addUserGoal = useCallback((player: Player | null, assist: Player | null, description: string) => {
     scoreRef.current.u += 1;
@@ -296,7 +337,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setShotMap(m => [...m, { x: 72 + Math.random()*20, y: 20 + Math.random()*60, team: 'home', minute: currentMinute, xg: thisXg }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
 
-        const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01))) * goalMult);
+        const goalChance = Math.max(0.05, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01)) + userStrength.starAttack * 0.005) * goalMult);
         const roll = Math.random();
 
         if (roll < goalChance) {
@@ -350,7 +391,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
         setShotMap(m => [...m, { x: 8 + Math.random()*20, y: 20 + Math.random()*60, team: 'away', minute: currentMinute, xg: thisXgA }]);
         if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
-        const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008))) * goalMult);
+        const goalChance = Math.max(0.05, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008)) - userStrength.starDefense * 0.004) * goalMult);
         const roll = Math.random();
 
         if (roll < goalChance) {
@@ -452,6 +493,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         if (substitutions.length < 5) {
           const replacement = activeBench.find(p => !p.injured);
           if (replacement) {
+            playedRef.current.add(replacement.id);
             setActiveLineup(prev => prev.map(p =>
               p.id === player.id ? { ...replacement, t: p.t, l: p.l, role: p.role } : p
             ));
@@ -525,12 +567,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const oScore = scoreRef.current.o;
     const resultBonus = uScore > oScore ? 0.45 : uScore < oScore ? -0.45 : 0;
     const played = [...gameState.team11, ...gameState.bench].filter(p => playedRef.current.has(p.id));
+    const rAvg = played.length > 0 ? played.reduce((a, p) => a + p.ovr, 0) / played.length : 70;
+    const rChem = gameState.teamChemistry ?? 55;
 
     const list: PlayerRating[] = played.map(p => {
       const stats = scorers.get(p.id) || { goals: 0, assists: 0 };
       const card = cardMapRef.current.get(p.id) || { yellow: 0, red: 0 };
       const injured = injuryMapRef.current.has(p.id);
-      const base = 6.1 + ((p.form ?? 5) / 10) * 0.5;
+      // Yıldızlar yüksek, uyumsuz yeniler düşük reyting alır
+      const indBonus = Math.max(-0.8, Math.min(1.2, (effectiveOvr(p, rAvg, rChem) - rAvg) * 0.14));
+      const base = 6.1 + ((p.form ?? 5) / 10) * 0.5 + indBonus;
       const rating =
         base + stats.goals * 1.3 + stats.assists * 0.8 - card.yellow * 0.55 - card.red * 1.6 -
         (injured ? 0.4 : 0) + resultBonus + (Math.random() * 0.8 - 0.4);
@@ -557,7 +603,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       motmName = `${randomOpponentName()} (${opponent.name})`;
     }
     return { ratings: list, motmPlayerId, motmName };
-  }, [gameState.team11, gameState.bench, scorers, opponent.name]);
+  }, [gameState.team11, gameState.bench, gameState.teamChemistry, scorers, opponent.name]);
 
   const finishMatch = useCallback((penWinner?: 'user' | 'opponent') => {
     if (finishedRef.current) return;
@@ -651,6 +697,18 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     playedRef.current = new Set(gameState.team11.map(p => p.id));
     play(sfx.whistle);
     addEvent({ minute: 0, type: 'info', team: 'home', description: '🏟️ Hakem düdüğü çaldı, maç başladı!' });
+    // 🧩 Uyum / ⭐ yıldız bilgilendirmesi
+    const sAvg = activeLineup.reduce((a, p) => a + p.ovr, 0) / Math.max(1, activeLineup.length);
+    const sChem = gameState.teamChemistry ?? 55;
+    const adapting = activeLineup.filter(p => adaptationPct(p) < 0.5 && (p.ovr - sAvg) >= 3);
+    if (adapting.length > 0) {
+      addEvent({ minute: 0, type: 'info', team: 'home', description: `🧩 ${adapting.slice(0, 3).map(p => `${p.name} (%${Math.round(adaptationPct(p) * 100)})`).join(', ')} henüz takıma tam alışamadı — bugün düşük oynayabilir!` });
+    } else {
+      const stars = activeLineup.filter(p => effectiveOvr(p, sAvg, sChem) >= 86);
+      if (stars.length > 0) {
+        addEvent({ minute: 0, type: 'info', team: 'home', description: `⭐ ${stars.slice(0, 2).map(p => p.name).join(', ')} tam uyumlu ve formda — maçı çevirebilir!` });
+      }
+    }
   };
 
   const applyTeamTalk = (choice: Talk) => {
@@ -788,8 +846,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     onMatchEnd(scoreRef.current.u, scoreRef.current.o, scorerArray, extras);
   };
 
+  // Sadece konsol kutusu kayar — skor her zaman görünür kalır
   useEffect(() => {
-    eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = consoleRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [events]);
 
   const getResultText = () => {
@@ -804,17 +864,19 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     r >= 8 ? 'text-emerald-400' : r >= 7 ? 'text-lime-400' : r >= 6 ? 'text-slate-200' : r >= 5 ? 'text-amber-400' : 'text-red-400';
 
   const score = { u: userScore, o: oppScore };
+  const subTeamAvg = activeLineup.reduce((a, p) => a + p.ovr, 0) / Math.max(1, activeLineup.length);
+  const subChem = gameState.teamChemistry ?? 55;
 
   return (
     <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-0 sm:p-2 lg:p-3 overflow-y-auto overflow-x-hidden ${goalFlash ? 'animate-goal-flash' : ''}`}>
-      <div className="w-full max-w-5xl xl:max-w-6xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-none sm:rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl border-0 sm:border border-emerald-500/30 my-auto flex flex-col max-h-[100dvh] sm:max-h-[96dvh] lg:max-h-[92dvh]">
+      <div className="w-full max-w-5xl xl:max-w-6xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-none sm:rounded-2xl lg:rounded-3xl overflow-y-auto overflow-x-hidden custom-scroll shadow-2xl border-0 sm:border border-emerald-500/30 my-auto flex flex-col max-h-[100dvh] sm:max-h-[96dvh] lg:max-h-[92dvh]">
         {/* Header + maç ilerleme çubuğu */}
-        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0 relative overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between gap-2 flex-shrink-0 relative overflow-hidden rounded-t-none sm:rounded-t-2xl lg:rounded-t-3xl">
           {/* dakika ilerleme */}
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
             <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${Math.min(100, (minute / (extraTime ? 120 : 90)) * 100)}%` }} />
           </div>
-          <div className="text-white text-xs lg:text-sm font-medium flex items-center gap-2 flex-wrap">
+          <div className="text-white text-xs lg:text-sm font-medium flex items-center gap-2 flex-nowrap overflow-x-auto custom-scroll whitespace-nowrap min-w-0 flex-1 py-0.5 [&>*]:shrink-0">
             <span className="inline-flex items-center gap-1 bg-black/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
               CANLI
@@ -838,7 +900,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               🧑‍💼 {managerMatchBonus(gameState).label}
             </span>
           </div>
-          <div className="flex gap-1">
+          <div className="flex gap-1 shrink-0">
             {([1, 2, 4] as const).map(s => (
               <button
                 key={s}
@@ -860,14 +922,18 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             <span className="truncate">{spiker}</span>
           </div>
         )}
-        {/* Scoreboard */}
-        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0">
+        {/* Scoreboard — her zaman görünür (sticky skor) */}
+        <div className="bg-gradient-to-b from-slate-800 to-slate-900 p-3 lg:p-5 flex-shrink-0 sticky top-0 z-20 shadow-[0_8px_24px_rgba(0,0,0,0.45)] border-b border-emerald-500/20">
           <div className="flex items-center justify-between max-w-xl mx-auto">
             <div className="text-center flex-1">
               <div className="text-3xl lg:text-4xl mb-1">{gameState.teamLogo}</div>
               <div className="text-white font-bold text-xs lg:text-base truncate px-1">{gameState.teamName}</div>
-              <div className="text-emerald-400 text-xs font-bold">
-                OVR: {userStrength.overall}
+              <div className="text-emerald-400 text-xs font-bold" title={userStrength.penaltyTotal > 0.5 ? `Takım uyumu %${userStrength.teamAdaptPct} — bazı oyuncular henüz alışamadı` : `Takım uyumu %${userStrength.teamAdaptPct}`}>
+                {userStrength.penaltyTotal > 0.5 ? (
+                  <>OVR {userStrength.overall} → <span className="text-amber-300">sahada ~{userStrength.effectiveRounded}</span> 🧩%{userStrength.teamAdaptPct}</>
+                ) : (
+                  <>OVR: {userStrength.overall} <span className="text-slate-400">🧩%{userStrength.teamAdaptPct}</span></>
+                )}
                 {sentOff.length > 0 && <span className="text-red-400"> • {11 - sentOff.length} kişi</span>}
               </div>
             </div>
@@ -984,8 +1050,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           </div>
         )}
         {/* Match Console - büyütüldü */}
-        <div className="p-2 lg:p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
-          <div className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 flex-1 min-h-[160px] lg:min-h-[200px] max-h-[42vh] lg:max-h-[300px] overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">
+        <div className="p-2 lg:p-4 flex-shrink-0">
+          <div ref={consoleRef} className="bg-black/50 rounded-xl lg:rounded-2xl border border-emerald-500/30 h-52 lg:h-64 overflow-y-auto custom-scroll p-3 lg:p-4 font-mono text-xs lg:text-sm">
             {events.map((event, i) => (
               <div
                 key={i}
@@ -1001,12 +1067,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 <span className="text-slate-500">[{event.minute}']</span> {event.description}
               </div>
             ))}
-            <div ref={eventsEndRef} />
           </div>
         </div>
 
         {/* Controls */}
-        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap flex-shrink-0">
+        <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap flex-shrink-0 rounded-b-none sm:rounded-b-2xl lg:rounded-b-3xl">
           {phase === 'pre' && (
             <div className="w-full">
               <div className="text-center text-slate-300 text-xs mb-3">
@@ -1027,7 +1092,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             </div>
           )}
 
-          {(phase === 'second' || phase === 'et') && (
+          {(phase === 'first' || phase === 'second' || phase === 'et') && (
             <>
               <button
                 onClick={() => setShowSubModal(true)}
@@ -1125,7 +1190,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                       className="w-full text-left p-2 bg-slate-700/50 hover:bg-slate-600/50 rounded mb-1 text-sm flex justify-between"
                     >
                       <span className="text-white">{p.name}</span>
-                      <span className="text-slate-400">{p.role} • {p.ovr} • ⚡{p.energy}%{p.injured ? ' 🏥' : ''}</span>
+                      <span className="text-slate-400">{p.role} • {p.ovr}{effectiveOvr(p, subTeamAvg, subChem) < p.ovr - 0.5 ? `(~${Math.round(effectiveOvr(p, subTeamAvg, subChem))})` : ''} • ⚡{p.energy}% • 🧩{Math.round(adaptationPct(p) * 100)}%{p.injured ? ' 🏥' : ''}</span>
                     </button>
                   ))}
                 </div>
@@ -1139,7 +1204,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                       className="w-full text-left p-2 bg-slate-700/50 hover:bg-emerald-600/30 rounded mb-1 text-sm flex justify-between"
                     >
                       <span className="text-white">{p.name}</span>
-                      <span className="text-slate-400">{p.role} • {p.ovr} • ⚡{p.energy}%</span>
+                      <span className="text-slate-400">{p.role} • {p.ovr}{effectiveOvr(p, subTeamAvg, subChem) < p.ovr - 0.5 ? `(~${Math.round(effectiveOvr(p, subTeamAvg, subChem))})` : ''} • ⚡{p.energy}% • 🧩{Math.round(adaptationPct(p) * 100)}%</span>
                     </button>
                   ))}
                   <button onClick={() => setSubOut(null)} className="w-full mt-2 py-2 text-slate-400 text-sm">← Geri</button>

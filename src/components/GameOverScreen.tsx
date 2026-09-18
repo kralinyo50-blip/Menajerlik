@@ -65,9 +65,9 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({ gameState, onNew
               <div className="text-white font-bold">{stats.motmAwards || 0}</div>
             </div>
             <div className="bg-slate-700/30 rounded-lg p-2">
-              <div className="text-slate-400">Başarım</div>
+              <div className="text-slate-400">Kupalar</div>
               <div className="text-white font-bold">
-                {(gameState.achievements || []).filter(a => a.unlocked).length}/{(gameState.achievements || []).length}
+                {gameState.trophies.length > 0 ? gameState.trophies.join(' ') : '—'}
               </div>
             </div>
           </div>
