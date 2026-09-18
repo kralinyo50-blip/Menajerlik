@@ -154,11 +154,13 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   });
   group.add(stadium.group);
 
-  // Gece: kamera tarafındaki oyuncular silüet olmasın diye yumuşak dolgu ışığı
+  // Gece: kamera tarafındaki oyuncular silüet olmasın diye yumuşak dolgu ışığı.
+  // Sahanın asıl aydınlanmasını projektörler verir (stadyum kurucusu, ters kare yasasına
+  // göre hesaplanır) — bu iki ışık yalnızca dip gölgeleri açar, düşük tutulur.
   if (opts.night) {
-    const fill = new THREE.HemisphereLight(0x9db8ff, 0x223018, 0.5);
+    const fill = new THREE.HemisphereLight(0x9db8ff, 0x223018, 0.22);
     group.add(fill);
-    const camFill = new THREE.DirectionalLight(0xdfe8ff, 0.55);
+    const camFill = new THREE.DirectionalLight(0xdfe8ff, 0.3);
     camFill.position.set(-18, 24, -(HW + 40));
     group.add(camFill);
   }

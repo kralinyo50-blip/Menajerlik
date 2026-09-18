@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { FacilityModuleId, FacilityState } from '../../types/game';
 import { normalizeFacility, FACILITY_MAX_LEVEL } from '../../data/facility';
+import { pointLightPower } from '../three/lighting';
+
+/** Gece antrenmanda saha çevresinde hedeflenen aydınlanma (stadyumdan biraz düşük) */
+const FACILITY_NIGHT_IRRADIANCE = 0.8;
 
 /* ══════════════════════════════════════════════════════════════
    ANTRENMAN KOMPLEKSİ — düzenli, simetrik prosedürel 3D yerleşim
@@ -1494,9 +1498,22 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
   group.add(sun);
 
   if (night) {
-    [[-64, -40], [64, -40]].forEach(([x, z]) => {
-      const light = new THREE.PointLight(0xffe9a8, 28000, 240, 1.9);
-      light.position.set(x, 24, z);
+    // Projektör kulelerinin dibindeki sahayı aydınlat: şiddet mesafeden hesaplanır
+    // (eskiden sabit 28000 yazılıydı → fiziksel birimlerde ~4π kat fazla, tesisi bembeyaz yakıyordu)
+    const mastY = 23;
+    const spots: [number, number][] = n.pitch >= 5
+      ? [[-64, -40], [64, -40], [-64, 40], [64, 40]]
+      : [[-64, -40], [64, -40]];
+    spots.forEach(([x, z]) => {
+      const d = Math.hypot(x, mastY, z);
+      const cosIncidence = mastY / d;
+      const light = new THREE.PointLight(
+        0xffe9a8,
+        pointLightPower(FACILITY_NIGHT_IRRADIANCE / spots.length / cosIncidence, d),
+        240,
+        2
+      );
+      light.position.set(x, mastY, z);
       group.add(light);
     });
   }

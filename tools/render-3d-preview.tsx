@@ -73,8 +73,11 @@ interface RenderOptions {
   night?: boolean;
   /** animasyon zamanı (saniye) — pozu yakalamak için */
   time?: number;
-  /** Sahnede gerçekten bulunan nokta ışıkları (gece projektörleri) */
-  pointLights?: { x: number; y: number; z: number; intensity: number; distance: number; color: number }[];
+  /**
+   * Tone mapping pozlaması — izleyicinin kullandığı değerle AYNI olmalı
+   * (Match3D gece 0.92 / gündüz 1.04, Stadium3D 0.88 / 1.02, useOrbitThree 1.05).
+   */
+  exposure?: number;
 }
 
 /* ── Doku örnekleyici: canvas → piksel verisi (önbellekli) ── */
@@ -153,42 +156,124 @@ function renderToBuffer(
   }
   void sky;
 
-  const lightDir = new THREE.Vector3(0.45, 0.82, 0.35).normalize();
-  const ambient = opts.night ? 0.46 : 0.55;
-  const diffuse = opts.night ? 0.6 : 0.8;
-  // Sahnede tanımlı nokta ışıkları (projektörler) — fiziksel yaklaşım
-  const pointLights = (opts.pointLights ?? []).map(l => ({
-    pos: new THREE.Vector3(l.x, l.y, l.z),
-    color: new THREE.Color(l.color),
-    gain: l.intensity / (4 * Math.PI),
-    distance: l.distance,
-  }));
-  const _tmpVec = new THREE.Vector3();
-  const pointLightAt = (p: THREE.Vector3) => {
-    const acc = new THREE.Color(0, 0, 0);
-    for (const l of pointLights) {
-      const d = l.pos.distanceTo(p);
-      if (d >= l.distance) continue;
-      const t = 1 - d / l.distance;
-      const falloff = t * t;
-      const irradiance = (l.gain / Math.max(d * d, 4)) * falloff;
-      acc.r += l.color.r * irradiance;
-      acc.g += l.color.g * irradiance;
-      acc.b += l.color.b * irradiance;
+  /* ══ IŞIKLAR: sahnenin kendisinden okunur ══════════════════════════════
+     Önizleme artık ışık değerlerini kopyalamaz; buildStadiumGroup / buildMatchScene /
+     buildTrainingComplex hangi ışığı kurduysa onu kullanır. (Eskiden buradaki sabit
+     kopyalar oyunla kopmuştu: araç şiddeti 4π'e bölüyordu, oyun bölmüyordu → gece
+     maçları tarayıcıda bembeyaz yanıyordu ama önizlemede "normal" görünüyordu.)
+
+     three.js fiziksel modeli birebir uygulanır:
+       E = ambient + Σ gökyüzü(hemi) + Σ yönlü·|N·L| + Σ nokta·(1/d^decay)·pencere·|N·L|
+       L = albedo·E/π + emissive    →    ACES(L · pozlama)    →    sRGB
+  ──────────────────────────────────────────────────────────────────────── */
+  const hemiLights: { sky: THREE.Color; ground: THREE.Color; dir: THREE.Vector3; intensity: number }[] = [];
+  const dirLights: { color: THREE.Color; dir: THREE.Vector3; intensity: number }[] = [];
+  const pointLights: { pos: THREE.Vector3; color: THREE.Color; intensity: number; distance: number; decay: number }[] = [];
+  /** Projektörler: konik hüzme — three'nin spot bilgisiyle birebir aynı alanlar */
+  const spotLights: { pos: THREE.Vector3; dir: THREE.Vector3; color: THREE.Color; intensity: number; distance: number; decay: number; coneCos: number; penumbraCos: number }[] = [];
+  const ambientColor = new THREE.Color(0, 0, 0);
+  group.traverse(obj => {
+    const light = obj as THREE.Light;
+    if (!light.isLight) return;
+    const pos = new THREE.Vector3().setFromMatrixPosition(light.matrixWorld);
+    const hemi = light as THREE.HemisphereLight;
+    const dir = light as THREE.DirectionalLight;
+    const point = light as THREE.PointLight;
+    const spot3 = light as THREE.SpotLight;
+    const amb = light as THREE.AmbientLight;
+    if (hemi.isHemisphereLight) {
+      // three: hemi yönü = ışığın konum vektörü (varsayılan 0,1,0 → yukarıdan)
+      const hDir = pos.lengthSq() > 1e-8 ? pos.clone().normalize() : new THREE.Vector3(0, 1, 0);
+      hemiLights.push({ sky: hemi.color.clone(), ground: hemi.groundColor.clone(), dir: hDir, intensity: hemi.intensity });
+    } else if (dir.isDirectionalLight) {
+      // three: uniforms.direction = lightPos − targetPos (yüzeyden ışığa bakan vektör)
+      const target = new THREE.Vector3().setFromMatrixPosition(dir.target.matrixWorld);
+      dirLights.push({ color: dir.color.clone(), dir: pos.clone().sub(target).normalize(), intensity: dir.intensity });
+    } else if (point.isPointLight) {
+      pointLights.push({ pos, color: point.color.clone(), intensity: point.intensity, distance: point.distance, decay: point.decay });
+    } else if (spot3.isSpotLight) {
+      // DİKKAT: three, spot yönünü shader'a "hedeften lambaya" (geri vektör) verir:
+      // WebGLLights: uniforms.direction = lightPos - targetPos. Aynı kuralı kullanmalıyız.
+      const target = new THREE.Vector3().setFromMatrixPosition(spot3.target.matrixWorld);
+      const dir = pos.clone().sub(target).normalize();
+      spotLights.push({
+        pos, dir, color: spot3.color.clone(), intensity: spot3.intensity,
+        distance: spot3.distance, decay: spot3.decay,
+        coneCos: Math.cos(spot3.angle),
+        penumbraCos: Math.cos(spot3.angle * (1 - spot3.penumbra)),
+      });
+    } else if (amb.isAmbientLight) {
+      ambientColor.add(amb.color.clone().multiplyScalar(amb.intensity));
     }
-    return acc;
+  });
+  const _tmpVec = new THREE.Vector3();
+  const _wpVec = new THREE.Vector3();
+  /** Yönlü + gökyüzü bileşenleri (üçgen başına sabit) */
+  const irradianceBase = (n: THREE.Vector3): [number, number, number] => {
+    let r = ambientColor.r, g = ambientColor.g, b = ambientColor.b;
+    for (const h of hemiLights) {
+      const w = 0.5 * n.dot(h.dir) + 0.5;
+      r += (h.ground.r + (h.sky.r - h.ground.r) * w) * h.intensity;
+      g += (h.ground.g + (h.sky.g - h.ground.g) * w) * h.intensity;
+      b += (h.ground.b + (h.sky.b - h.ground.b) * w) * h.intensity;
+    }
+    for (const d of dirLights) {
+      const k = Math.max(0, n.dot(d.dir)) * d.intensity;
+      r += d.color.r * k; g += d.color.g * k; b += d.color.b * k;
+    }
+    return [r, g, b];
+  };
+  /** Nokta ışıklar piksel başına (konuma bağlı) */
+  const pointLightAt = (p: THREE.Vector3, n: THREE.Vector3): [number, number, number] => {
+    let r = 0, g = 0, b = 0;
+    /** three: getDistanceAttenuation */
+    const distanceAttenuation = (d: number, cutoff: number, decay: number) => {
+      let f = 1 / Math.max(Math.pow(d, decay), 0.01);
+      if (cutoff > 0) {
+        const w = Math.max(0, 1 - Math.pow(d / cutoff, 4));
+        f *= w * w;
+      }
+      return f;
+    };
+    for (const l of pointLights) {
+      const dx = l.pos.x - p.x, dy = l.pos.y - p.y, dz = l.pos.z - p.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (l.distance > 0 && d >= l.distance) continue;
+      const falloff = distanceAttenuation(d, l.distance, l.decay);
+      const k = Math.max(0, (dx * n.x + dy * n.y + dz * n.z) / Math.max(d, 1e-4)) * l.intensity * falloff;
+      r += l.color.r * k; g += l.color.g * k; b += l.color.b * k;
+    }
+    for (const l of spotLights) {
+      const dx = l.pos.x - p.x, dy = l.pos.y - p.y, dz = l.pos.z - p.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < 1e-4) continue;
+      // three: getSpotLightInfo → önce koni, sonra mesafe sönümü
+      const cosine = (dx * l.dir.x + dy * l.dir.y + dz * l.dir.z) / d;
+      if (cosine <= l.coneCos) continue;
+      const t = Math.min(1, Math.max(0, (cosine - l.coneCos) / Math.max(l.penumbraCos - l.coneCos, 1e-6)));
+      const spotAtt = t * t * (3 - 2 * t);      // GLSL smoothstep
+      if (spotAtt <= 0) continue;
+      const falloff = distanceAttenuation(d, l.distance, l.decay);
+      const k = spotAtt * Math.max(0, (dx * n.x + dy * n.y + dz * n.z) / d) * l.intensity * falloff;
+      r += l.color.r * k; g += l.color.g * k; b += l.color.b * k;
+    }
+    return [r, g, b];
   };
 
   interface Tri {
     x: number[]; y: number[]; z: number[];
-    col: number[]; alpha: number;
+    /** Üçgen başına sabit aydınlanma (ambient + gökyüzü + yönlü ışıklar) */
+    irr: number[];
+    alpha: number;
     uv?: number[] | null;
     map?: THREE.Texture | null;
     emap?: THREE.Texture | null;
+    /** Lineer emissive katkısı */
     em: number[];
-    /** Piksel başına ışık için: albedo, gölgesiz gölge çarpanı ve dünya konumları */
+    /** Lineer albedo (malzeme rengi × doku) */
     albedo: number[];
-    shade: number;
+    /** Köşe başına dünya normali (perspektif interpolasyonu için 3 köşe) */
+    nrm: number[][];
     wp: THREE.Vector3[];
   }
   const tris: Tri[] = [];
@@ -224,11 +309,16 @@ function renderToBuffer(
     const pa = geo.attributes.position as THREE.BufferAttribute;
     if (!pa) return;
     const ua = geo.attributes.uv as THREE.BufferAttribute | undefined;
+    const na = geo.attributes.normal as THREE.BufferAttribute | undefined;
     const idx = geo.index;
     const count = idx ? idx.count : pa.count;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     // Ön yüz malzemesi + varsa yan yüz (ExtrudeGeometry) malzemesi
     const mat = mats[0] as THREE.MeshStandardMaterial;
+    /* GPU davranışı: kapalı yüzeylerde arka yüzler çizilmez (kapalı cisimlerin içini
+       görmeyelim). Çift taraflı malzemelerde ise three normali bakana çevirir. */
+    const doubleSided = mat?.side === THREE.DoubleSide;
+    const backSided = mat?.side === THREE.BackSide;
 
     // InstancedMesh → her örnek için ayrı dünya matrisi
     const matrices: THREE.Matrix4[] = [];
@@ -258,7 +348,7 @@ function renderToBuffer(
     const em = (mat as any)?.emissive
       ? (mat as any).emissive.clone().multiplyScalar(Math.min(1.2, ((mat as any).emissiveIntensity ?? 1) * 1.1))
       : new THREE.Color(0, 0, 0);
-    const emArr = [em.r * 255, em.g * 255, em.b * 255];
+    const emArr = [em.r, em.g, em.b];   // lineer (ColorManagement açık: Color bileşenleri lineer)
     const alpha = (mat as any)?.transparent ? ((mat as any).opacity ?? 1) : 1;
     const map = (mat as any)?.map as THREE.Texture | null | undefined;
     const emap = (mat as any)?.emissiveMap as THREE.Texture | null | undefined;
@@ -272,6 +362,7 @@ function renderToBuffer(
       const world = matrices[mi];
       const inst = instColors[mi];
       const baseCol = inst ? baseColPlain.clone().multiply(inst) : baseColPlain;
+      const nmat = new THREE.Matrix3().getNormalMatrix(world);
       for (let i = 0; i < count; i += 3) {
         const i0 = idx ? idx.getX(i) : i;
         const i1 = idx ? idx.getX(i + 1) : i + 1;
@@ -279,11 +370,26 @@ function renderToBuffer(
         const w0 = new THREE.Vector3().fromBufferAttribute(pa, i0).applyMatrix4(world);
         const w1 = new THREE.Vector3().fromBufferAttribute(pa, i1).applyMatrix4(world);
         const w2 = new THREE.Vector3().fromBufferAttribute(pa, i2).applyMatrix4(world);
-        const n = new THREE.Vector3().subVectors(w1, w0).cross(new THREE.Vector3().subVectors(w2, w0));
-        if (n.lengthSq() < 1e-9) continue;
-        n.normalize();
-        const shade = ambient + diffuse * Math.abs(n.dot(lightDir));
-        const shaded = [Math.min(255, baseCol.r * shade * 255), Math.min(255, baseCol.g * shade * 255), Math.min(255, baseCol.b * shade * 255)];
+        const face = new THREE.Vector3().subVectors(w1, w0).cross(new THREE.Vector3().subVectors(w2, w0));
+        if (face.lengthSq() < 1e-9) continue;
+        face.normalize();
+        // Köşe normalleri (GPU'daki gibi); yoksa yüz normali
+        const vn = (k: number) => {
+          if (!na) return face;
+          const v = new THREE.Vector3().fromBufferAttribute(na, k).applyMatrix3(nmat);
+          return v.lengthSq() > 1e-9 ? v.normalize() : face;
+        };
+        const n0 = vn(i0), n1 = vn(i1), n2 = vn(i2);
+        const centroid = new THREE.Vector3().addVectors(w0, w1).add(w2).multiplyScalar(1 / 3);
+        const towardCamera = camera.position.clone().sub(centroid);
+        const facing = face.dot(towardCamera) >= 0;
+        // Tek taraflı malzemede arka yüz çizilmez; çift taraflıda three normali bakana çevirir
+        if (!doubleSided && !backSided && !facing) continue;
+        const flip = (doubleSided || backSided) && !facing;
+        if (flip) { n0.negate(); n1.negate(); n2.negate(); }
+        // Aydınlanma köşe normalinden: yönlü ışıklar N·L, lore yerine köşe ortalaması
+        const nAvg = new THREE.Vector3().addVectors(n0, n1).add(n2).normalize();
+        const irr = irradianceBase(nAvg);
         const uv = ua ? [ua.getX(i0), ua.getY(i0), ua.getX(i1), ua.getY(i1), ua.getX(i2), ua.getY(i2)] : null;
         // Kamera uzayında yakın düzleme göre kırp
         const clipped = clipNear([viewOf(w0), viewOf(w1), viewOf(w2)]);
@@ -292,7 +398,7 @@ function renderToBuffer(
           const q1 = projOf(clipped[k]);
           const q2 = projOf(clipped[k + 1]);
           if (!q0 || !q1 || !q2) continue;
-          const wpTri = pointLights.length
+          const wpTri = pointLights.length + spotLights.length
             ? [
                 clipped[0].clone().applyMatrix4(camera.matrixWorld),
                 clipped[k].clone().applyMatrix4(camera.matrixWorld),
@@ -303,14 +409,14 @@ function renderToBuffer(
             x: [q0.x, q1.x, q2.x],
             y: [q0.y, q1.y, q2.y],
             z: [q0.z, q1.z, q2.z],
-            col: shaded,
+            irr,
             alpha,
             uv: uv && (hasMap || hasEmap) ? uv : null,
             map: hasMap ? map : null,
             emap: hasEmap ? emap : null,
             em: emArr,
             albedo: [baseCol.r, baseCol.g, baseCol.b],
-            shade: shade * (inst ? 1 : 1),
+            nrm: [[n0.x, n0.y, n0.z], [n1.x, n1.y, n1.z], [n2.x, n2.y, n2.z]],
             wp: wpTri,
           });
         }
@@ -318,11 +424,32 @@ function renderToBuffer(
     }
   });
 
-  // Yumuşak ton eğrisi (Reinhard benzeri) — projektör altındaki yüzeyler bembeyaz patlamaz
-  const tonemap = (v: number) => {
-    const n = v / 255;
-    return 255 * (n * (1 + n / 9)) / (1 + n);
+  /* ── three.js ACESFilmicToneMapping (birebir aynı katsayılar) + sRGB kodlama ──
+     Oyunun izleyicileri ACESFilmicToneMapping kullanıyor; önizleme bunu taklit etmezse
+     "önizlemede iyi, tarayıcıda bembeyaz" tuzağına düşülür. */
+  const exposure = opts.exposure ?? (opts.night ? 0.92 : 1.04);
+  const RRTAndODTFit = (v: number[]) => {
+    const a = [v[0] * (v[0] + 0.0245786) - 0.000090537, v[1] * (v[1] + 0.0245786) - 0.000090537, v[2] * (v[2] + 0.0245786) - 0.000090537];
+    const b = [v[0] * (0.983729 * v[0] + 0.432951) + 0.238081, v[1] * (0.983729 * v[1] + 0.432951) + 0.238081, v[2] * (0.983729 * v[2] + 0.432951) + 0.238081];
+    return [a[0] / b[0], a[1] / b[1], a[2] / b[2]];
   };
+  const mat3Mul = (m: number[][], v: number[]) => [
+    m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
+    m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
+    m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+  ];
+  const ACES_INPUT = [[0.59719, 0.35458, 0.04823], [0.076, 0.90834, 0.01566], [0.0284, 0.13383, 0.83777]];
+  const ACES_OUTPUT = [[1.60475, -0.53108, -0.07367], [-0.10208, 1.10813, -0.00605], [-0.00327, -0.07276, 1.07602]];
+  const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const toSRGB = (c: number) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+  /** Lineer renk → ACES → sRGB (0-255) */
+  const tonemap = (v: number[]) => {
+    const scaled = [v[0] * exposure / 0.6, v[1] * exposure / 0.6, v[2] * exposure / 0.6];
+    const fitted = RRTAndODTFit(mat3Mul(ACES_INPUT, scaled));
+    const out = mat3Mul(ACES_OUTPUT, fitted);
+    return out.map(c => Math.max(0, Math.min(1, toSRGB(Math.max(0, Math.min(1, c))))) * 255);
+  };
+  const INV_PI = 1 / Math.PI;
 
   for (const t of tris) {
     let [x0, y0, x1, y1, x2, y2] = [t.x[0], t.y[0], t.x[1], t.y[1], t.x[2], t.y[2]];
@@ -354,38 +481,45 @@ function renderToBuffer(
         if (z >= zbuf[pi]) continue;
         zbuf[pi] = z;
         const i3 = pi * 3;
-        let cr = t.col[0], cg = t.col[1], cb = t.col[2];
-        if (t.wp.length === 3) {
-          // Dünya konumunu barycentric interpolasyonla bul → nokta ışığını pikselde hesapla
+        // 1) Aydınlanma: üçgen katkısı + (varsa) pikselde nokta ışıkları
+        const nrmV = _tmpVec.set(
+          l0 * t.nrm[0][0] + l1 * t.nrm[1][0] + l2 * t.nrm[2][0],
+          l0 * t.nrm[0][1] + l1 * t.nrm[1][1] + l2 * t.nrm[2][1],
+          l0 * t.nrm[0][2] + l1 * t.nrm[1][2] + l2 * t.nrm[2][2]
+        );
+        if (nrmV.lengthSq() > 1e-9) nrmV.normalize();
+        let e0 = t.irr[0], e1 = t.irr[1], e2 = t.irr[2];
+        if (t.wp.length === 3 && (pointLights.length > 0 || spotLights.length > 0)) {
           const wx = l0 * t.wp[0].x + l1 * t.wp[1].x + l2 * t.wp[2].x;
           const wy = l0 * t.wp[0].y + l1 * t.wp[1].y + l2 * t.wp[2].y;
           const wz = l0 * t.wp[0].z + l1 * t.wp[1].z + l2 * t.wp[2].z;
-          const pl = pointLightAt(_tmpVec.set(wx, wy, wz));
-          cr = Math.min(255, t.albedo[0] * (t.shade + pl.r) * 255);
-          cg = Math.min(255, t.albedo[1] * (t.shade + pl.g) * 255);
-          cb = Math.min(255, t.albedo[2] * (t.shade + pl.b) * 255);
+          const pl = pointLightAt(_wpVec.set(wx, wy, wz), nrmV);
+          e0 += pl[0]; e1 += pl[1]; e2 += pl[2];
         }
+        // 2) Lambert: albedo · E / π  (three.js BRDF_Lambert)
+        let lr = t.albedo[0] * e0 * INV_PI;
+        let lg = t.albedo[1] * e1 * INV_PI;
+        let lb = t.albedo[2] * e2 * INV_PI;
+        // 3) Doku (sRGB → lineer) ve emissive katkısı (lineer)
         if ((mapData || emapData) && (u0 !== 0 || v0 !== 0 || u1 !== 0 || v1 !== 0 || u2 !== 0 || v2 !== 0)) {
           const uu = l0 * u0 + l1 * u1 + l2 * u2;
           const vv = l0 * v0 + l1 * v1 + l2 * v2;
           if (mapData && t.map) {
             const [tr, tg, tb] = sampleTexture(t.map, mapData, uu, vv);
-            cr = cr * (tr / 255);
-            cg = cg * (tg / 255);
-            cb = cb * (tb / 255);
+            lr *= toLinear(tr / 255); lg *= toLinear(tg / 255); lb *= toLinear(tb / 255);
           }
           if (emapData && t.emap) {
             const [er, eg, eb] = sampleTexture(t.emap, emapData, uu, vv);
-            cr += er * (t.em[0] / 255) * 0.55;
-            cg += eg * (t.em[1] / 255) * 0.55;
-            cb += eb * (t.em[2] / 255) * 0.55;
+            lr += toLinear(er / 255) * t.em[0];
+            lg += toLinear(eg / 255) * t.em[1];
+            lb += toLinear(eb / 255) * t.em[2];
           }
         } else {
-          cr += t.em[0] * 0.6;
-          cg += t.em[1] * 0.6;
-          cb += t.em[2] * 0.6;
+          lr += t.em[0]; lg += t.em[1]; lb += t.em[2];
         }
-        cr = tonemap(Math.min(400, cr)); cg = tonemap(Math.min(400, cg)); cb = tonemap(Math.min(400, cb));
+        // 4) Tone mapping + sRGB kodlama (oyunun izleyicileriyle aynı)
+        const mapped = tonemap([lr, lg, lb]);
+        const cr = mapped[0], cg = mapped[1], cb = mapped[2];
         if (t.alpha < 1) {
           for (let c = 0; c < 3; c++) {
             const src = c === 0 ? cr : c === 1 ? cg : cb;
@@ -494,10 +628,6 @@ function renderMatchPreview(cfg: {
   const phi = Math.acos(THREE.MathUtils.clamp(off.y / radius, -1, 1));
   const theta = Math.atan2(off.x, off.z);
 
-  const rows = Math.max(4, Math.min(30, Math.round(cfg.venue.capacity / 1600)));
-  const spotX = 105 / 2 + 8 + rows * 1.6 * 0.7;
-  const spotZ = 68 / 2 + 8 + rows * 1.6 * 0.7;
-  const spotY = rows * 1.6 + 16;
   const buffer = renderToBuffer(bundle.group, {
     radius, phi, theta,
     targetX: bundle.cam.target.x, targetY: bundle.cam.target.y, targetZ: bundle.cam.target.z,
@@ -506,11 +636,8 @@ function renderMatchPreview(cfg: {
     sky: cfg.venue.night ? '#0b1026' : '#7ab0e0',
     night: cfg.venue.night,
     time: cfg.sim,
-    pointLights: cfg.venue.night
-      ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({
-          x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 78000, distance: 300, color: 0xffe9a8
-        }))
-      : undefined
+    // Match3D.tsx ile aynı pozlama
+    exposure: cfg.venue.night ? 0.92 : 1.04,
   });
   writePNG(`${OUT_DIR}/${cfg.name}`, buffer, W, H);
   bundle.dispose();
@@ -539,12 +666,12 @@ if (process.env.MATCH_ONLY) {
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const clubColor = '#1d4ed8';
 
-const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number; pointLights?: boolean }[] = [
+const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number }[] = [
   { name: 'preview-stadyum-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 17000, night: false, dPhi: 0, dTheta: 0, zoom: 1 },
-  { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05, pointLights: true },
+  { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05 },
   // Tasarım seçenekleri galerisi: her kare farklı bir özelleştirme seçimini gösterir
   // Vitrin kareleri: alçak sinematik açı (gece projektörler açık)
-  { name: 'preview-stadyum-kahraman-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 40000, night: true, dPhi: 0.04, dTheta: -0.83, zoom: 0.8, pointLights: true },
+  { name: 'preview-stadyum-kahraman-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 40000, night: true, dPhi: 0.04, dTheta: -0.83, zoom: 0.8 },
   { name: 'preview-stadyum-kahraman-gunduz.png', design: { seatColor: '#1d4ed8', accentColor: '#f8fafc', roof: 'canopy', stands: 'stepped', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.04, dTheta: -0.83, zoom: 0.82 },
   { name: 'preview-stadyum-tasarim-cati-yok.png', design: { seatColor: '#2563eb', accentColor: '#f8fafc', roof: 'none', stands: 'classic', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: false }, capacity: 9000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-canopy.png', design: { seatColor: '#16a34a', accentColor: '#facc15', roof: 'canopy', stands: 'stepped', pitchPattern: 'plain', flags: true, logoOnPitch: true, floodlights: true }, capacity: 17000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
@@ -557,30 +684,14 @@ stadiumPreviews.forEach(p => {
   const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night });
   const rows = Math.max(4, Math.min(30, Math.round(p.capacity / 1600)));
   const baseRadius = Math.max(165, (105 + rows * 4.6) * 1.3);
-  const spotX = 105 / 2 + 8 + rows * 1.6 * 0.7;
-  const spotZ = 68 / 2 + 8 + rows * 1.6 * 0.7;
-  const spotY = rows * 1.6 + 16;
-  const depth = (p.design.stands === 'stepped' ? 1.9 : 1.55) * rows;
-  const halfZ = 68 / 2 + 8 + depth + 4;
   const buffer = renderToBuffer(bundle.group, {
     radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
     targetY: Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
   }, {
     sky: p.night ? '#0b1026' : '#7ab0e0',
     night: p.night,
-    // Sahnedeki gece projektörleri (scene.ts ile aynı konum/şiddet)
-    pointLights: p.night
-      ? [
-          ...(p.pointLights
-            ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({
-                x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 78000, distance: 300, color: 0xffe9a8,
-              }))
-            : []),
-          // Giriş meydanı lambaları (scene.ts ile aynı)
-          { x: -34, y: 7, z: halfZ + 30, intensity: 22000, distance: 120, color: 0xffe3a8 },
-          { x: 34, y: 7, z: halfZ + 30, intensity: 22000, distance: 120, color: 0xffe3a8 },
-        ]
-      : undefined,
+    // Stadium3D.tsx ile aynı pozlama
+    exposure: p.night ? 0.88 : 1.02,
   });
   writePNG(`${OUT_DIR}/${p.name}`, buffer, W, H);
   if (p.name.includes('tasarim')) {
@@ -634,13 +745,7 @@ complexScenes.forEach(scene => {
     sky: bundle.sky,
     fog: bundle.fog,
     night: scene.night,
-    // Sahnedeki gece projektörleri (scene.ts ile aynı konum/şiddet)
-    pointLights: scene.night
-      ? [
-          { x: -64, y: 24, z: -40, intensity: 28000, distance: 240, color: 0xffe9a8 },
-          { x: 64, y: 24, z: -40, intensity: 28000, distance: 240, color: 0xffe9a8 },
-        ]
-      : undefined,
+    exposure: 1.05,   // useOrbitThree ile aynı
   });
   writePNG(`${OUT_DIR}/${scene.name}`, buffer, W, H);
   complexBuffers.push(buffer);
@@ -661,7 +766,7 @@ const levelTiles: { buf: Uint8Array; label: string }[] = [];
     theta: bundle.camera.theta,
     targetY: bundle.camera.targetY,
     fov: bundle.camera.fov,
-  }, { sky: bundle.sky, fog: bundle.fog, night: false });
+  }, { sky: bundle.sky, fog: bundle.fog, night: false, exposure: 1.05 });
   writePNG(`${OUT_DIR}/preview-antrenman-seviye-${lvl}.png`, buffer, W, H);
   levelTiles.push({ buf: buffer, label: `seviye ${lvl}` });
 });
@@ -689,7 +794,7 @@ if (levelTiles.length > 0) {
       targetY: 3,
       targetZ: z.target.z,
       fov: 46,
-    }, { sky: bundle.sky, fog: bundle.fog, night: false });
+    }, { sky: bundle.sky, fog: bundle.fog, night: false, exposure: 1.05 });
     writePNG(`${OUT_DIR}/${z.name}`, buffer, W, H);
     zoneTiles.push({ buf: buffer, label: z.name });
     console.log(`🔍 ${z.name} üretildi`);
@@ -718,6 +823,7 @@ lifeScenes.forEach(scene => {
       sky: built.sky,
       fog: built.fog,
       night: scene.activity === 'vacation' ? false : ['games', 'press', 'rest'].includes(scene.activity),
+      exposure: 1.05,   // useOrbitThree ile aynı
     });
     writePNG(`${OUT_DIR}/${scene.name}`, buffer, W, H);
     tiles.push({ buf: buffer, label: scene.name });

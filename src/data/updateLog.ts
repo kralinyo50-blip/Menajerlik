@@ -9,6 +9,19 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.8.1',
+    date: '18 Eyl 2026',
+    tag: 'DÜZELTME',
+    title: '💡 Gece Maçları: Projektörler Artık Sahayı Yakmıyor',
+    items: [
+      '💡 Gece maçlarındaki bembeyaz parlama giderildi: projektör ışığı artık mesafeye göre hesaplanıyor (ters kare yasası), büyük statlarda da saha aynı parlaklıkta kalıyor',
+      '🔦 Projektörler artık ışığı gerçekten sahaya yönlendiriyor (konik hüzme) — tribünler projektörle yıkanmıyor, saha aydınlık / tribün normal seviyede',
+      '🌙 Gece dolgu ışıkları ve çimin kendi kendine parlaması kısıldı: gece maçı hâlâ gece gibi görünüyor, hiçbir yüzey 255 beyaza doygunlaşmıyor',
+      '🏋️ Aynı düzeltme gece antrenman kompleksine de uygulandı (projektör kulelerinin dibindeki saha dengeli aydınlanıyor)',
+      '🛠️ 3D önizleme aracı artık sahnedeki gerçek ışıkları okuyup three.js ile aynı modeli (yönlü/gökyüzü/nokta/spot ışık, yüz normalleri, ACES tone mapping + pozlama) kullanıyor — önizleme ile tarayıcıda gördüğün sahne artık birebir tutarlı',
+    ],
+  },
+  {
     version: '4.8.0',
     date: '18 Eyl 2026',
     tag: 'BÜYÜK',
