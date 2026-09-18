@@ -315,6 +315,12 @@ function renderToBuffer(
     }
   });
 
+  // Yumuşak ton eğrisi (Reinhard benzeri) — projektör altındaki yüzeyler bembeyaz patlamaz
+  const tonemap = (v: number) => {
+    const n = v / 255;
+    return 255 * (n * (1 + n / 9)) / (1 + n);
+  };
+
   for (const t of tris) {
     let [x0, y0, x1, y1, x2, y2] = [t.x[0], t.y[0], t.x[1], t.y[1], t.x[2], t.y[2]];
     let [z0, z1, z2] = [t.z[0], t.z[1], t.z[2]];
@@ -376,7 +382,7 @@ function renderToBuffer(
           cg += t.em[1] * 0.6;
           cb += t.em[2] * 0.6;
         }
-        cr = Math.min(255, cr); cg = Math.min(255, cg); cb = Math.min(255, cb);
+        cr = tonemap(Math.min(400, cr)); cg = tonemap(Math.min(400, cg)); cb = tonemap(Math.min(400, cb));
         if (t.alpha < 1) {
           for (let c = 0; c < 3; c++) {
             const src = c === 0 ? cr : c === 1 ? cg : cb;
@@ -429,6 +435,9 @@ const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; 
   { name: 'preview-stadyum-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 17000, night: false, dPhi: 0, dTheta: 0, zoom: 1 },
   { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05, pointLights: true },
   // Tasarım seçenekleri galerisi: her kare farklı bir özelleştirme seçimini gösterir
+  // Vitrin kareleri: alçak sinematik açı (gece projektörler açık)
+  { name: 'preview-stadyum-kahraman-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 40000, night: true, dPhi: 0.04, dTheta: -0.83, zoom: 0.8, pointLights: true },
+  { name: 'preview-stadyum-kahraman-gunduz.png', design: { seatColor: '#1d4ed8', accentColor: '#f8fafc', roof: 'canopy', stands: 'stepped', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.04, dTheta: -0.83, zoom: 0.82 },
   { name: 'preview-stadyum-tasarim-cati-yok.png', design: { seatColor: '#2563eb', accentColor: '#f8fafc', roof: 'none', stands: 'classic', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: false }, capacity: 9000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-canopy.png', design: { seatColor: '#16a34a', accentColor: '#facc15', roof: 'canopy', stands: 'stepped', pitchPattern: 'plain', flags: true, logoOnPitch: true, floodlights: true }, capacity: 17000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-cam-cati.png', design: { seatColor: '#7c3aed', accentColor: '#e5e7eb', roof: 'glass', stands: 'double', pitchPattern: 'rings', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
@@ -446,7 +455,8 @@ stadiumPreviews.forEach(p => {
   const depth = (p.design.stands === 'stepped' ? 1.9 : 1.55) * rows;
   const halfZ = 68 / 2 + 8 + depth + 4;
   const buffer = renderToBuffer(bundle.group, {
-    radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta, targetY: Math.max(6, rows * 1.1), fov: 46,
+    radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
+    targetY: Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
   }, {
     sky: p.night ? '#0b1026' : '#7ab0e0',
     night: p.night,
@@ -455,7 +465,7 @@ stadiumPreviews.forEach(p => {
       ? [
           ...(p.pointLights
             ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({
-                x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 56000, distance: 300, color: 0xffe9a8,
+                x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 78000, distance: 300, color: 0xffe9a8,
               }))
             : []),
           // Giriş meydanı lambaları (scene.ts ile aynı)

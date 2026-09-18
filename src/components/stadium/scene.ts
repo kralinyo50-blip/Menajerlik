@@ -440,8 +440,9 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     color: pitchTex ? 0xffffff : 0x37994a,
     roughness: opts.wet ? 0.52 : 0.95,
     metalness: opts.wet ? 0.08 : 0.0,
-    emissive: opts.wet ? new THREE.Color(0x1a3a25) : new THREE.Color(0x000000),
-    emissiveIntensity: opts.wet ? (opts.night ? 0.22 : 0.08) : 0,
+    // Gece projektör altında çim hafifçe kendi kendine aydınlanır (gerçekte de parlak görünür)
+    emissive: opts.wet ? new THREE.Color(0x1a3a25) : (opts.night && design.floodlights ? new THREE.Color(0x14351f) : new THREE.Color(0x000000)),
+    emissiveIntensity: opts.wet ? (opts.night ? 0.22 : 0.08) : (opts.night && design.floodlights ? 0.5 : 0),
   });
   if (pitchTex) pitchMat.map = pitchTex;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(PITCH_L, PITCH_W), pitchMat);
@@ -1173,7 +1174,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
     const lightTargets: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
     lightTargets.forEach(([lx, lz]) => {
       // Önceki 180000 değeri sahayı bembeyaz yapıyordu — düşür, mesafeyi kaptır
-      const spot = new THREE.PointLight(0xffe9a8, 56000, 300, 1.85);
+      const spot = new THREE.PointLight(0xffe9a8, 78000, 300, 1.85);
       spot.position.set(lx * (PITCH_L / 2 + MARGIN + depth * 0.7), height + 16, lz * (PITCH_W / 2 + MARGIN + depth * 0.7));
       group.add(spot);
     });
