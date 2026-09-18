@@ -105,11 +105,14 @@ interface Actor {
   diveCatch: boolean;
 }
 
+// ShapeSlot.t takımın kendi hücum yönündeki yerleşimidir. Aşağıdaki iki
+// varsayılan diziliş aynı ekseni kullanır; `toWorld` deplasmanı tek seferde
+// aynaladığı için rakip kalecisi de doğru (sağ) kalede kalır.
 const DEFAULT_AWAY_SHAPE: ShapeSlot[] = [
-  { t: 8, l: 50, n: 1 },
-  { t: 26, l: 14, n: 2 }, { t: 24, l: 38, n: 4 }, { t: 24, l: 62, n: 5 }, { t: 26, l: 86, n: 3 },
-  { t: 48, l: 20, n: 8 }, { t: 46, l: 40, n: 6 }, { t: 46, l: 60, n: 10 }, { t: 48, l: 80, n: 7 },
-  { t: 70, l: 36, n: 9 }, { t: 70, l: 64, n: 11 },
+  { t: 92, l: 50, n: 1 },
+  { t: 74, l: 14, n: 2 }, { t: 76, l: 38, n: 4 }, { t: 76, l: 62, n: 5 }, { t: 74, l: 86, n: 3 },
+  { t: 52, l: 20, n: 8 }, { t: 54, l: 40, n: 6 }, { t: 54, l: 60, n: 10 }, { t: 52, l: 80, n: 7 },
+  { t: 30, l: 36, n: 9 }, { t: 30, l: 64, n: 11 },
 ];
 
 const DEFAULT_HOME_SHAPE: ShapeSlot[] = [
@@ -119,11 +122,31 @@ const DEFAULT_HOME_SHAPE: ShapeSlot[] = [
   { t: 30, l: 36, n: 9 }, { t: 30, l: 64, n: 11 },
 ];
 
-/** 2D yüzde konumu 3D dünya koordinatına çevirir (home +x yönüne hücum eder) */
+/**
+ * 2D yüzde konumu 3D dünya koordinatına çevirir.
+ *
+ * Dünya ekseninde ev sahibi soldaki (-X) kalesinden sağa (+X) hücum eder;
+ * deplasman bunun aynasıdır. `t` hiçbir zaman dünya koordinatı değildir —
+ * deplasmanı burada ve yalnızca burada aynalamak, diziliş/şut yönünün iki kez
+ * ters dönmesini engeller.
+ */
 function toWorld(slot: ShapeSlot, team: Side): THREE.Vector2 {
-  const x = ((50 - slot.t) / 50) * (HL - 3);
-  const z = ((slot.l - 50) / 50) * (HW - 3);
-  return team === 'home' ? new THREE.Vector2(x, z) : new THREE.Vector2(-x, z);
+  const localX = ((50 - slot.t) / 50) * (HL - 3);
+  const worldX = team === 'home' ? localX : -localX;
+  const worldZ = ((slot.l - 50) / 50) * (HW - 3);
+  return new THREE.Vector2(worldX, worldZ);
+}
+
+function attackDirection(team: Side): 1 | -1 {
+  return team === 'home' ? 1 : -1;
+}
+
+function goalLineFor(team: Side): number {
+  return attackDirection(team) * HL;
+}
+
+function ownGoalLineFor(team: Side): number {
+  return -attackDirection(team) * HL;
 }
 
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
@@ -547,7 +570,11 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     holder: null as Actor | null,
     receiver: null as Actor | null,
     flight: 0,
-    lastTouch: 'home' as Side
+    lastTouch: 'home' as Side,
+    // Şutun motor tarafından gol olarak sonuçlandığını görsel fizik de bilsin.
+    // Aksi halde top kale çizgisinde sekip geri dönüyor, sonra kutlama sırasında
+    // tekrar ağın arkasına ışınlanıyordu.
+    scoringShot: false
   };
   const ballPos = ball.pos;
   /** Gol senaryosunda kaleci topu tutmaz — gerçek goller yalnızca motordan gelir */
@@ -557,6 +584,12 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   interface Seq { kind: SeqKind; t: number; dur: number; team: Side; data: Record<string, unknown> }
   let seq: Seq | null = { kind: 'warmup', t: 0, dur: 1e9, team: 'home', data: {} };
   let lastEventKey = -1;
+  // Bir olayın sinematiği bitmeden yenisi gelirse eskisini yarıda kesme.
+  // Maç motoru yaklaşık 1.3 saniyede bir dakika ilerliyor; şut/gol animasyonları
+  // bundan uzun olduğu için doğrudan `startSeq` çağrısı kalecinin aynı pozisyonda
+  // tekrar tekrar uçmasına ve oyuncuların ışınlanmış gibi görünmesine yol açıyordu.
+  let queuedEvent: Match3DEvent | null = null;
+  let pendingPhase: string | null = null;
   let passTimer = 1.2;
   let simT = 0;
   let crowdHype = 0;
@@ -592,6 +625,33 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     seq = { kind, t: 0, dur, team, data };
   };
 
+  const eventPriority = (ev: Match3DEvent): number => {
+    if (ev.type === 'goal' || ev.type === 'penalty') return 5;
+    if (ev.type === 'injury' || ev.type === 'card') return 4;
+    if (ev.type === 'save' || ev.type === 'chance') return 3;
+    if (ev.type === 'foul' || ev.type === 'substitution') return 2;
+    return 1;
+  };
+
+  /**
+   * Olay animasyonu oynarken yalnızca en anlamlı bekleyen olayı sakla.
+   * Böylece iki dakikalık maç akışı 3D sahnede onlarca eski pozisyonu üst üste
+   * bindirmez; gol/kart gibi önemli olaylar sıradan bir şutun önceliğini alır.
+   */
+  const queueEvent = (ev: Match3DEvent) => {
+    if (!queuedEvent || eventPriority(ev) >= eventPriority(queuedEvent)) queuedEvent = ev;
+  };
+
+  const beginPhaseSequence = (phase: string) => {
+    if (phase === 'first') startSeq('kickoff', 'home', 2.4);
+    else if (phase === 'second' || phase === 'et') startSeq('kickoff', 'away', 2.4);
+    else if (phase === 'half') startSeq('halfTime', 'home', 5.0);
+    else if (phase === 'done' || phase === 'pens') {
+      queuedEvent = null;
+      startSeq('fullTime', 'home', 5.0);
+    }
+  };
+
   /** Topu bir oyuncuya doğru havalandır */
   const kickTo = (from: Actor, to: THREE.Vector3, power: number, lift = 0.35) => {
     const start = from.pos.clone().setY(0.35);
@@ -605,15 +665,17 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     ball.holder = null;
     ball.flight = time;
     ball.lastTouch = from.team;
+    ball.scoringShot = false;
     from.mode = 'kick';
     from.modeT = 0;
     return time;
   };
 
   const shootAtGoal = (shooter: Actor, willScore: boolean, celebrate = false) => {
-    const dirX = shooter.team === 'home' ? 1 : -1;
-    const goalX = dirX * HL;
-    const aimZ = willScore ? (Math.random() - 0.5) * (GOAL_HALF * 1.4) : (Math.random() < 0.5 ? -1 : 1) * (GOAL_HALF + 1.2 + Math.random() * 2.4);
+    const goalX = goalLineFor(shooter.team);
+    const aimZ = willScore
+      ? (Math.random() - 0.5) * (GOAL_HALF * 1.4)
+      : (Math.random() < 0.5 ? -1 : 1) * (GOAL_HALF + 1.2 + Math.random() * 2.4);
     const aimY = willScore ? 0.35 + Math.random() * (GOAL_H - 0.7) : 1.2 + Math.random() * 2.6;
     const target = new THREE.Vector3(goalX, aimY, aimZ);
     const start = shooter.pos.clone().setY(0.4);
@@ -626,13 +688,19 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     ball.receiver = null;
     ball.flight = time;
     ball.lastTouch = shooter.team;
+    ball.scoringShot = willScore;
     shooter.mode = 'kick';
     shooter.modeT = 0;
-    // Kaleci tahmin edip uçar
+
+    // Bir kaleci aynı şut için yalnızca bir kez uçabilir. Olay animasyonları
+    // artık birbirini kesmediği için bu kilit, açık oyundaki kenar durumlarda
+    // da ikinci bir uçuş tetiklenmesini engeller.
     const gk = shooter.team === 'home' ? awayGk : homeGk;
+    if (gk.mode === 'dive') return time;
     gk.mode = 'dive';
     gk.modeT = 0;
-    gk.diveZ = willScore ? aimZ * 0.35 : aimZ;
+    gk.target.copy(gk.pos);
+    gk.diveZ = clamp(willScore ? aimZ * 0.35 : aimZ, -GOAL_HALF - 1.5, GOAL_HALF + 1.5);
     gk.diveCatch = !willScore && Math.random() < 0.7;
     allowCatch = !willScore;
     if (celebrate) crowdHype = 1;
@@ -643,11 +711,19 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   const handleEvent = (ev: Match3DEvent) => {
     const team = ev.team;
     switch (ev.type) {
-      case 'goal':
-      case 'penalty': {
+      case 'goal': {
         const shooters = onPitch(team).filter(a => !a.gk);
         const shooter = shooters.length ? shooters[Math.floor(Math.random() * Math.min(4, shooters.length))] : home[9];
         startSeq('goal', team, 6.4, { shooter, scored: true });
+        shake = 1;
+        break;
+      }
+      case 'penalty': {
+        const shooters = onPitch(team).filter(a => !a.gk);
+        const shooter = shooters.length ? shooters[Math.floor(Math.random() * Math.min(4, shooters.length))] : home[9];
+        // Penaltı, açık oyun golü gibi oyuncuyu ceza sahası içinde rastgele
+        // ışınlamasın; kendi sinematiğinde kaleci tek bir dalış yapar.
+        startSeq('penalty', team, 4.4, { shooter, scored: true });
         shake = 1;
         break;
       }
@@ -811,6 +887,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         });
         ball.pos.set(0, 0.115, 0);
         ball.vel.set(0, 0, 0);
+        ball.scoringShot = false;
         if (p > 0.85) {
           const starter = nearest(onPitch(s.team), new THREE.Vector3(attackX * -3, 0, 0)) ?? home[9];
           setHolder(starter);
@@ -873,7 +950,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           shooter.pos.set(attackX * (HL - 14.5), 0, 0.6);
           shooter.target.copy(shooter.pos);
           const gk = shooter.team === 'home' ? awayGk : homeGk;
-          gk.pos.set(attackX * (HL - 0.6), 0, 0);
+          gk.pos.set(goalLineFor(shooter.team) - attackDirection(shooter.team) * 0.6, 0, 0);
           gk.target.copy(gk.pos);
           onPitch(shooter.team === 'home' ? 'away' : 'home').forEach((a, i) => {
             a.target.set(attackX * (HL - 20) - attackX * (i % 3) * 2, 0, (i - 4) * 3);
@@ -1066,7 +1143,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         let tx = a.anchor.x + shiftX * 0.85;
         let tz = a.anchor.y + shiftZ * 0.85;
         if (a.gk) {
-          const goalX = a.team === 'home' ? -HL + 1.6 : HL - 1.6;
+          const goalX = ownGoalLineFor(a.team) + attackDirection(a.team) * 1.6;
           tx = goalX + clamp((ball.pos.x - goalX) * 0.04, -2.5, 2.5);
           tz = clamp(ball.pos.z * 0.34, -GOAL_HALF + 0.4, GOAL_HALF - 0.4);
         } else {
@@ -1091,22 +1168,25 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         continue;
       }
 
-      // Hareket
-      const dx = a.target.x - a.pos.x;
-      const dz = a.target.z - a.pos.z;
-      const dist = Math.hypot(dx, dz);
+      // Hareket. Kaleci uçuşu sırasında normal hedefe yürüme ile dalışın
+      // yatay hareketini aynı anda uygulama; bu çakışma kaleciyi sıçratıyordu.
       let desired = 0;
-      if (a.mode === 'walkoff' && dist < 0.7) { a.mode = 'off'; }
-      if (dist > 0.18) {
-        const urgency = a.mode === 'walkoff' ? 0.42 : a.mode === 'celebrate' ? 0.8 : a.mode === 'dive' ? 1 : 1;
-        desired = Math.min(a.maxSpeed * fatigue * urgency, dist * 3.4);
-        a.pos.x += (dx / dist) * desired * dt;
-        a.pos.z += (dz / dist) * desired * dt;
-        const wantFacing = Math.atan2(dx, dz);
-        let diff = wantFacing - a.facing;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        a.facing += diff * damp(9, dt);
+      if (a.mode !== 'dive') {
+        const dx = a.target.x - a.pos.x;
+        const dz = a.target.z - a.pos.z;
+        const dist = Math.hypot(dx, dz);
+        if (a.mode === 'walkoff' && dist < 0.7) { a.mode = 'off'; }
+        if (dist > 0.18) {
+          const urgency = a.mode === 'walkoff' ? 0.42 : a.mode === 'celebrate' ? 0.8 : 1;
+          desired = Math.min(a.maxSpeed * fatigue * urgency, dist * 3.4);
+          a.pos.x += (dx / dist) * desired * dt;
+          a.pos.z += (dz / dist) * desired * dt;
+          const wantFacing = Math.atan2(dx, dz);
+          let diff = wantFacing - a.facing;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          a.facing += diff * damp(9, dt);
+        }
       }
       a.speed = lerp(a.speed, desired, damp(8, dt));
 
@@ -1130,6 +1210,10 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           const dz2 = a.diveZ - a.pos.z;
           const side = dz2 >= 0 ? 1 : -1;
           a.pos.z += clamp(dz2, -6 * dt, 6 * dt);
+          // Dalışın konumunu da aynı karede çiz; normal locomotion kapalı
+          // olduğundan root ve gölgeyi burada senkron tutuyoruz.
+          a.f.root.position.set(a.pos.x, 0, a.pos.z);
+          a.f.shadow.position.set(a.pos.x, 0.045, a.pos.z);
           poseDive(a.f.rig, side, clamp(a.modeT / 0.75, 0, 1));
           if (a.modeT > 1.5) { a.mode = 'play'; a.f.root.rotation.z = 0; }
           break;
@@ -1221,14 +1305,23 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       // Direk / üst direkten dönme
       if (Math.abs(ball.pos.x) > HL - 0.1 && Math.abs(ball.pos.z) < GOAL_HALF + 0.4 && ball.pos.y < GOAL_H) {
         const gk = ball.lastTouch === 'home' ? awayGk : homeGk;
-        const catchIt = allowCatch && gk.diveCatch;
-        if (catchIt && gk.pos.distanceTo(ball.pos) < 3.4) {
-          setHolder(gk);
-          ball.pos.set(gk.pos.x, 0.5, gk.pos.z);
-          gk.mode = 'play';
-          passTimer = 1.1;
+        if (ball.scoringShot) {
+          // Gol topu kale çizgisini geçip ağın saha dışındaki tarafında kalır;
+          // direğe çarpıp geri dönmez.
+          ball.pos.x = goalLineFor(ball.lastTouch) + attackDirection(ball.lastTouch) * 1.1;
+          ball.vel.set(0, 0, 0);
+          ball.flight = 0;
+          ball.scoringShot = false;
         } else {
-          ball.vel.x *= -0.42;
+          const catchIt = allowCatch && gk.mode === 'dive' && gk.diveCatch;
+          if (catchIt && gk.pos.distanceTo(ball.pos) < 3.4) {
+            setHolder(gk);
+            ball.pos.set(gk.pos.x, 0.5, gk.pos.z);
+            gk.mode = 'play';
+            passTimer = 1.1;
+          } else {
+            ball.vel.x *= -0.42;
+          }
         }
       }
     }
@@ -1349,13 +1442,15 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     const ph = input.phase;
     if (ph === lastPhase) return;
     lastPhase = ph;
-    if (ph === 'first' || ph === 'second' || ph === 'et') {
-      startSeq('kickoff', ph === 'first' ? 'home' : 'away', 2.4);
-    } else if (ph === 'half') {
-      startSeq('halfTime', 'home', 5.0);
-    } else if (ph === 'done' || ph === 'pens') {
-      startSeq('fullTime', 'home', 5.0);
+    if (!['first', 'second', 'et', 'half', 'done', 'pens'].includes(ph)) return;
+
+    // Devam eden bir şut/gol/kart sahnesini devre geçişi bile yarıda kesmesin.
+    // Geçiş, aktif sinematik ve varsa onun kickoff'u bitince uygulanır.
+    if (seq && seq.kind !== 'warmup') {
+      pendingPhase = ph;
+      return;
     }
+    beginPhaseSequence(ph);
   };
 
   const bundle: Match3DBundle = {
@@ -1372,11 +1467,14 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       if (!(input.timeScale > 0)) return;              // ⏸️ donmuş — hiçbir şey kıpırdamaz
       const sdt = Math.min(0.05, dt) * clamp(input.timeScale, 0.05, 1.4);
       simT += sdt;
+      // Önce fazı güncelle: ilk düdükteki kickoff, aynı karede gelen ilk olayı
+      // yanlışlıkla üzerine yazmasın.
+      updatePhase(input);
       if (input.event && input.event.key !== lastEventKey) {
         lastEventKey = input.event.key;
-        handleEvent(input.event);
+        if (seq || pendingPhase) queueEvent(input.event);
+        else handleEvent(input.event);
       }
-      updatePhase(input);
       // Oyuncu sayıları düştüyse (kırmızı kart) sahadan çıkar
       const counts: Record<Side, number> = { home: input.homeOnPitch, away: input.awayOnPitch };
       (['home', 'away'] as Side[]).forEach(side => {
@@ -1385,6 +1483,19 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           if (list[i] && list[i].mode !== 'walkoff') { list[i].mode = 'walkoff'; list[i].target.set(list[i].pos.x * 0.3, 0, -(HW + 6)); }
         }
       });
+
+      // Bir önceki olay ve kickoff tamamlandıysa bekleyen fazı, ardından en
+      // anlamlı bekleyen maçı başlat. Hiçbiri yoksa açık oyun akar.
+      if (!seq && pendingPhase) {
+        const nextPhase = pendingPhase;
+        pendingPhase = null;
+        beginPhaseSequence(nextPhase);
+      }
+      if (!seq && queuedEvent) {
+        const nextEvent = queuedEvent;
+        queuedEvent = null;
+        handleEvent(nextEvent);
+      }
       if (seq) stepSeq(sdt);
       else stepOpenPlay(sdt, input);
       moveActors(sdt, input);
