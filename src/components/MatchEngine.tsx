@@ -12,6 +12,8 @@ import { Match3D } from './Match3D';
 import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
 import { adaptationPct, effectiveOvr } from '../utils/adaptation';
+import { isSoftwareWebGL } from '../utils/webgl';
+import { setBackgroundRenderPaused } from '../utils/renderGate';
 
 export interface MatchExtras {
   cards: { playerId: number; type: 'yellow' | 'red' }[];
@@ -100,8 +102,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [slowMo, setSlowMo] = useState(false);
   /** 📜 Olay akışı kutusu — yer kaplamasın diye kapatılabilir */
   const [consoleOpen, setConsoleOpen] = useState(true);
-  // 🎥 3D maç görünümü (düşük performanslı cihazlarda 2D'ye düşer)
-  const [view3d, setView3d] = useState(!gameState.life?.lowPerf);
+  // 🎥 3D maç görünümü (düşük performanslı cihazlarda ve yazılımsal WebGL'de 2D'ye düşer)
+  const [view3d, setView3d] = useState(!gameState.life?.lowPerf && !isSoftwareWebGL());
 
   const consoleRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef({ u: 0, o: 0 });
@@ -167,6 +169,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   useEffect(() => () => {
     if (slowMoTimer.current) clearTimeout(slowMoTimer.current);
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
+  }, []);
+
+  /* 🏟️ Maç ekranı açıkken alttaki sekmelerin 3D sahneleri (Stadyum/Antrenman/Hayat)
+     görünmese de her karede çiziliyordu — zayıf GPU'da yük ikiye katlanıp donma/çökmeye
+     yol açıyordu. Maç boyunca arka plan 3D render'ları uyku moduna alınır. */
+  useEffect(() => {
+    setBackgroundRenderPaused(true);
+    return () => setBackgroundRenderPaused(false);
   }, []);
 
   const difficulty = gameState.difficulty || 'normal';

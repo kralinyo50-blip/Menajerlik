@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { isBackgroundRenderPaused } from '../../utils/renderGate';
 
 export interface OrbitSceneLike {
   group: THREE.Group;
@@ -168,6 +169,9 @@ export function useOrbitThree(
     const clock = new THREE.Clock();
     const loop = () => {
       raf = requestAnimationFrame(loop);
+      // 🏟️ Maç ekranı açıkken (veya sekme arkadayken) bu sahne görünmez:
+      // GPU'yu boşuna yorma — kareyi atla, rAF'u canlı tut.
+      if (isBackgroundRenderPaused() || document.hidden) return;
       const dt = Math.min(0.05, clock.getDelta());
       const t = clock.getElapsedTime();
       if (cinematicRef.current && !dragging) {
@@ -203,6 +207,9 @@ export function useOrbitThree(
       if (bg && (bg as THREE.Texture).isTexture) (bg as THREE.Texture).dispose();
       bundle.group.clear();
       renderer.dispose();
+      // WebGL bağlamını hemen terk et: sekme/tur kapanınca GPU belleği GC'yi beklemez.
+      // (Bağlamlar birikirse tarayıcı eskilerini düşürür ya da GPU süreci çöker.)
+      renderer.forceContextLoss();
       if (el.parentNode === host) host.removeChild(el);
       setReady(false);
     };

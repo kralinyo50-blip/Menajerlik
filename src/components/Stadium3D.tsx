@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { StadiumDesign } from '../types/game';
 import { buildStadiumGroup } from './stadium/scene';
+import { isBackgroundRenderPaused } from '../utils/renderGate';
+import { isSoftwareWebGL } from '../utils/webgl';
 
 interface Stadium3DProps {
   design: StadiumDesign;
@@ -48,13 +50,14 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
 
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+      // Yazılımsal WebGL'de antialias + yüksek piksel oranı sayfayı kilitler — kıs
+      const soft = isSoftwareWebGL();
+      renderer = new THREE.WebGLRenderer({ antialias: !soft, alpha: false, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, soft ? 1 : 2));
     } catch {
       setFailed(true);
       return;
     }
-
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth || 640, height, false);
     renderer.shadowMap.enabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -177,6 +180,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     const clock = new THREE.Clock();
     const animate = () => {
       raf = requestAnimationFrame(animate);
+      // 🏟️ Maç ekranı açıkken (veya sekme arkadayken) GPU'yu yorma — kareyi atla
+      if (isBackgroundRenderPaused() || document.hidden) return;
       const t = clock.getElapsedTime();
       const dt = clock.getDelta();
 
@@ -237,6 +242,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       // Sahne arka planı olarak kullanılan gökyüzü dokusunu da serbest bırak
       bundle.skyTexture?.dispose();
       renderer.dispose();
+      // WebGL bağlamını hemen terk et — GPU belleği GC'yi beklemesin
+      renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       void bundle;
       setReady(false);
