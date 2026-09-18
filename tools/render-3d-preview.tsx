@@ -7,6 +7,7 @@
  * Kullanım:  npm run preview:3d
  * Çıktı:     docs/preview-*.png
  */
+import './canvas-polyfill'; // sahne modüllerinden önce: canvas dokuları için
 import * as THREE from 'three';
 import zlib from 'node:zlib';
 import fs from 'node:fs';
@@ -69,6 +70,43 @@ interface RenderOptions {
   night?: boolean;
   /** animasyon zamanı (saniye) — pozu yakalamak için */
   time?: number;
+  /** Sahnede gerçekten bulunan nokta ışıkları (gece projektörleri) */
+  pointLights?: { x: number; y: number; z: number; intensity: number; distance: number; color: number }[];
+}
+
+/* ── Doku örnekleyici: canvas → piksel verisi (önbellekli) ── */
+const texCache = new Map<unknown, { data: Uint8ClampedArray; w: number; h: number } | null>();
+function texturePixels(tex: THREE.Texture | null | undefined) {
+  if (!tex) return null;
+  const img = tex.image as { width?: number; height?: number; getContext?: (t: string) => unknown } | undefined;
+  if (!img || typeof img.getContext !== 'function') return null;
+  if (texCache.has(img)) return texCache.get(img) ?? null;
+  let entry: { data: Uint8ClampedArray; w: number; h: number } | null = null;
+  try {
+    const ctx = img.getContext('2d') as { getImageData: (x: number, y: number, w: number, h: number) => { data: Uint8ClampedArray } } | null;
+    if (ctx && img.width && img.height) {
+      const data = ctx.getImageData(0, 0, img.width, img.height).data;
+      entry = { data, w: img.width, h: img.height };
+    }
+  } catch {
+    entry = null;
+  }
+  texCache.set(img, entry);
+  return entry;
+}
+
+/** UV → doku rengi (repeat + offset destekli, THREE flipY davranışıyla) */
+function sampleTexture(tex: THREE.Texture, entry: { data: Uint8ClampedArray; w: number; h: number }, u: number, v: number) {
+  const repX = tex.repeat?.x ?? 1;
+  const repY = tex.repeat?.y ?? 1;
+  const offX = tex.offset?.x ?? 0;
+  const offY = tex.offset?.y ?? 0;
+  let uu = (u * repX + offX) % 1; if (uu < 0) uu += 1;
+  let vv = (v * repY + offY) % 1; if (vv < 0) vv += 1;
+  const px = Math.min(entry.w - 1, Math.max(0, Math.floor(uu * entry.w)));
+  const py = Math.min(entry.h - 1, Math.max(0, Math.floor((1 - vv) * entry.h)));
+  const i = (py * entry.w + px) * 4;
+  return [entry.data[i], entry.data[i + 1], entry.data[i + 2]];
 }
 
 function renderToBuffer(
@@ -88,20 +126,63 @@ function renderToBuffer(
 
   const buf = new Uint8Array(W * H * 3);
   const zbuf = new Float32Array(W * H).fill(Infinity);
+
+  // Gerçek sahnedeki gökyüzü gradyanını taklit et (düz renk yerine ufuk→zenit geçişi)
+  const mix = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i] - v) * t);
+  const skyStops: number[][] = opts.night
+    ? [[5, 7, 15], [13, 23, 48], [36, 53, 83]]
+    : [[47, 111, 181], [132, 182, 230], [216, 233, 246]];
+  const rowColor = (y: number) => {
+    const t = y / (H - 1);
+    if (t < 0.55) return mix(skyStops[0], skyStops[1], t / 0.55);
+    return mix(skyStops[1], skyStops[2], (t - 0.55) / 0.45);
+  };
+  const starry = opts.night;
   for (let y = 0; y < H; y++) {
+    const [r0, g0, b0] = rowColor(y);
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 3;
-      buf[i] = Math.round(sky.r * 255);
-      buf[i + 1] = Math.round(sky.g * 255);
-      buf[i + 2] = Math.round(sky.b * 255);
+      const star = starry && y < H * 0.45 && ((x * 7919 + y * 104729) % 997) < 3;
+      buf[i] = Math.min(255, Math.round(r0 + (star ? 120 : 0)));
+      buf[i + 1] = Math.min(255, Math.round(g0 + (star ? 120 : 0)));
+      buf[i + 2] = Math.min(255, Math.round(b0 + (star ? 130 : 0)));
     }
   }
+  void sky;
 
   const lightDir = new THREE.Vector3(0.45, 0.82, 0.35).normalize();
-  const ambient = opts.night ? 0.4 : 0.55;
+  const ambient = opts.night ? 0.46 : 0.55;
   const diffuse = opts.night ? 0.6 : 0.8;
+  // Sahnede tanımlı nokta ışıkları (projektörler) — fiziksel yaklaşım
+  const pointLights = (opts.pointLights ?? []).map(l => ({
+    pos: new THREE.Vector3(l.x, l.y, l.z),
+    color: new THREE.Color(l.color),
+    gain: l.intensity / (4 * Math.PI),
+    distance: l.distance,
+  }));
+  const pointLightAt = (p: THREE.Vector3) => {
+    const acc = new THREE.Color(0, 0, 0);
+    for (const l of pointLights) {
+      const d = l.pos.distanceTo(p);
+      if (d >= l.distance) continue;
+      const t = 1 - d / l.distance;
+      const falloff = t * t;
+      const irradiance = (l.gain / Math.max(d * d, 4)) * falloff;
+      acc.r += l.color.r * irradiance;
+      acc.g += l.color.g * irradiance;
+      acc.b += l.color.b * irradiance;
+    }
+    return acc;
+  };
 
-  interface Tri { x: number[]; y: number[]; z: number[]; col: number[]; alpha: number }
+  interface Tri {
+    x: number[]; y: number[]; z: number[];
+    col: number[]; alpha: number;
+    uv?: number[] | null;
+    map?: THREE.Texture | null;
+    emap?: THREE.Texture | null;
+    em: number[];
+  }
   const tris: Tri[] = [];
   const near = camera.near + 0.01;
   const viewOf = (v: THREE.Vector3) => v.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -110,16 +191,12 @@ function renderToBuffer(
     if (p.w <= 0.001) return null;
     return { x: (p.x / p.w * 0.5 + 0.5) * W, y: (1 - (p.y / p.w * 0.5 + 0.5)) * H, z: p.z / p.w };
   };
-  /**
-   * Kamera yakın düzleminin arkasına taşan üçgenleri kırpar.
-   * (Kırpma olmadan tek köşesi arkada kalan dev zemin düzlemleri tamamen kayboluyordu.)
-   */
   const clipNear = (poly: THREE.Vector3[]): THREE.Vector3[] => {
     const out: THREE.Vector3[] = [];
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i];
       const b = poly[(i + 1) % poly.length];
-      const da = -a.z - near;   // view uzayında ileri yön -z
+      const da = -a.z - near;
       const db = -b.z - near;
       const aIn = da >= 0;
       const bIn = db >= 0;
@@ -133,50 +210,100 @@ function renderToBuffer(
   };
 
   group.traverse(obj => {
-    const mesh = obj as THREE.Mesh;
+    const mesh = obj as THREE.Mesh & { isInstancedMesh?: boolean; instanceColor?: THREE.InstancedBufferAttribute | null; count?: number };
     if (!mesh.isMesh || !mesh.geometry) return;
     const geo = mesh.geometry as THREE.BufferGeometry;
     const pa = geo.attributes.position as THREE.BufferAttribute;
     if (!pa) return;
+    const ua = geo.attributes.uv as THREE.BufferAttribute | undefined;
     const idx = geo.index;
     const count = idx ? idx.count : pa.count;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    // Ön yüz malzemesi + varsa yan yüz (ExtrudeGeometry) malzemesi
     const mat = mats[0] as THREE.MeshStandardMaterial;
-    const baseCol = mesh.userData.previewColor !== undefined
+
+    // InstancedMesh → her örnek için ayrı dünya matrisi
+    const matrices: THREE.Matrix4[] = [];
+    const instColors: (THREE.Color | null)[] = [];
+    if (mesh.isInstancedMesh) {
+      const im = mesh as unknown as THREE.InstancedMesh;
+      const m = new THREE.Matrix4();
+      const c = new THREE.Color();
+      for (let i = 0; i < im.count; i++) {
+        im.getMatrixAt(i, m);
+        matrices.push(new THREE.Matrix4().multiplyMatrices(mesh.matrixWorld, m));
+        if (im.instanceColor) {
+          c.fromBufferAttribute(im.instanceColor as THREE.BufferAttribute, i);
+          instColors.push(c.clone());
+        } else {
+          instColors.push(null);
+        }
+      }
+    } else {
+      matrices.push(mesh.matrixWorld);
+      instColors.push(null);
+    }
+
+    const baseColPlain = mesh.userData.previewColor !== undefined
       ? new THREE.Color(mesh.userData.previewColor as number)
       : (mat?.color ?? new THREE.Color(0x888888)).clone();
     const em = (mat as any)?.emissive
       ? (mat as any).emissive.clone().multiplyScalar(Math.min(1.2, ((mat as any).emissiveIntensity ?? 1) * 1.1))
       : new THREE.Color(0, 0, 0);
+    const emArr = [em.r * 255, em.g * 255, em.b * 255];
     const alpha = (mat as any)?.transparent ? ((mat as any).opacity ?? 1) : 1;
+    const map = (mat as any)?.map as THREE.Texture | null | undefined;
+    const emap = (mat as any)?.emissiveMap as THREE.Texture | null | undefined;
+    const hasMap = !!map && !!texturePixels(map);
+    const hasEmap = !!emap && !!texturePixels(emap);
+    if ((map && !hasMap) || (emap && !hasEmap)) {
+      // Doku verisi okunamadı — düz renk ile devam
+    }
 
-    for (let i = 0; i < count; i += 3) {
-      const i0 = idx ? idx.getX(i) : i;
-      const i1 = idx ? idx.getX(i + 1) : i + 1;
-      const i2 = idx ? idx.getX(i + 2) : i + 2;
-      const w0 = new THREE.Vector3().fromBufferAttribute(pa, i0).applyMatrix4(mesh.matrixWorld);
-      const w1 = new THREE.Vector3().fromBufferAttribute(pa, i1).applyMatrix4(mesh.matrixWorld);
-      const w2 = new THREE.Vector3().fromBufferAttribute(pa, i2).applyMatrix4(mesh.matrixWorld);
-      const n = new THREE.Vector3().subVectors(w1, w0).cross(new THREE.Vector3().subVectors(w2, w0));
-      if (n.lengthSq() < 1e-9) continue;
-      n.normalize();
-      const shade = ambient + diffuse * Math.abs(n.dot(lightDir));
-      const col = baseCol.clone().multiplyScalar(shade).add(em);
-      const shaded = [Math.min(255, col.r * 255), Math.min(255, col.g * 255), Math.min(255, col.b * 255)];
-      // Kamera uzayında yakın düzleme göre kırp, sonra yelpaze ile üçgenle
-      const clipped = clipNear([viewOf(w0), viewOf(w1), viewOf(w2)]);
-      for (let k = 1; k + 1 < clipped.length; k++) {
-        const q0 = projOf(clipped[0]);
-        const q1 = projOf(clipped[k]);
-        const q2 = projOf(clipped[k + 1]);
-        if (!q0 || !q1 || !q2) continue;
-        tris.push({
-          x: [q0.x, q1.x, q2.x],
-          y: [q0.y, q1.y, q2.y],
-          z: [q0.z, q1.z, q2.z],
-          col: shaded,
-          alpha,
-        });
+    for (let mi = 0; mi < matrices.length; mi++) {
+      const world = matrices[mi];
+      const inst = instColors[mi];
+      const baseCol = inst ? baseColPlain.clone().multiply(inst) : baseColPlain;
+      for (let i = 0; i < count; i += 3) {
+        const i0 = idx ? idx.getX(i) : i;
+        const i1 = idx ? idx.getX(i + 1) : i + 1;
+        const i2 = idx ? idx.getX(i + 2) : i + 2;
+        const w0 = new THREE.Vector3().fromBufferAttribute(pa, i0).applyMatrix4(world);
+        const w1 = new THREE.Vector3().fromBufferAttribute(pa, i1).applyMatrix4(world);
+        const w2 = new THREE.Vector3().fromBufferAttribute(pa, i2).applyMatrix4(world);
+        const n = new THREE.Vector3().subVectors(w1, w0).cross(new THREE.Vector3().subVectors(w2, w0));
+        if (n.lengthSq() < 1e-9) continue;
+        n.normalize();
+        const shade = ambient + diffuse * Math.abs(n.dot(lightDir));
+        const col = baseCol.clone().multiplyScalar(shade);
+        if (pointLights.length) {
+          const centroid = new THREE.Vector3().add(w0).add(w1).add(w2).multiplyScalar(1 / 3);
+          const pl = pointLightAt(centroid);
+          col.r += baseCol.r * pl.r;
+          col.g += baseCol.g * pl.g;
+          col.b += baseCol.b * pl.b;
+        }
+        const shaded = [Math.min(255, col.r * 255), Math.min(255, col.g * 255), Math.min(255, col.b * 255)];
+        const uv = ua ? [ua.getX(i0), ua.getY(i0), ua.getX(i1), ua.getY(i1), ua.getX(i2), ua.getY(i2)] : null;
+        // Kamera uzayında yakın düzleme göre kırp
+        const clipped = clipNear([viewOf(w0), viewOf(w1), viewOf(w2)]);
+        for (let k = 1; k + 1 < clipped.length; k++) {
+          const q0 = projOf(clipped[0]);
+          const q1 = projOf(clipped[k]);
+          const q2 = projOf(clipped[k + 1]);
+          if (!q0 || !q1 || !q2) continue;
+          tris.push({
+            x: [q0.x, q1.x, q2.x],
+            y: [q0.y, q1.y, q2.y],
+            z: [q0.z, q1.z, q2.z],
+            col: shaded,
+            alpha,
+            uv: uv && (hasMap || hasEmap) ? uv : null,
+            map: hasMap ? map : null,
+            emap: hasEmap ? emap : null,
+            em: emArr,
+          });
+        }
       }
     }
   });
@@ -184,16 +311,20 @@ function renderToBuffer(
   for (const t of tris) {
     let [x0, y0, x1, y1, x2, y2] = [t.x[0], t.y[0], t.x[1], t.y[1], t.x[2], t.y[2]];
     let [z0, z1, z2] = [t.z[0], t.z[1], t.z[2]];
+    let [u0, v0, u1, v1, u2, v2] = t.uv ? t.uv : [0, 0, 0, 0, 0, 0];
     let det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
     if (Math.abs(det) < 1e-9) continue;
     if (det < 0) {
       [x1, x0] = [x0, x1]; [y1, y0] = [y0, y1]; [z1, z0] = [z0, z1];
+      [u1, u0] = [u0, u1]; [v1, v0] = [v0, v1];
       det = -det;
     }
     const minX = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
     const maxX = Math.min(W - 1, Math.ceil(Math.max(x0, x1, x2)));
     const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
     const maxY = Math.min(H - 1, Math.ceil(Math.max(y0, y1, y2)));
+    const mapData = t.map ? texturePixels(t.map) : null;
+    const emapData = t.emap ? texturePixels(t.emap) : null;
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const px = x + 0.5;
@@ -207,12 +338,37 @@ function renderToBuffer(
         if (z >= zbuf[pi]) continue;
         zbuf[pi] = z;
         const i3 = pi * 3;
-        if (t.alpha < 1) {
-          for (let c = 0; c < 3; c++) buf[i3 + c] = Math.round(buf[i3 + c] * (1 - t.alpha) + t.col[c] * t.alpha);
+        let cr = t.col[0], cg = t.col[1], cb = t.col[2];
+        if ((mapData || emapData) && (u0 !== 0 || v0 !== 0 || u1 !== 0 || v1 !== 0 || u2 !== 0 || v2 !== 0)) {
+          const uu = l0 * u0 + l1 * u1 + l2 * u2;
+          const vv = l0 * v0 + l1 * v1 + l2 * v2;
+          if (mapData && t.map) {
+            const [tr, tg, tb] = sampleTexture(t.map, mapData, uu, vv);
+            cr = cr * (tr / 255);
+            cg = cg * (tg / 255);
+            cb = cb * (tb / 255);
+          }
+          if (emapData && t.emap) {
+            const [er, eg, eb] = sampleTexture(t.emap, emapData, uu, vv);
+            cr += er * (t.em[0] / 255) * 0.55;
+            cg += eg * (t.em[1] / 255) * 0.55;
+            cb += eb * (t.em[2] / 255) * 0.55;
+          }
         } else {
-          buf[i3] = t.col[0];
-          buf[i3 + 1] = t.col[1];
-          buf[i3 + 2] = t.col[2];
+          cr += t.em[0] * 0.6;
+          cg += t.em[1] * 0.6;
+          cb += t.em[2] * 0.6;
+        }
+        cr = Math.min(255, cr); cg = Math.min(255, cg); cb = Math.min(255, cb);
+        if (t.alpha < 1) {
+          for (let c = 0; c < 3; c++) {
+            const src = c === 0 ? cr : c === 1 ? cg : cb;
+            buf[i3 + c] = Math.round(buf[i3 + c] * (1 - t.alpha) + src * t.alpha);
+          }
+        } else {
+          buf[i3] = Math.round(cr);
+          buf[i3 + 1] = Math.round(cg);
+          buf[i3 + 2] = Math.round(cb);
         }
       }
     }
@@ -305,7 +461,18 @@ complexScenes.forEach(scene => {
     theta: bundle.camera.theta + scene.dTheta,
     targetY: bundle.camera.targetY,
     fov: bundle.camera.fov,
-  }, { sky: bundle.sky, fog: bundle.fog, night: scene.night });
+  }, {
+    sky: bundle.sky,
+    fog: bundle.fog,
+    night: scene.night,
+    // Sahnedeki gece projektörleri (scene.ts ile aynı konum/şiddet)
+    pointLights: scene.night
+      ? [
+          { x: -64, y: 24, z: -40, intensity: 28000, distance: 240, color: 0xffe9a8 },
+          { x: 64, y: 24, z: -40, intensity: 28000, distance: 240, color: 0xffe9a8 },
+        ]
+      : undefined,
+  });
   writePNG(`${OUT_DIR}/${scene.name}`, buffer, W, H);
   complexBuffers.push(buffer);
   console.log(`🏋️  ${scene.name} üretildi (${bundle.triCount()} üçgen)`);
@@ -336,8 +503,10 @@ if (levelTiles.length > 0) {
 // Bölge yakın çekimleri: güney altyapı alanı + kuzey bina sırası (düzen kontrolü)
 {
   const zoneCases: { name: string; facility: FacilityState; theta: number; zoom: number; target: { x: number; z: number }; dPhi?: number }[] = [
+    { name: 'preview-antrenman-kampus.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 4 }, theta: 0.62, zoom: 1.34, target: { x: 0, z: 22 }, dPhi: -0.02 },
     { name: 'preview-antrenman-bolge-guney.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 4 }, theta: 0.15, zoom: 0.62, target: { x: 0, z: 92 }, dPhi: -0.18 },
     { name: 'preview-antrenman-bolge-kuzey.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 4 }, theta: 0.9, zoom: 0.68, target: { x: 0, z: -48 }, dPhi: -0.2 },
+    { name: 'preview-antrenman-tabela.png', facility: { pitch: 3, gym: 3, recovery: 3, tactics: 3, youth: 3 }, theta: 1.2, zoom: 0.42, target: { x: -74, z: -52 }, dPhi: 0.22 },
   ];
   const zoneTiles: { buf: Uint8Array; label: string }[] = [];
   zoneCases.forEach(z => {

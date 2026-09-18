@@ -127,82 +127,326 @@ function screenTexture(accent: string): THREE.Texture | null {
   return tex;
 }
 
+/* ── Skorbord ekranı: skor + dakika + kulüp rengi şerit ── */
+function scoreboardTexture(accent: string, clubColor: string): THREE.Texture | null {
+  const canvas = makeCanvas(512, 224);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#05080f';
+  ctx.fillRect(0, 0, 512, 224);
+  // Üst şerit: kulüp renkleri
+  ctx.fillStyle = clubColor;
+  ctx.fillRect(0, 0, 512, 16);
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 16, 512, 6);
+  // Ev / deplasman adları
+  ctx.fillStyle = 'rgba(226,232,240,0.92)';
+  ctx.font = 'bold 34px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('EV SAHİBİ', 24, 74);
+  ctx.fillText('MİSAFİR', 326, 74);
+  // Skor
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 82px system-ui, sans-serif';
+  ctx.fillText('3', 196, 82);
+  ctx.fillText('1', 280, 82);
+  ctx.fillStyle = accent;
+  ctx.fillRect(246, 52, 12, 60);
+  // Alt satır: dakika + animasyonlu şerit
+  ctx.fillStyle = 'rgba(148,163,184,0.9)';
+  ctx.font = 'bold 28px system-ui, sans-serif';
+  ctx.fillText("72'   •   ANTRENMAN SAHASI", 24, 176);
+  ctx.fillStyle = accent;
+  for (let i = 0; i < 26; i++) ctx.fillRect(24 + i * 18, 204, 10, 6);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/* ── Gökyüzü gradyanı (gündüz: ufuktan yukarıya, gece: yıldızlı lacivert) ── */
+function skyGradientTexture(night: boolean): THREE.Texture | null {
+  const canvas = makeCanvas(8, 256);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  if (night) {
+    grad.addColorStop(0, '#05070f');
+    grad.addColorStop(0.55, '#0d1730');
+    grad.addColorStop(1, '#243553');
+  } else {
+    grad.addColorStop(0, '#2f6fb5');
+    grad.addColorStop(0.55, '#84b6e6');
+    grad.addColorStop(1, '#d8e9f6');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 8, 256);
+  if (night) {
+    // Yıldızlar — üst yarıda, sabit dağılım
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (let i = 0; i < 90; i++) {
+      const y = Math.random() * 130;
+      const r = Math.random() < 0.85 ? 0.6 : 1.1;
+      ctx.beginPath();
+      ctx.arc(Math.random() * 8, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* ── Bina cephesi dokusu: panel derzleri + pencere ızgarası (gece bazıları yanar) ── */
+function facadeTexture(wall: number, night: boolean, floors: number, clubColor: string): THREE.Texture | null {
+  const canvas = makeCanvas(256, 256);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const base = new THREE.Color(wall);
+  ctx.fillStyle = `rgb(${Math.round(base.r * 255)}, ${Math.round(base.g * 255)}, ${Math.round(base.b * 255)})`;
+  ctx.fillRect(0, 0, 256, 256);
+
+  // Panel derzleri (yatay) — her kat bir şerit
+  const rows = Math.max(1, floors);
+  const rowH = 256 / rows;
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+  ctx.lineWidth = 2;
+  for (let r = 1; r < rows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * rowH);
+    ctx.lineTo(256, r * rowH);
+    ctx.stroke();
+  }
+  // Düşey derzler
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 1;
+  for (let c = 1; c < 4; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * 64, 0);
+    ctx.lineTo(c * 64, 256);
+    ctx.stroke();
+  }
+
+  // Pencere ızgarası: 4 pencere × kat
+  const winW = 40, winH = Math.min(rowH * 0.46, 44);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < 4; c++) {
+      const x = 18 + c * 58;
+      const y = r * rowH + rowH * 0.42 - winH / 2;
+      const lit = night && Math.random() < 0.55;
+      if (lit) {
+        ctx.fillStyle = 'rgba(255, 216, 150, 0.95)';
+      } else if (night) {
+        ctx.fillStyle = 'rgba(24, 34, 52, 0.95)';
+      } else {
+        ctx.fillStyle = 'rgba(74, 96, 122, 0.85)';
+      }
+      ctx.fillRect(x, y, winW, winH);
+      // Cam parlaması
+      ctx.fillStyle = lit ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.16)';
+      ctx.fillRect(x, y, winW, winH * 0.34);
+    }
+  }
+  // Zemin katı: kulüp rengi şerit
+  ctx.fillStyle = clubColor;
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(0, 256 - rowH * 0.28, 256, rowH * 0.28);
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/* ── Bina tabelası: kulüp logosu + bina adı ── */
+function signTexture(text: string, accent: string, logo: string): THREE.Texture | null {
+  const canvas = makeCanvas(512, 128);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#0d141f';
+  ctx.fillRect(0, 0, 512, 128);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 8;
+  ctx.strokeRect(4, 4, 504, 120);
+  ctx.textBaseline = 'middle';
+  ctx.font = '54px serif';
+  ctx.fillText(logo || '⚽', 24, 66);
+  ctx.fillStyle = '#ffffff';
+  // Metni tabelaya sığdır (uzun adlar kırpılmasın)
+  let size = 40;
+  const maxW = 496 - 104;
+  do {
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    if (ctx.measureText(text).width <= maxW) break;
+    size -= 2;
+  } while (size > 16);
+  ctx.fillText(text, 104, 68);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 /* ══════════════ Bina yardımcıları ══════════════ */
 
 /**
- * Düzenli görünümlü bina: gövde + koyu çatı bandı + kulüp rengi aksan şeridi.
- * Ön yüz (+Z) cephesine cam şeritler ve giriş kapısı eklenir.
+ * Düzenli görünümlü bina: dokulu cephe (pencere ızgarası) + koyu çatı +
+ * kulüp rengi zemin bandı + aksan şeridi + giriş (saçak, basamak, tabela).
  */
 function building(opts: {
   w: number; d: number; h: number;
   wall: number; accent: string; clubColor: string;
   night: boolean; floors?: number;
   entrance?: boolean;
+  /** Girişteki tabela metni (varsa tabela çizilir) */
+  label?: string;
+  logo?: string;
 }) {
   const { w, d, h, wall, accent, clubColor, night } = opts;
   const floors = Math.max(1, opts.floors ?? 1);
   const g = new THREE.Group();
 
-  const shell = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshStandardMaterial({ color: wall, roughness: 0.72, metalness: 0.06 })
-  );
+  // Gövde — pencere ızgaralı cephe dokusu
+  const facade = facadeTexture(wall, night, floors, clubColor);
+  const shellMat = new THREE.MeshStandardMaterial({
+    color: facade ? 0xffffff : wall,
+    roughness: 0.7,
+    metalness: 0.06,
+    emissive: new THREE.Color(night ? 0x1a2234 : 0x000000),
+    emissiveIntensity: night ? 0.25 : 0,
+  });
+  if (facade) {
+    shellMat.map = facade;
+    // Gece yanan pencereler aynı dokudan parlar
+    if (night) shellMat.emissiveMap = facade;
+  }
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), shellMat);
   shell.position.y = h / 2;
   shell.castShadow = true;
   shell.receiveShadow = true;
   g.add(shell);
 
-  // Koyu çatı kapağı
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.7, 0.7, d + 0.7),
-    new THREE.MeshStandardMaterial({ color: night ? C.roofNight : C.roof, roughness: 0.8, metalness: 0.15 })
-  );
+  // Koyu çatı kapağı + parapet kenarı
+  const roofMat = new THREE.MeshStandardMaterial({ color: night ? C.roofNight : C.roof, roughness: 0.8, metalness: 0.15 });
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.7, 0.7, d + 0.7), roofMat);
   roof.position.y = h + 0.35;
   roof.castShadow = true;
   g.add(roof);
+  const parapet = new THREE.Mesh(new THREE.BoxGeometry(w + 1.0, 0.35, d + 1.0), roofMat);
+  parapet.position.y = h + 0.75;
+  g.add(parapet);
 
-  // Kulüp rengi zemin bandı
+  // Kulüp rengi zemin bandı (bina oturma bandı)
   const band = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.2, 0.55, d + 0.2),
+    new THREE.BoxGeometry(w + 0.24, 0.6, d + 0.24),
     new THREE.MeshStandardMaterial({ color: clubColor, roughness: 0.6 })
   );
-  band.position.y = 0.5;
+  band.position.y = 0.45;
   g.add(band);
 
-  // Aksan şeridi (çatı altı)
+  // Kat ayrım bantları — dokusu olmayan cihazlarda da bina katlı görünür
+  if (floors > 1) {
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.12,
+      roughness: 0.7,
+    });
+    for (let f = 1; f < floors; f++) {
+      const line = new THREE.Mesh(new THREE.BoxGeometry(w + 0.26, 0.18, d + 0.26), floorMat);
+      line.position.y = f * (h / floors);
+      g.add(line);
+    }
+  }
+  // Düşey pilastrlar — cepheye ritim (ön ve iki yan)
+  {
+    const pilMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(accent).multiplyScalar(0.92), roughness: 0.6, metalness: 0.1 });
+    const pilCount = Math.max(3, Math.round(w / 5));
+    for (let i = 0; i < pilCount; i++) {
+      const px = -w / 2 + (w / (pilCount - 1)) * i;
+      const pil = new THREE.Mesh(new THREE.BoxGeometry(0.34, h, 0.34), pilMat);
+      pil.position.set(px, h / 2, d / 2 + 0.08);
+      pil.castShadow = true;
+      g.add(pil);
+    }
+    const sidePilCount = Math.max(3, Math.round(d / 5));
+    for (let i = 0; i < sidePilCount; i++) {
+      const pz = -d / 2 + (d / (sidePilCount - 1)) * i;
+      [1, -1].forEach(side => {
+        const pil = new THREE.Mesh(new THREE.BoxGeometry(0.34, h, 0.34), pilMat);
+        pil.position.set(side * (w / 2 + 0.08), h / 2, pz);
+        g.add(pil);
+      });
+    }
+  }
+
+  // Çatı altı aksan şeridi
   const trim = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.2, 0.42, d + 0.2),
+    new THREE.BoxGeometry(w + 0.24, 0.4, d + 0.24),
     new THREE.MeshStandardMaterial({ color: new THREE.Color(accent), roughness: 0.55 })
   );
-  trim.position.y = h - 0.5;
+  trim.position.y = h - 0.45;
   g.add(trim);
 
-  // Cephe camları (her kat için tek sıra)
-  const glassMat = new THREE.MeshStandardMaterial({
-    color: night ? 0x2c3a52 : 0x51637d,
-    roughness: 0.14,
-    metalness: 0.6,
-    emissive: new THREE.Color(night ? 0xffd9a0 : 0x0c1626),
-    emissiveIntensity: night ? 0.4 : 0.06,
-  });
-  const floorH = h / floors;
-  for (let f = 0; f < floors; f++) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.78, floorH * 0.34, 0.3), glassMat);
-    win.position.set(0, f * floorH + floorH * 0.6, d / 2 + 0.05);
-    g.add(win);
-  }
-  // Yan cephe camı
-  const sideWin = new THREE.Mesh(new THREE.BoxGeometry(0.3, h * 0.32, d * 0.66), glassMat);
-  sideWin.position.set(w / 2 + 0.05, h * 0.58, 0);
-  g.add(sideWin);
-
   if (opts.entrance !== false) {
-    const door = new THREE.Mesh(
-      new THREE.BoxGeometry(Math.min(5.6, w * 0.3), 3, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.6, metalness: 0.2 })
+    const fz = d / 2;
+    // Kapı (çift kanat)
+    const doorMat = new THREE.MeshStandardMaterial({
+      color: night ? 0x1b2432 : 0x2c3948,
+      roughness: 0.35,
+      metalness: 0.35,
+      emissive: new THREE.Color(night ? 0xffd9a0 : 0x0b1220),
+      emissiveIntensity: night ? 0.35 : 0.05,
+    });
+    [-1.35, 1.35].forEach(x => {
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3.0, 0.25), doorMat);
+      leaf.position.set(x, 1.5, fz + 0.12);
+      g.add(leaf);
+    });
+    // Giriş saçağı (kulüp rengi) + iki kolon
+    const canopy = new THREE.Mesh(
+      new THREE.BoxGeometry(Math.min(9, w * 0.5), 0.35, 3),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(clubColor), roughness: 0.5, metalness: 0.2 })
     );
-    door.position.set(0, 1.5, d / 2 + 0.15);
-    g.add(door);
+    canopy.position.set(0, 3.7, fz + 1.5);
+    canopy.castShadow = true;
+    g.add(canopy);
+    [-1, 1].forEach(side => {
+      const col = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.16, 3.6, 10),
+        new THREE.MeshStandardMaterial({ color: C.steel, metalness: 0.55, roughness: 0.4 })
+      );
+      col.position.set(side * Math.min(3.9, w * 0.22), 1.8, fz + 2.6);
+      g.add(col);
+    });
+    // Giriş basamakları
+    const stepMat = new THREE.MeshStandardMaterial({ color: C.concrete, roughness: 0.95 });
+    const steps = new THREE.Mesh(new THREE.BoxGeometry(Math.min(10, w * 0.55), 0.22, 2.4), stepMat);
+    steps.position.set(0, 0.11, fz + 1.1);
+    steps.receiveShadow = true;
+    g.add(steps);
+    // Tabela — saçak üstünde, logolu
+    if (opts.label) {
+      const tex = signTexture(opts.label, accent, opts.logo ?? '⚽');
+      if (tex) {
+        const signMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          map: tex,
+          emissive: new THREE.Color(0xffffff),
+          emissiveMap: tex,
+          emissiveIntensity: night ? 0.6 : 0.25,
+          roughness: 0.5,
+        });
+        const signW = Math.min(12, w * 0.7);
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(signW, signW / 4), signMat);
+        sign.position.set(0, 4.9, fz + 0.08);
+        g.add(sign);
+      }
+    }
   }
   return g;
 }
@@ -283,6 +527,8 @@ export interface TrainingComplexBundle {
   update: (t: number, dt: number) => void;
   camera: { radius: number; phi: number; theta: number; targetY: number; fov: number };
   sky: string;
+  /** Gökyüzü gradyanı dokusu (yıldızlı gece / mavi gündüz) */
+  skyTexture?: THREE.Texture | null;
   fog?: [string, number, number];
   levels: Record<FacilityModuleId, number>;
   triCount: () => number;
@@ -306,6 +552,7 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
 
   const wall = night ? C.wallNight : C.wallDay;
   const wallAlt = night ? C.wallAltNight : C.wallAlt;
+  const logo = opts.logo ?? '⚽';
 
   /* ── Zemin ── */
   const ground = new THREE.Mesh(
@@ -335,6 +582,94 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
   pitch.receiveShadow = true;
   pitch.userData.previewColor = night ? C.turfNight : C.turf;
   group.add(pitch);
+
+  // Koşu bandı — saha çevresinde tartan pist (yuvarlak köşeli şerit)
+  {
+    const outer = new THREE.Shape();
+    const ow = PITCH_L / 2 + 6.4, od = PITCH_W / 2 + 6.4, orad = 8;
+    outer.moveTo(-ow + orad, -od);
+    outer.lineTo(ow - orad, -od); outer.quadraticCurveTo(ow, -od, ow, -od + orad);
+    outer.lineTo(ow, od - orad); outer.quadraticCurveTo(ow, od, ow - orad, od);
+    outer.lineTo(-ow + orad, od); outer.quadraticCurveTo(-ow, od, -ow, od - orad);
+    outer.lineTo(-ow, -od + orad); outer.quadraticCurveTo(-ow, -od, -ow + orad, -od);
+    const hole = new THREE.Path();
+    const iw = PITCH_L / 2 + 2.6, id = PITCH_W / 2 + 2.6, irad = 8;
+    hole.moveTo(-iw + irad, -id);
+    hole.lineTo(iw - irad, -id); hole.quadraticCurveTo(iw, -id, iw, -id + irad);
+    hole.lineTo(iw, id - irad); hole.quadraticCurveTo(iw, id, iw - irad, id);
+    hole.lineTo(-iw + irad, id); hole.quadraticCurveTo(-iw, id, -iw, id - irad);
+    hole.lineTo(-iw, -id + irad); hole.quadraticCurveTo(-iw, -id, -iw + irad, -id);
+    outer.holes.push(hole);
+    const track = new THREE.Mesh(
+      new THREE.ShapeGeometry(outer),
+      new THREE.MeshStandardMaterial({ color: night ? 0x6d3a33 : 0xb35a44, roughness: 0.95 })
+    );
+    track.rotation.x = -Math.PI / 2;
+    track.position.y = 0.016;
+    track.receiveShadow = true;
+    group.add(track);
+    // Pist kenar çizgileri
+    const lineMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8, transparent: true, opacity: 0.75 });
+    [[PITCH_L / 2 + 4.5, PITCH_W / 2 + 4.5], [PITCH_L / 2 + 4.5, -(PITCH_W / 2 + 4.5)], [-(PITCH_L / 2 + 4.5), PITCH_W / 2 + 4.5], [-(PITCH_L / 2 + 4.5), -(PITCH_W / 2 + 4.5)]].forEach(([lx, lz]) => {
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(PITCH_L + 9, 0.35), lineMat);
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(0, 0.019, lz);
+      group.add(line);
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(0.35, PITCH_W + 9), lineMat);
+      side.rotation.x = -Math.PI / 2;
+      side.position.set(lx, 0.019, 0);
+      group.add(side);
+    });
+  }
+
+  // Köşe bayrakları — sahanın 4 köşesi
+  {
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.5, metalness: 0.2 });
+    const flagMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(clubColor), side: THREE.DoubleSide, roughness: 0.8 });
+    ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]).forEach(([sx, sz]) => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.1, 6), poleMat);
+      pole.position.set(sx * (PITCH_L / 2), 1.05, sz * (PITCH_W / 2));
+      group.add(pole);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.55), flagMat);
+      flag.position.set(sx * (PITCH_L / 2) + 0.45, 1.8, sz * (PITCH_W / 2));
+      group.add(flag);
+    });
+  }
+
+  // Kenar kulübeleri: oyuncu bankı + su istasyonu (sahaya bakan, düzenli)
+  {
+    const benchMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(clubColor), roughness: 0.7 });
+    const legMat = new THREE.MeshStandardMaterial({ color: C.steel, metalness: 0.5, roughness: 0.45 });
+    for (let i = 0; i < 3; i++) {
+      const x = -20 + i * 20;
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(9, 0.42, 1.1), benchMat);
+      seat.position.set(x, 0.85, PITCH_W / 2 + 9.2);
+      seat.castShadow = true;
+      group.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(9, 0.7, 0.25), benchMat);
+      back.position.set(x, 1.35, PITCH_W / 2 + 9.7);
+      group.add(back);
+      [-3.4, 3.4].forEach(xo => {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.85, 0.9), legMat);
+        leg.position.set(x + xo, 0.42, PITCH_W / 2 + 9.2);
+        group.add(leg);
+      });
+    }
+    // Su istasyonu + soğutucu kutular
+    const station = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 1), new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.6 }));
+    station.position.set(-34, 1.35, PITCH_W / 2 + 9.2);
+    station.castShadow = true;
+    group.add(station);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.9, 0.4), legMat);
+    stand.position.set(-34, 0.45, PITCH_W / 2 + 9.2);
+    group.add(stand);
+    [-31.5, -30].forEach((x, i) => {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 0.9), new THREE.MeshStandardMaterial({ color: i === 0 ? 0x1e3a8a : 0xb91c1c, roughness: 0.65 }));
+      box.position.set(x, 0.5, PITCH_W / 2 + 9.4);
+      box.castShadow = true;
+      group.add(box);
+    });
+  }
 
   // Kaleler (seviye 2+ file)
   const goalMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.42, metalness: 0.25 });
@@ -449,11 +784,44 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
   group.add(slab(6, 5, 62, -52, pathColor, PATH_Y));    // yol → analiz girişi
   group.add(slab(6, 20, 0, 46, pathColor, PATH_Y));     // saha → altyapı alanı (mini sahalara değmez)
 
+  /* ── Yol aydınlatması: direk + kol + sıcak ampul (gece parlar) ── */
+  {
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2c3646, metalness: 0.55, roughness: 0.45 });
+    const bulbMat = new THREE.MeshStandardMaterial({
+      color: 0xfff4d0,
+      emissive: new THREE.Color(0xffe6a8),
+      emissiveIntensity: night ? 1.25 : 0.12,
+      roughness: 0.3,
+    });
+    const lampPost = (x: number, z: number, dir: number) => {
+      const post = new THREE.Object3D();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 4.6, 8), poleMat);
+      pole.position.y = 2.3;
+      pole.castShadow = true;
+      post.add(pole);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 0.12), poleMat);
+      arm.position.set(dir * 0.5, 4.5, 0);
+      post.add(arm);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.46), bulbMat);
+      head.position.set(dir * 1.0, 4.4, 0);
+      post.add(head);
+      post.position.set(x, 0, z);
+      group.add(post);
+    };
+    // Kampüs yolu boyunca (yol z=-46, patika yüzeyinin dışına dikey konumlanır)
+    [-58, -30, -2, 26, 54].forEach((x, i) => lampPost(x, -49.6, i % 2 === 0 ? 1 : -1));
+    // Alan içi patika ve otopark kenarı
+    lampPost(4.2, 40, -1);
+    lampPost(-4.2, 54, 1);
+    lampPost(48, 128, 1);
+    lampPost(-14, 122, 1);
+  }
+
   /* 🏋️ Fitness & Kondisyon Salonu — batı, sahaya bakar (seviye = kat) */
   {
     const floors = n.gym;
     const h = 4.2 * floors;
-    const b = building({ w: 22, d: 30, h, wall, accent, clubColor, night, floors });
+    const b = building({ w: 22, d: 30, h, wall, accent, clubColor, night, floors, label: 'FITNESS', logo });
     b.rotation.y = Math.PI / 2; // cephe sahaya (+X) döner
     b.position.set(-80, 0, -52);
     group.add(b);
@@ -463,17 +831,30 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
       const rackMat = new THREE.MeshStandardMaterial({ color: C.steel, metalness: 0.6, roughness: 0.35 });
       const platform = slab(10, 7, -64, -62, night ? 0x2f3644 : 0x8d96a2);
       group.add(platform);
+      // İki halter rack'i: dikmeler + bar + ağırlık diskleri + bench
+      const plateMat = new THREE.MeshStandardMaterial({ color: 0x171e29, roughness: 0.85 });
       [-3, 3].forEach(off => {
-        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 8), rackMat);
-        bar.rotation.z = Math.PI / 2;
-        bar.position.set(-64, 1.85, -62 + off * 0.5);
+        const zc = -62 + off * 0.5;
+        [-1.35, 1.35].forEach(s => {
+          const upright = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.1, 0.22), rackMat);
+          upright.position.set(-64, 1.05, zc + s);
+          upright.castShadow = true;
+          group.add(upright);
+        });
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 2.9, 8), rackMat);
+        bar.rotation.x = Math.PI / 2;
+        bar.position.set(-64, 1.6, zc);
         group.add(bar);
-        [-1.1, 1.1].forEach(s => {
-          const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.2, 16), new THREE.MeshStandardMaterial({ color: 0x171e29, roughness: 0.85 }));
-          plate.rotation.z = Math.PI / 2;
-          plate.position.set(-64, 1.85, -62 + off * 0.5 + s * 1.02);
+        [-1.35, 1.35].forEach(s => {
+          const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.18, 16), plateMat);
+          plate.rotation.x = Math.PI / 2;
+          plate.position.set(-64, 1.6, zc + s);
+          plate.castShadow = true;
           group.add(plate);
         });
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.18, 1.7), new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 }));
+        bench.position.set(-64 + 1.4, 0.5, zc);
+        group.add(bench);
       });
     }
     if (n.gym >= 4) {
@@ -501,7 +882,7 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
   {
     const r = 8 + n.recovery * 1.5;
     const h = 5.5;
-    const b = building({ w: 34, d: 18, h, wall: wallAlt, accent, clubColor, night, entrance: false });
+    const b = building({ w: 34, d: 18, h, wall: wallAlt, accent, clubColor, night, entrance: false, label: 'REJENERASYON', logo });
     b.position.set(0, 0, -60);
     group.add(b);
 
@@ -577,7 +958,7 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
   /* 📊 Taktik & Analiz Merkezi — doğu, sahaya bakar */
   {
     const h = 6.5 + n.tactics * 1.1;
-    const b = building({ w: 22, d: 30, h, wall, accent, clubColor, night, floors: Math.max(1, Math.ceil(h / 4.5)) });
+    const b = building({ w: 22, d: 30, h, wall, accent, clubColor, night, floors: Math.max(1, Math.ceil(h / 4.5)), label: 'ANALİZ', logo });
     b.rotation.y = -Math.PI / 2; // cephe sahaya (-X) döner
     b.position.set(80, 0, -52);
     group.add(b);
@@ -703,6 +1084,8 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
       w: 18, d: 11, h,
       wall, accent, clubColor, night,
       floors: Math.max(1, Math.floor(n.youth / 2)),
+      label: 'ALTYAPI',
+      logo,
     });
     academy.position.set(-84, 0, 78);
     group.add(academy);
@@ -757,6 +1140,72 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
       );
       front.position.set(0, 0.35, 123.2);
       group.add(front);
+
+      // Seyirciler — basamaklarda oturan veliler (tek çizim çağrısı)
+      const seatCount = 40;
+      const crowd = new THREE.InstancedMesh(
+        new THREE.CapsuleGeometry(0.22, 0.42, 3, 8),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }),
+        seatCount
+      );
+      const palette = [new THREE.Color(clubColor), new THREE.Color(accent), new THREE.Color(0x1f2937), new THREE.Color(0xf59e0b), new THREE.Color(0xdc2626)];
+      const dummyObj = new THREE.Object3D();
+      for (let i = 0; i < seatCount; i++) {
+        const row = i % 4;
+        const col = Math.floor(i / 4) % 10;
+        dummyObj.position.set(-21 + col * 4.7, 1.15 + row * 0.75, 124 + row * 2.1);
+        dummyObj.updateMatrix();
+        crowd.setMatrixAt(i, dummyObj.matrix);
+        crowd.setColorAt(i, palette[(i * 3 + row) % palette.length]);
+      }
+      crowd.castShadow = true;
+      group.add(crowd);
+
+      // Skorbord — tribün arkasında, sahaya bakan ekran (sırt yüzü sponsor panosu)
+      const sbTex = scoreboardTexture(accent, clubColor);
+      const SB_W = 14.4;
+      const SB_H = 6.4;
+      const SB_Y = 8.2;
+      [-6.6, 6.6].forEach(x => {
+        const mast = new THREE.Mesh(
+          new THREE.BoxGeometry(0.46, SB_Y, 0.46),
+          new THREE.MeshStandardMaterial({ color: 0x2c3646, metalness: 0.5, roughness: 0.45 })
+        );
+        mast.position.set(x, SB_Y / 2, 134.2);
+        mast.castShadow = true;
+        group.add(mast);
+      });
+      const sbFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(SB_W + 0.8, SB_H + 0.8, 0.66),
+        new THREE.MeshStandardMaterial({ color: 0x2a3441, metalness: 0.45, roughness: 0.5 })
+      );
+      sbFrame.position.set(0, SB_Y, 134.6);
+      sbFrame.castShadow = true;
+      group.add(sbFrame);
+      const sbMat = new THREE.MeshStandardMaterial({
+        color: sbTex ? 0xffffff : 0x0b1220,
+        emissive: new THREE.Color(0xffffff),
+        emissiveIntensity: night ? 1.0 : 0.36,
+        roughness: 0.24,
+      });
+      if (sbTex) { sbMat.map = sbTex; sbMat.emissiveMap = sbTex; }
+      const sbPanel = new THREE.Mesh(new THREE.PlaneGeometry(SB_W, SB_H), sbMat);
+      sbPanel.rotation.y = Math.PI; // sahaya (-Z) bakar
+      sbPanel.position.set(0, SB_Y, 134.26);
+      group.add(sbPanel);
+      // Arka yüz: tabela dokulu sponsor panosu (kara levha görünmesin)
+      const backTex = signTexture('ANTRENMAN SAHASI', accent, logo);
+      const backMat = new THREE.MeshStandardMaterial({
+        color: backTex ? 0xffffff : 0x1f2937,
+        roughness: 0.6,
+        metalness: 0.1,
+        emissive: new THREE.Color(night ? 0x233047 : 0x000000),
+        emissiveIntensity: night ? 0.35 : 0,
+      });
+      if (backTex) backMat.map = backTex;
+      const sbBack = new THREE.Mesh(new THREE.PlaneGeometry(SB_W, SB_H), backMat);
+      sbBack.position.set(0, SB_Y, 134.96);
+      group.add(sbBack);
     }
   }
 
@@ -775,16 +1224,38 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
     spots.forEach(([x, z]) => {
       const pylon = new THREE.Group();
       const H = 22;
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.66, H, 10), mastMat);
-      mast.position.y = H / 2;
-      mast.castShadow = true;
-      const head = new THREE.Mesh(new THREE.BoxGeometry(6, 2.8, 0.55), lampMat);
-      head.position.y = H + 1.3;
-      head.rotation.x = 0.32;
-      pylon.add(mast, head);
+      // 3 dikme (kafes ayak) + çapraz bağlantılar
+      const legR = 0.55;
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, H, 8), mastMat);
+        leg.position.set(Math.cos(a) * legR, H / 2, Math.sin(a) * legR);
+        leg.castShadow = true;
+        pylon.add(leg);
+      }
+      for (let hy = 3; hy < H; hy += 5) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(legR, 0.07, 6, 12), mastMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = hy;
+        pylon.add(ring);
+      }
+      // Projektör kafası — kafes çerçeve + 6 lamba
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(6.4, 3.0, 0.35), mastMat);
+      frame.position.set(0, H + 1.3, -0.25);
+      frame.rotation.x = 0.32;
+      frame.castShadow = true;
+      pylon.add(frame);
+      for (let lx = 0; lx < 3; lx++) {
+        for (let ly = 0; ly < 2; ly++) {
+          const lamp = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.15, 0.4), lampMat);
+          lamp.position.set(-2.1 + lx * 2.1, H + 0.85 + ly * 1.15, 0.05);
+          lamp.rotation.x = 0.32;
+          pylon.add(lamp);
+          floodlights.push(lamp);
+        }
+      }
       pylon.position.set(x, 0, z);
       group.add(pylon);
-      floodlights.push(head);
     });
   }
 
@@ -819,53 +1290,104 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
     const railMat = new THREE.MeshStandardMaterial({ color: 0x707c8b, metalness: 0.4, roughness: 0.6 });
     const minX = -128, maxX = 128, minZ = -92, maxZ = 150;
     const w = maxX - minX, d = maxZ - minZ;
-    // Çit: 4 kenar — alt ray
+    // Üst ray + alt ray (4 kenar)
     [[0, minZ, w, 0.4], [0, maxZ, w, 0.4], [minX, (minZ + maxZ) / 2, 0.4, d], [maxX, (minZ + maxZ) / 2, 0.4, d]].forEach(([x, z, bw, bd]) => {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(bw, 1.6, bd), fenceMat);
-      rail.position.set(x, 1.7, z);
-      group.add(rail);
+      [2.5, 0.35].forEach(hy => {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.16, bd), fenceMat);
+        rail.position.set(x, hy, z);
+        group.add(rail);
+      });
     });
-    // Köşe ve kenar direkleri — eşit aralık
-    const postGeo = new THREE.BoxGeometry(0.45, 3.2, 0.45);
-    for (let x = minX; x <= maxX; x += 32) {
+    // Dikey parmaklıklar — InstancedMesh (tek çizim çağrısı, performanslı)
+    const barGeo = new THREE.BoxGeometry(0.12, 2.5, 0.12);
+    const step = 2.6;
+    const countX = Math.floor(w / step) + 1;
+    const countZ = Math.floor(d / step) + 1;
+    const bars = new THREE.InstancedMesh(barGeo, railMat, countX * 2 + countZ * 2);
+    const marker = new THREE.Object3D();
+    let bi = 0;
+    for (let i = 0; i < countX; i++) {
+      const x = minX + i * step;
       [minZ, maxZ].forEach(z => {
-        const p = new THREE.Mesh(postGeo, railMat);
-        p.position.set(x, 1.6, z);
-        group.add(p);
+        marker.position.set(x, 1.42, z);
+        marker.updateMatrix();
+        bars.setMatrixAt(bi++, marker.matrix);
       });
     }
-    for (let z = minZ; z <= maxZ; z += 32) {
+    for (let i = 0; i < countZ; i++) {
+      const z = minZ + i * step;
       [minX, maxX].forEach(x => {
-        const p = new THREE.Mesh(postGeo, railMat);
-        p.position.set(x, 1.6, z);
-        group.add(p);
+        marker.position.set(x, 1.42, z);
+        marker.updateMatrix();
+        bars.setMatrixAt(bi++, marker.matrix);
       });
     }
+    bars.count = bi;
+    group.add(bars);
 
-    // Ağaçlar — çitin dışında eşit aralıklı iki sıra hissi
+    // Ağaçlar — çitin dışında eşit aralıklı sıralar (iki farklı tip: yuvarlak + konik)
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 0.95 });
     const leafMat = new THREE.MeshStandardMaterial({ color: night ? 0x1f3d2a : 0x2f7a44, roughness: 0.95 });
-    const trees: [number, number][] = [];
+    const pineMat = new THREE.MeshStandardMaterial({ color: night ? 0x18321f : 0x256b3a, roughness: 0.95 });
+    const trees: [number, number, boolean][] = [];
     for (let i = 0; i < 7; i++) {
       const x = -108 + i * 36;
-      trees.push([x, minZ - 14]);
-      trees.push([x, maxZ + 14]);
+      trees.push([x, minZ - 14, i % 2 === 0]);
+      trees.push([x, maxZ + 14, i % 2 === 1]);
     }
     for (let i = 0; i < 5; i++) {
       const z = -60 + i * 48;
-      trees.push([minX - 14, z]);
-      trees.push([maxX + 14, z]);
+      trees.push([minX - 14, z, i % 2 === 0]);
+      trees.push([maxX + 14, z, i % 2 === 1]);
     }
-    trees.forEach(([x, z]) => {
+    // İkinci sıra (kaydırılmış) — dış çeper daha dolu görünür
+    for (let i = 0; i < 6; i++) {
+      const x = -90 + i * 36;
+      trees.push([x, minZ - 30, i % 2 === 1]);
+      trees.push([x, maxZ + 30, i % 2 === 0]);
+    }
+    for (let i = 0; i < 4; i++) {
+      const z = -36 + i * 48;
+      trees.push([minX - 30, z, i % 2 === 1]);
+      trees.push([maxX + 30, z, i % 2 === 0]);
+    }
+    trees.forEach(([x, z, pine]) => {
       const t = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.62, 4.4, 8), trunkMat);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.6, 4.4, 8), trunkMat);
       trunk.position.y = 2.2;
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(2.9, 14, 12), leafMat);
-      crown.position.y = 6.1;
-      crown.castShadow = true;
-      t.add(trunk, crown);
+      trunk.castShadow = true;
+      t.add(trunk);
+      if (pine) {
+        // Konik çam: üç kademe
+        [0, 1, 2].forEach(k => {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(2.6 - k * 0.62, 3.2, 12), pineMat);
+          cone.position.y = 4.4 + k * 1.9;
+          cone.castShadow = true;
+          t.add(cone);
+        });
+      } else {
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(2.9, 14, 12), leafMat);
+        crown.position.y = 6.1;
+        crown.castShadow = true;
+        t.add(crown);
+        const crown2 = new THREE.Mesh(new THREE.SphereGeometry(1.9, 12, 10), leafMat);
+        crown2.position.set(1.6, 7.3, 0.6);
+        t.add(crown2);
+      }
       t.position.set(x, 0, z);
       group.add(t);
+    });
+    // Çalılar — bina önlerinde düzenli sıralar
+    const bushMat = new THREE.MeshStandardMaterial({ color: night ? 0x22452c : 0x387a4a, roughness: 0.95 });
+    const bushSpots: [number, number][] = [];
+    [-96, -64, -16, 16, 64, 96].forEach(x => bushSpots.push([x, -38]));
+    for (let i = 0; i < 5; i++) bushSpots.push([-100 + i * 0, 0]);
+    bushSpots.filter(([, z]) => z !== 0).forEach(([x, z]) => {
+      const bush = new THREE.Mesh(new THREE.SphereGeometry(1.15, 12, 10), bushMat);
+      bush.position.set(x, 0.85, z);
+      bush.scale.set(1, 0.8, 1);
+      bush.castShadow = true;
+      group.add(bush);
     });
 
     // Otopark + kulüp servis minibüsü — güneybatı köşesi, düzenli
@@ -877,6 +1399,30 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
       line.position.set(-115 + i * 9.5, 0.03, 128);
       group.add(line);
     }
+    // Park hâlindeki kulüp araçları (3 araba — renk çeşitliliği, düzenli park)
+    const carColors = [0x334155, 0xb91c1c, 0x0f766e];
+    carColors.forEach((color, i) => {
+      const car = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.3 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(4.3, 1.05, 2.1), bodyMat);
+      body.position.y = 0.85;
+      body.castShadow = true;
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.8, 1.95), new THREE.MeshStandardMaterial({ color: night ? 0x1d2735 : 0x39485c, roughness: 0.2, metalness: 0.5 }));
+      cabin.position.set(-0.2, 1.72, 0);
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.9 });
+      const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12);
+      [[-1.5, 1.0], [1.5, 1.0], [-1.5, -1.0], [1.5, -1.0]].forEach(([wx, wz]) => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.x = Math.PI / 2;
+        wheel.position.set(wx, 0.42, wz);
+        car.add(wheel);
+      });
+      car.add(body, cabin);
+      car.position.set(-115 + i * 9.5, 0, 132);
+      car.rotation.y = Math.PI / 2;
+      group.add(car);
+    });
+
     // Kulüp servis minibüsü (tekerlekli, gerçek araç silueti)
     const bus = new THREE.Group();
     const busBodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(clubColor), roughness: 0.42, metalness: 0.25 });
@@ -979,6 +1525,7 @@ export function buildTrainingComplex(opts: TrainingComplexOptions): TrainingComp
     update,
     camera: { radius: 188, phi: 0.98, theta: 0.58, targetY: 6, fov: 46 },
     sky: night ? '#0a1024' : '#7fb2e5',
+    skyTexture: skyGradientTexture(night),
     fog: night ? ['#0a1024', 260, 620] : ['#7fb2e5', 280, 660],
     levels: { pitch: n.pitch, gym: n.gym, recovery: n.recovery, tactics: n.tactics, youth: n.youth },
     triCount: () => {
