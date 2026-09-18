@@ -12,6 +12,9 @@ import * as THREE from 'three';
 import zlib from 'node:zlib';
 import fs from 'node:fs';
 import { buildStadiumGroup } from '../src/components/stadium/scene';
+import { buildMatchScene, Match3DInput, ShapeSlot } from '../src/components/match3d/scene';
+import { awayVenue, homeVenue, opponentKit, Kit, Venue } from '../src/components/match3d/venue';
+import { FORMATIONS } from '../src/data/constants';
 import { buildLifeScene } from '../src/components/life/scenes';
 import { buildTrainingComplex } from '../src/components/facility/scene';
 import { defaultStadium } from '../src/data/stadium';
@@ -425,6 +428,111 @@ function composeSheet(tiles: { buf: Uint8Array; label: string }[], cols: number,
   });
   writePNG(outPath, sheet, sw, sh);
   return `${outPath} → ${tiles.length} sahne (${cols}×${rows})`;
+}
+
+/* ── 🎥 3D MAÇ SİMÜLASYONU önizlemeleri (menajer kamerası) ──
+   Sadece bu bölümü çalıştırmak için:  MATCH_ONLY=1 npm run preview:3d */
+function renderMatchPreview(cfg: {
+  name: string;
+  venue: Venue;
+  weather: string;
+  kitHome: Kit;
+  kitAway: Kit;
+  minute: number;
+  phase: string;
+  scoreHome: number;
+  scoreAway: number;
+  possession: number;
+  /** kaç saniye simüle edilsin (açık oyun pozisyonları otursun diye) */
+  sim: number;
+  cam?: 'manager' | 'broadcast';
+  event?: { type: string; team: 'home' | 'away' };
+}) {
+  const shape = (name: string, mirror: boolean): ShapeSlot[] => {
+    const f = FORMATIONS['4-3-3'];
+    const nums: Record<string, number[]> = { KL: [1], SB: [2, 3], STP: [4, 5], OS: [6, 8, 10], FW: [7, 9, 11] };
+    const used: Record<string, number> = {};
+    return f.map(slot => {
+      const pool = nums[slot.r] ?? [6, 8, 10];
+      const i = used[slot.r] ?? 0;
+      used[slot.r] = i + 1;
+      return { t: mirror ? slot.t : slot.t, l: mirror ? 100 - slot.l : slot.l, n: pool[i % pool.length] };
+    });
+    void name;
+  };
+  const bundle = buildMatchScene({
+    venue: cfg.venue,
+    homeKit: cfg.kitHome,
+    awayKit: cfg.kitAway,
+    weather: cfg.weather,
+    night: cfg.venue.night,
+    lowPerf: true,
+    homeShape: shape('home', false),
+    awayShape: shape('away', true),
+    homeName: 'ANADOLU SPOR',
+    awayName: 'KIZIL YILDIZ',
+    sponsorText: 'MANAGER PRO 2026 • RESMİ SPONSOR • ',
+    logo: '🦁'
+  });
+  bundle.setCameraMode(cfg.cam ?? 'manager');
+  const input: Match3DInput = {
+    phase: cfg.phase, minute: cfg.minute, possession: cfg.possession, timeScale: 1,
+    scoreHome: cfg.scoreHome, scoreAway: cfg.scoreAway, homeOnPitch: 11, awayOnPitch: 11,
+    energy: 72, event: cfg.event ? { key: 1, type: cfg.event.type, team: cfg.event.team, minute: cfg.minute } : null
+  };
+  // Önce fazı oturt (başlama vuruşu), sonra açık oyunu çalıştır;
+  // olayı son ~3 saniyede ver ki sevinç/kart anı kareye yakalansın
+  bundle.update(0, 0.016, { ...input, phase: 'first', minute: 0 });
+  const steps = Math.round(cfg.sim / 0.033);
+  const evStep = steps - Math.round(2.6 / 0.033);
+  for (let i = 0; i < steps; i++) {
+    bundle.update(i * 0.033, 0.033, i >= evStep ? input : { ...input, event: null });
+  }
+
+  const off = bundle.cam.position.clone().sub(bundle.cam.target);
+  const radius = Math.max(1, off.length());
+  const phi = Math.acos(THREE.MathUtils.clamp(off.y / radius, -1, 1));
+  const theta = Math.atan2(off.x, off.z);
+
+  const rows = Math.max(4, Math.min(30, Math.round(cfg.venue.capacity / 1600)));
+  const spotX = 105 / 2 + 8 + rows * 1.6 * 0.7;
+  const spotZ = 68 / 2 + 8 + rows * 1.6 * 0.7;
+  const spotY = rows * 1.6 + 16;
+  const buffer = renderToBuffer(bundle.group, {
+    radius, phi, theta,
+    targetX: bundle.cam.target.x, targetY: bundle.cam.target.y, targetZ: bundle.cam.target.z,
+    fov: bundle.cam.fov
+  }, {
+    sky: cfg.venue.night ? '#0b1026' : '#7ab0e0',
+    night: cfg.venue.night,
+    time: cfg.sim,
+    pointLights: cfg.venue.night
+      ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({
+          x: lx * spotX, y: spotY, z: lz * spotZ, intensity: 78000, distance: 300, color: 0xffe9a8
+        }))
+      : undefined
+  });
+  writePNG(`${OUT_DIR}/${cfg.name}`, buffer, W, H);
+  bundle.dispose();
+  console.log(`🎥 ${cfg.name} üretildi (kamera ${cfg.cam ?? 'manager'}, ${cfg.sim}s sim)`);
+  return buffer;
+}
+
+if (process.env.MATCH_ONLY) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const homeV = homeVenue({ teamName: 'ANADOLU SPOR', design: defaultStadium().design, capacity: 34000, night: false });
+  const homeNight = homeVenue({ teamName: 'ANADOLU SPOR', design: { ...defaultStadium().design, seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'bowl' }, capacity: 46000, night: true });
+  const awayV = awayVenue('KIZIL YILDIZ', 3);
+  const awayV2 = awayVenue('DENİZLİ SPOR', 7);
+  const tiles: { buf: Uint8Array; label: string }[] = [];
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-menajer-gunduz.png', venue: homeV, weather: 'sunny', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26 }), label: 'menajer • gündüz (ev)' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-menajer-gece.png', venue: homeNight, weather: 'rain', kitHome: homeNight.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeNight.kit.shirt), minute: 71, phase: 'second', scoreHome: 2, scoreAway: 2, possession: 44, sim: 40 }), label: 'menajer • gece+yağmur' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-gol.png', venue: homeV, weather: 'cloudy', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 58, phase: 'second', scoreHome: 2, scoreAway: 0, possession: 61, sim: 30, event: { type: 'goal', team: 'home' } }), label: 'gol sevinci' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-kart.png', venue: awayV, weather: 'sunny', kitHome: awayV.kit, kitAway: opponentKit('ANADOLU SPOR', 3, awayV.kit.shirt), minute: 41, phase: 'first', scoreHome: 0, scoreAway: 1, possession: 39, sim: 24, event: { type: 'card', team: 'away' } }), label: 'kart (deplasman)' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-deplasman.png', venue: awayV2, weather: 'snow', kitHome: awayV2.kit, kitAway: opponentKit('ANADOLU SPOR', 7, awayV2.kit.shirt), minute: 22, phase: 'first', scoreHome: 0, scoreAway: 0, possession: 52, sim: 30 }), label: 'deplasman • kar' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-yayin.png', venue: homeV, weather: 'sunny', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26, cam: 'broadcast' }), label: '📺 yayın kamerası' });
+  console.log(`\n📄 ${composeSheet(tiles, 2, `${OUT_DIR}/preview-mac-tumu.png`)}`);
+  process.exit(0);
 }
 
 /* ── Önizlemeler ── */

@@ -9,6 +9,24 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.8.0',
+    date: '18 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🎥 Maç Simülasyonu Artık 3D: Menajer Kamerası',
+    items: [
+      '🎥 Maçlar artık gerçek zamanlı 3D sahnede oynanıyor — kamera teknik direktörlerin durduğu kenarda, kulübenin hemen önünden izliyor',
+      '🧑‍💼 MENAJER / 📺 YAYIN kamera modları: kenardan düşük açı veya yüksek yayın kamerası; sürükle = etrafa bak, tekerlek = yakınlaştır, çift tık = sıfırla',
+      '🏟️ Ev maçlarında kendi tasarladığın stadyumun birebir 3D hali (çatı, tribün, çim deseni, renkler, kapasite); deplasmanda rakibe özel rastgele statlar — aynı rakip hep aynı statta',
+      '👥 22 futbolcu, hakem, iki yan hakem, 4. hakem, kulübede oturan yedekler, kulüp doktoru ve kenarda bağıran teknik direktör — hepsi eklemli 3D karakter',
+      '⚽ Canlı maç akışı: paslar, dripling, şutlar, kaleci kurtarışları, gol sevinci (tribünler coşar), kart gösterme, sakatlık, oyuncu değişikliği tabelası, korner ve devre arası',
+      '📺 Stadyumdaki dev skorbord maçı canlı gösterir: skor, dakika ve CANLI göstergesi; LED panolarda sponsorun kayar',
+      '🌧️ Hava durumu 3D’de: yağmur ve kar taneleri, fırtınada şimşek çakar, siste görüş düşer; gece maçlarında projektörler yanar',
+      '⏱️ Yeni hız düzeni: 1x = maç ~2 dakika, 2x = ~1 dakika; 4x kaldırıldı, yerine hız çubuğunda ⏭️ Atla tuşu (maçı anında simüle eder)',
+      '⏸️ Değişiklikte donma ve kartta yavaş çekim 3D sahneye de yansıdı: dondurulduğunda sahne tamamen durur, yavaş çekimde herkes ağırlaşır',
+      '🖥️ WebGL açılamazsa otomatik 2D sahaya düşer; tek tuşla 3D’ye geri dönülebilir',
+    ],
+  },
+  {
     version: '4.7.0',
     date: '18 Eyl 2026',
     tag: 'YENİ',

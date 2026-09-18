@@ -8,6 +8,7 @@ import { PenaltyShootout } from './PenaltyShootout';
 import { sfx } from '../utils/sound';
 import { skillInjuryReduction, skillTacticsBonus } from '../utils/progression';
 import { LivePitch } from './LivePitch';
+import { Match3D } from './Match3D';
 import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
 import { adaptationPct, effectiveOvr } from '../utils/adaptation';
@@ -70,7 +71,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [showSubModal, setShowSubModal] = useState(false);
   const [subOut, setSubOut] = useState<number | null>(null);
   const [scorers, setScorers] = useState<Map<number, { goals: number; assists: number }>>(new Map());
-  const [speed, setSpeed] = useState<1 | 2 | 4>(2);
+  const [speed, setSpeed] = useState<1 | 2>(1);
   const [possession, setPossession] = useState(50);
   const [shots, setShots] = useState({ home: 0, away: 0 });
   const [xg, setXg] = useState({ home: 0, away: 0 });
@@ -99,6 +100,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [slowMo, setSlowMo] = useState(false);
   /** 📜 Olay akışı kutusu — yer kaplamasın diye kapatılabilir */
   const [consoleOpen, setConsoleOpen] = useState(true);
+  // 🎥 3D maç görünümü (düşük performanslı cihazlarda 2D'ye düşer)
+  const [view3d, setView3d] = useState(!gameState.life?.lowPerf);
 
   const consoleRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef({ u: 0, o: 0 });
@@ -755,8 +758,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   useEffect(() => {
     if (!matchRunning) { stopTimer(); return; }
     stopTimer();
+    // ⏱️ 1x = maç ~2 dk sürer (1333 ms/dk), 2x = ~1 dk (667 ms/dk)
     // 🐢 yavaş çekim — kart anında dakika aralığı uzar, sonra normale döner
-    const tickMs = (1000 / speed / 2.5) * (slowMo ? 3.2 : 1);
+    const tickMs = (1333 / speed) * (slowMo ? 3.2 : 1);
     timerRef.current = setInterval(() => {
       if (pausedRef.current || finishedRef.current) return;
       const next = minuteRef.current + 1;
@@ -996,10 +1000,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 🐢 YAVAŞ ÇEKİM
               </span>
             ) : null}
-            {([1, 2, 4] as const).map(s => (
+            {([1, 2] as const).map(s => (
               <button
                 key={s}
                 onClick={() => setSpeed(s)}
+                title={s === 1 ? '1x — maç ~2 dakika sürer' : '2x — maç ~1 dakika sürer'}
                 className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
                   speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70 hover:bg-emerald-800'
                 }`}
@@ -1007,6 +1012,15 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 {s}x
               </button>
             ))}
+            {/* 4x yerine: maçı doğrudan atla */}
+            <button
+              onClick={skipMatch}
+              disabled={!matchRunning}
+              title="Kalan dakikaları anında simüle et"
+              className="px-2 py-0.5 rounded text-xs font-bold transition-all bg-slate-600/70 text-white/85 hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ⏭️ Atla
+            </button>
           </div>
         </div>
 
@@ -1098,25 +1112,58 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           )}
         </div>
 
-        {/* Canlı 2D saha - büyütüldü, ekrana uyumlu */}
-        {phase !== 'pre' && (
+        {/* 🎥 Canlı saha — 3D (menajer kamerası) veya 2D yedek görünüm */}
+        {phase !== 'pre' && phase !== 'pens' && (
           <div className="px-2 lg:px-4 pt-3 flex-shrink-0">
-            <LivePitch
-              minute={minute}
-              possession={possession}
-              events={events}
-              homeLogo={gameState.teamLogo}
-              awayLogo={opponent.logo}
-              homeName={gameState.teamName}
-              awayName={opponent.name}
-              isHome={isHome}
-              lineup={activeLineup}
-              sentOff={sentOff}
-              phase={phase}
-              weather={weather}
-              paused={freeze !== null}
-              slowMo={slowMo}
-            />
+            {view3d ? (
+              <Match3D
+                gameState={gameState}
+                opponent={opponent}
+                userIsHome={isHome}
+                weather={weather}
+                minute={minute}
+                possession={possession}
+                phase={phase}
+                scoreUser={score.u}
+                scoreOpp={score.o}
+                lineup={activeLineup}
+                userOnPitch={Math.max(7, 11 - sentOff.length - activeLineup.filter(p => p.injured || p.redCard).length)}
+                oppOnPitch={11}
+                events={events}
+                paused={freeze !== null}
+                slowMo={slowMo}
+                lowPerf={!!gameState.life?.lowPerf}
+                onFallback={() => setView3d(false)}
+                className="h-[46vh] min-h-[300px] max-h-[520px]"
+              />
+            ) : (
+              <>
+                <div className="mb-1 flex justify-end">
+                  <button
+                    onClick={() => setView3d(true)}
+                    className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-700/70 hover:bg-emerald-600 text-white"
+                  >
+                    🎥 3D Görünüme Dön
+                  </button>
+                </div>
+                <LivePitch
+                  minute={minute}
+                  possession={possession}
+                  events={events}
+                  homeLogo={gameState.teamLogo}
+                  awayLogo={opponent.logo}
+                  homeName={gameState.teamName}
+                  awayName={opponent.name}
+                  isHome={isHome}
+                  lineup={activeLineup}
+                  sentOff={sentOff}
+                  phase={phase}
+                  weather={weather}
+                  paused={freeze !== null}
+                  slowMo={slowMo}
+                />
+              </>
+            )}
           </div>
         )}
 

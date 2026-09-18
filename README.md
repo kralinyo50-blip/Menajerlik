@@ -35,7 +35,8 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ### Maç
 - **İç saha / deplasman** fikstürü, ev sahibi avantajı ve **seyirci + bilet geliri**
 - **Hava durumu** (güneş/yağmur/kar/fırtına/sis/rüzgâr) → gol ve sakatlık oranlarına etki
-- **Canlı maç motoru** — 1x/2x/4x hız, top hakimiyeti, şut/korner/faul istatistikleri, atlama
+- **🎥 3D maç simülasyonu (v4.8)** — maç menajerlerin durduğu kenardan izlenir: 🧑‍💼 MENAJER ve 📺 YAYIN kameraları, sürükle/bak + tekerlek/zoom; ev maçlarında kendi stadyumun, deplasmanda rakibe özel rastgele statlar
+- **Canlı maç motoru** — 1x (~2 dk) / 2x (~1 dk) hız, ⏭️ Atla ile maçı anında simüle etme, top hakimiyeti, şut/korner/faul istatistikleri
 - **Kompakt maç ekranı** — istatistikler tek satır çip şeridinde, maç anlatımı istenirse kapatılabilir (şut haritası kaldırıldı, ekran ferahladı)
 - **⏸️ Akıllı duraklatma** — 🔄 Değişiklik ekranını açınca simülasyon donar (dakika sabit, 2D saha durur); değişikliği yapınca veya vazgeçince kaldığı yerden devam eder
 - **🐢 Kart yavaş çekimi** — kart gösterildiğinde simülasyon yavaşlar (sarı ~2.6 sn, çift sarı ~3.4 sn, kırmızı ~3.6 sn) sonra kendiliğinden normal hızına döner
