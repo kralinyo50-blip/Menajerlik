@@ -280,10 +280,12 @@ const lifeScenes: { activity: LifeActivityId; variant: string; time: number; nam
 ];
 
 /* ── 3D Antrenman Kompleksi önizlemeleri ── */
+const dayBuffer: Uint8Array = new Uint8Array(W * H * 3);
+const nightBuffer: Uint8Array = new Uint8Array(W * H * 3);
 const complexScenes: { name: string; facility: FacilityState; night: boolean; dTheta: number; zoom: number; highlight?: any }[] = [
   {
     name: 'preview-antrenman-kompleksi-gunduz.png',
-    facility: { pitch: 3, gym: 2, recovery: 2, tactics: 2, youth: 2 },
+    facility: { pitch: 3, gym: 3, recovery: 3, tactics: 2, youth: 2 },
     night: false, dTheta: 0, zoom: 1,
   },
   {
@@ -293,6 +295,7 @@ const complexScenes: { name: string; facility: FacilityState; night: boolean; dT
   },
 ];
 
+const complexBuffers: Uint8Array[] = [];
 complexScenes.forEach(scene => {
   const bundle = buildTrainingComplex({ facility: scene.facility, logo: '🦁', night: scene.night, clubColor: '#1d4ed8', accentColor: '#facc15', highlight: scene.highlight });
   bundle.update(1.4, 0.016);
@@ -304,6 +307,7 @@ complexScenes.forEach(scene => {
     fov: bundle.camera.fov,
   }, { sky: bundle.sky, fog: bundle.fog, night: scene.night });
   writePNG(`${OUT_DIR}/${scene.name}`, buffer, W, H);
+  complexBuffers.push(buffer);
   console.log(`🏋️  ${scene.name} üretildi (${bundle.triCount()} üçgen)`);
 });
 
@@ -327,6 +331,17 @@ const levelTiles: { buf: Uint8Array; label: string }[] = [];
 });
 if (levelTiles.length > 0) {
   console.log(`\n📄 ${composeSheet(levelTiles, 2, `${OUT_DIR}/preview-antrenman-seviyeler.png`)}`);
+}
+
+// Özet montaj: gündüz (sv.3) • gece (sv.5) • sv.1 • sv.5 — tek görselde
+{
+  const montage: { buf: Uint8Array; label: string }[] = [
+    { buf: complexBuffers[0] ?? dayBuffer, label: 'gündüz sv.3' },
+    { buf: complexBuffers[1] ?? nightBuffer, label: 'gece sv.5' },
+    levelTiles[0],
+    levelTiles[levelTiles.length - 1],
+  ];
+  console.log(`📄 ${composeSheet(montage, 2, `${OUT_DIR}/preview-antrenman-tumu.png`)}`);
 }
 
 let failures = 0;

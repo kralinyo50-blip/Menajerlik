@@ -170,6 +170,11 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
       </div>
 
       {/* ── Modül kartları ── */}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="text-sm font-black text-white">🏗️ Tesis Modülleri</span>
+        <span className="text-[11px] text-slate-400">— kartın üzerine gel → bir üst seviyeyi ön izle</span>
+        <span className="flex-1 h-px bg-slate-700/60" />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {FACILITY_MODULES.map(mod => {
           const level = displayFacility[mod.id];
@@ -181,6 +186,7 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
           return (
             <div
               key={mod.id}
+              title={mod.stats(realLevel).map(st => `${st.label}: ${st.value}`).join(' • ')}
               onMouseEnter={() => !isMax && setPreviewModule(mod.id)}
               onMouseLeave={() => setPreviewModule(p => (p === mod.id ? null : p))}
               className={`rounded-2xl border p-4 transition-all ${
@@ -204,22 +210,9 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
               <div className="mb-2">{pips(level)}</div>
               <div className="text-[11px] text-slate-300 mb-1">{mod.desc}</div>
               <div className="text-[11px] text-emerald-300 mb-1">🧠 {mod.impact}</div>
-              <div className="text-[11px] bg-slate-900/50 rounded-lg p-2 border border-slate-700/40 mb-2">
-                <div className="flex justify-between"><span className="text-slate-400">Şu an</span><span className="text-white">{mod.effect(realLevel)}</span></div>
-                {!isMax && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Sonraki</span>
-                    <span className="text-emerald-300">{mod.effect(realLevel + 1)}</span>
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-1 mb-2">
-                {mod.stats(realLevel).map(st => (
-                  <div key={st.label} className="bg-slate-900/40 rounded-lg p-1.5 text-center">
-                    <div className="text-[9px] text-slate-400 truncate">{st.label}</div>
-                    <div className="text-[11px] text-white font-bold truncate">{st.value}</div>
-                  </div>
-                ))}
+              <div className="text-[11px] bg-slate-900/50 rounded-lg p-2 border border-slate-700/40 mb-2 space-y-0.5">
+                <div className="text-white"><span className="text-slate-400">Şu an: </span>{mod.effect(realLevel)}</div>
+                {!isMax && <div className="text-emerald-300"><span className="text-slate-400">Sonraki: </span>{mod.effect(realLevel + 1)}</div>}
               </div>
               {isMax ? (
                 <div className="w-full py-2 rounded-xl text-xs font-black bg-emerald-500/20 text-emerald-300 text-center">
@@ -242,6 +235,11 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
       </div>
 
       {/* ── Oyuncu etkisi (canlı önizleme) ── */}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="text-sm font-black text-white">👥 Oyuncularına Etkisi</span>
+        <span className="text-[11px] text-slate-400">— haftalık gelişim, moral ve enerji</span>
+        <span className="flex-1 h-px bg-slate-700/60" />
+      </div>
       <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h3 className="text-sm font-bold text-emerald-400">
@@ -323,6 +321,11 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
       </div>
 
       {/* ── Haftalık rapor ── */}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="text-sm font-black text-white">📋 Haftalık Tesis Raporu</span>
+        <span className="text-[11px] text-slate-400">— her maç sonrası otomatik</span>
+        <span className="flex-1 h-px bg-slate-700/60" />
+      </div>
       <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
         <h3 className="text-sm font-bold text-white mb-2">📋 Son Haftalık Tesis Raporu</h3>
         {report ? (

@@ -147,7 +147,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-2xl font-black text-white">🏟️ Stadyum Stüdyosu</h2>
-            <p className="text-[11px] text-amber-300">🏋️ Tesisler artık burada: <b>Antrenman Kompleksi (3D)</b> • <b>Personel</b> • <b>Akademi &amp; Scout</b> alt sekmeleri</p>
+            <p className="text-[11px] text-amber-300/90">🏋️ Tesisler artık burada — aşağıdaki <b>TESİSLER &amp; ANTRENMAN</b> grubuna bak</p>
             <p className="text-slate-400 text-sm">
               {gameState.teamName} Arena • Seviye {gameState.stadiumLvl} • {ROOF_LABEL[displayDesign.roof]} • {STAND_LABEL[displayDesign.stands]}
               {isPreview && <span className="ml-2 text-amber-300 text-xs font-bold">👁️ ÖN İZLEME</span>}
@@ -277,29 +277,41 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
           💡 <b>İpucu:</b> Bir seçeneğin üzerine <b>gelince</b> veya <b>👁️</b> ikonuna basınca stadyumun nasıl duracağını anında 3D'de görürsün. Satın almadan önce gece/gündüz ve sinematik ile kontrol et.
         </div>
 
-        {/* Alt sekmeler */}
-        <div className="flex gap-2 flex-wrap">
-          {([
+        {/* Alt sekmeler — iki grup: stadyum & tesisler */}
+        {([
+          ['🏟️ STADYUM', [
             ['design', '🎨', 'Renkler & Mimari'],
             ['capacity', '🏗️', 'Kapasite & Büyüme'],
             ['tribunes', '🏟️', 'Tribünler & Etkinlik'],
             ['tickets', '🎟️', 'Bilet Fiyatı'],
             ['shop', '🛍️', 'Kozmetik Mağazası'],
+          ] as [SubTab, string, string][]],
+          ['🏋️ TESİSLER & ANTRENMAN', [
             ['complex', '🏋️', 'Antrenman Kompleksi (3D)'],
             ['staff', '👥', 'Personel'],
             ['youth', '🎓', 'Akademi & Scout'],
-          ] as [SubTab, string, string][]).map(([id, icon, label]) => (
-            <button
-              key={id}
-              onClick={() => { setSub(id); clearPreview(); }}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                sub === id ? 'bg-emerald-500 text-white' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'
-              }`}
-            >
-              <SubTabButton id={id} icon={icon} label={label} />
-            </button>
-          ))}
-        </div>
+          ] as [SubTab, string, string][]],
+        ] as [string, [SubTab, string, string][]][]).map(([groupLabel, items]) => (
+          <div key={groupLabel} className="space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black tracking-[0.14em] text-slate-400">{groupLabel}</span>
+              <span className="flex-1 h-px bg-slate-700/60" />
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {items.map(([id, icon, label]) => (
+                <button
+                  key={id}
+                  onClick={() => { setSub(id); clearPreview(); }}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    sub === id ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'
+                  }`}
+                >
+                  <SubTabButton id={id} icon={icon} label={label} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
 
         {/* ── RENKLER & MİMARİ ── */}
         {sub === 'design' && (
