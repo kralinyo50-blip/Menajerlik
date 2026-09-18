@@ -36,6 +36,9 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - **İç saha / deplasman** fikstürü, ev sahibi avantajı ve **seyirci + bilet geliri**
 - **Hava durumu** (güneş/yağmur/kar/fırtına/sis/rüzgâr) → gol ve sakatlık oranlarına etki
 - **Canlı maç motoru** — 1x/2x/4x hız, top hakimiyeti, şut/korner/faul istatistikleri, atlama
+- **Kompakt maç ekranı** — istatistikler tek satır çip şeridinde, maç anlatımı istenirse kapatılabilir (şut haritası kaldırıldı, ekran ferahladı)
+- **⏸️ Akıllı duraklatma** — 🔄 Değişiklik ekranını açınca simülasyon donar (dakika sabit, 2D saha durur); değişikliği yapınca veya vazgeçince kaldığı yerden devam eder
+- **🐢 Kart yavaş çekimi** — kart gösterildiğinde simülasyon yavaşlar (sarı ~2.6 sn, çift sarı ~3.4 sn, kırmızı ~3.6 sn) sonra kendiliğinden normal hızına döner
 - **Kart & ceza sistemi** — 3 sarı = 1 maç, kırmızı = 2 maç ceza; sahada 10 kişi kalabilirsin
 - **Gerçek sakatlıklar** (1-3 hafta) ve zorunlu oyuncu değişikliği
 - **Oyuncu reytingleri + maçın adamı (MOTM)** — form takibi ve moral etkisi
@@ -56,6 +59,8 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ### 🏟️ 3D Stadyum Stüdyosu (v3.3)
 - **3D stadyum görüntüleyici** — sürükle-döndür, yakınlaştır, çift tıkla sıfırla; gece/gündüz ve sinematik kamera modları
+- **👁️ Ön İzle tuşu** — her seçeneğin (çatı, tribün mimarisi, çim, bayrak/logo, renkler, kozmetik, kapasite paketi, stadyum seviyesi, tribün yükseltmesi) yanında: basınca değişiklik **satın alınmadan** 3D sahnede gösterilir, sahne ekranda değilse otomatik yukarı kayar
+- **Ön izleme banner’ı + sabit çubuk** — neyi ön izlediğini yazar; tek tıkla **Uygula / Satın Al**, **🎥 3D’yi göster** veya **✕ Kapat**
 - **Özelleştirme** — koltuk rengi (ücretsiz palet + satın alınabilir özel renkler), aksan rengi, çatı tipi (saçak/tam/cam), tribün mimarisi (klasik/dik/çift katlı/kase), çim deseni, tribün bayrakları, çimde logo
 - **Kapasite büyütme** — +1.000 / +2.500 / +5.000 / +10.000 koltuk paketleri; tribün satırları 3D olarak gözle görülür şekilde büyür (90.000'e kadar)
 - **Bilet fiyat stratejisi** — ucuz/normal/pahalı/lüks; tribünde büfe harcaması ile gerçek talep eğrisi (en kârlı fiyat genelde ortada)
@@ -94,8 +99,8 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
 - Üst sekmeler: Ofis, Sosyal, Kariyer, **Hayat**, Stadyum, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Dükkan, Formalar, Yatırım, Geçmiş, Teknoloji
 - 🏟️ **Stadyum** sekmesi (3D): Renkler & Mimari, Kapasite & Büyüme, Tribünler & Etkinlik, Bilet Fiyatı, Kozmetik Mağazası + **🏋️ Antrenman Kompleksi (3D)**, **👥 Personel**, **🎓 Akademi & Scout** (eski Tesisler sekmesi buraya taşındı)
-- 🏋️ Antrenman kompleksinde her modülün (saha / fitness / rejenerasyon / taktik / altyapı) üzerine gel → bir üst seviyeyi 3D ön izlemede gör; gelişim, moral, enerji ve sakatlık riski canlı tabloda
-- Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak), ⏭️ Atla
+- 🏋️ Antrenman kompleksinde her modülün (saha / fitness / rejenerasyon / taktik / altyapı) yanındaki **👁️ Ön İzle** tuşuna bas (veya üzerine gel) → bir üst seviyeyi 3D ön izlemede gör; gelişim, moral, enerji ve sakatlık riski canlı tabloda
+- Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak — ekran açıkken simülasyon donar), ⏭️ Atla; kart anında 🐢 yavaş çekim
 - 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
 
 Geliştirme yol haritası ve detaylı analiz: [`GELISTIRME_PLANI.md`](./GELISTIRME_PLANI.md)

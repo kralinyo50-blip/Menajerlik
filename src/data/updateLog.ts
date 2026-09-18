@@ -9,6 +9,26 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.7.0',
+    date: '18 Eyl 2026',
+    tag: 'YENİ',
+    title: '👁️ Ön İzle Tuşu + Daha Ferah Maç Ekranı ve Akıllı Simülasyon',
+    items: [
+      '👁️ Her stadyum seçeneğinin yanında artık gerçek bir "Ön İzle" tuşu var: çatı, tribün mimarisi, çim deseni, bayrak/logo, koltuk & aksan renkleri, kozmetikler, kapasite paketleri, stadyum seviyesi ve tribün yükseltmeleri',
+      '🎥 Tuşa basınca 3D sahne ekranda değilse otomatik olarak yukarı kayar ve değişiklik satın alınmadan 3D’de gösterilir',
+      '🛒 Ön izleme banner’ı: neyi ön izlediğini yazar, tek tıkla "Uygula / Satın Al" veya "✕ Kapat"',
+      '📌 Aşağıda gezinirken kaybolmasın diye ekranın altına sabit ön izleme çubuğu eklendi (3D’yi göster / uygula / kapat)',
+      '🏋️ 3D Antrenman Kompleksi modüllerinde de aynı "👁️ Ön İzle" tuşu — bir üst seviyeyi satın almadan gör, banner’dan yükselt',
+      '🗑️ Maç ekranındaki "ŞUT HARİTASI" (şut sahası) tamamen kaldırıldı — gereksiz yer kaplıyordu',
+      '📏 Maç ekranı kompaktlaştı: istatistikler tek satır çip şeridi, skor tabelası küçüldü, 2D saha ve maç anlatımı daha az yer kaplıyor',
+      '📜 Maç anlatımı artık kapatılıp açılabiliyor (▲ Kapat / ▼ Aç)',
+      '⏸️ Oyuncu değişikliği yaparken simülasyon DONUYOR: dakika sabit kalır, 2D saha durur, ekranda "SİMÜLASYON DONDURULDU" uyarısı çıkar',
+      '▶️ Değişikliği tamamladığında (veya vazgeçtiğinde) maç kaldığı yerden devam ediyor',
+      '🐢 Kart yendiğinde simülasyon yavaş çekime geçiyor (sarı 2.6 sn, çift sarı 3.4 sn, kırmızı 3.6 sn) sonra kendiliğinden normal hızına dönüyor',
+      '🎬 Yavaş çekimde 2D sahadaki oyuncular, top ve animasyonlar da ağırlaşıyor; ekranda "🐢 YAVAŞ ÇEKİM" göstergesi çıkıyor',
+    ],
+  },
+  {
     version: '4.6.0',
     date: 'Eylül 2026',
     tag: 'BÜYÜK',

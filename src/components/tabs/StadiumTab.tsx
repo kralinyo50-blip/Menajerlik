@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign } from '../../types/game';
+import React, { useMemo, useRef, useState } from 'react';
+import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign, StadiumState } from '../../types/game';
 import { Stadium3D } from '../Stadium3D';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
@@ -41,6 +41,98 @@ const SubTabButton: React.FC<{ id: SubTab; icon: string; label: string }> = ({ i
   </span>
 );
 
+/** Kilitli seçenek rozeti */
+const LockBadge: React.FC<{ unlocked: boolean; price: number }> = ({ unlocked, price }) =>
+  unlocked ? null : (
+    <span className="text-[9px] bg-amber-500/25 text-amber-200 px-1.5 py-0.5 rounded">
+      🔒 {formatMoney(price)}
+    </span>
+  );
+
+/** Küçük 👁️ tuşu — renk paleti gibi dar alanlar için */
+const EyeChip: React.FC<{ active: boolean; onToggle: () => void; title?: string }> = ({ active, onToggle, title }) => (
+  <button
+    type="button"
+    onClick={(e) => { e.stopPropagation(); onToggle(); }}
+    title={active ? 'Ön izlemeyi kapat' : title ?? 'Ön izle — 3D sahnede satın almadan gör'}
+    className={`text-[9px] font-black px-1.5 py-0.5 rounded-full border transition-all ${
+      active ? 'bg-amber-400 text-black border-amber-300' : 'bg-slate-800/80 text-slate-300 border-slate-600/60 hover:bg-slate-700 hover:text-white'
+    }`}
+  >
+    {active ? '✕ kapat' : '👁️'}
+  </button>
+);
+
+interface OptionCardProps {
+  active: boolean;
+  unlocked: boolean;
+  price: number;
+  budget: number;
+  icon: string;
+  label: string;
+  desc?: string;
+  /** 👁️ Ön İzle tuşu görünsün mü */
+  hasPreview?: boolean;
+  /** Bu seçenek şu anda 3D sahnede ön izleniyor mu */
+  previewing?: boolean;
+  onClick: () => void;
+  onTogglePreview?: () => void;
+  onHover?: () => void;
+  onHoverEnd?: () => void;
+}
+
+/** Stadyum seçenek kartı — yanında her zaman görünür "👁️ Ön İzle" tuşu ile */
+const OptionCard: React.FC<OptionCardProps> = ({
+  active, unlocked, price, budget, icon, label, desc,
+  hasPreview, previewing, onClick, onTogglePreview, onHover, onHoverEnd
+}) => (
+  <div
+    onMouseEnter={onHover}
+    onMouseLeave={onHoverEnd}
+    className={`relative text-left rounded-xl p-3 border-2 transition-all group ${
+      previewing ? 'bg-amber-500/15 border-amber-400 ring-2 ring-amber-400/30'
+      : active ? 'bg-emerald-500/15 border-emerald-500'
+      : unlocked ? 'bg-slate-700/40 border-slate-700/60 hover:border-emerald-500/60'
+      : budget >= price ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400'
+      : 'bg-slate-800/60 border-slate-700/40 opacity-60'
+    }`}
+  >
+    <button
+      onClick={onClick}
+      disabled={!unlocked && budget < price}
+      className="w-full text-left disabled:cursor-not-allowed"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-white font-bold text-sm">{icon} {label}</span>
+        <LockBadge unlocked={unlocked} price={price} />
+      </div>
+      {desc && <div className="text-[10px] text-slate-400 mt-0.5">{desc}</div>}
+      {!unlocked && (
+        <div className="text-[10px] text-amber-300 mt-1">
+          {budget >= price ? 'Satın almak için tıkla' : `Yetersiz bütçe — ${formatMoney(price - budget)} eksik`}
+        </div>
+      )}
+    </button>
+    {/* 👁️ ÖN İZLE TUŞU — her zaman görünür, basınca 3D sahnede gösterir */}
+    {hasPreview && (
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-[9px] text-slate-500">{previewing ? '3D sahnede gösteriliyor' : 'satın almadan 3D’de gör'}</span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onTogglePreview?.(); }}
+          className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all ${
+            previewing
+              ? 'bg-amber-400 text-black border-amber-300'
+              : 'bg-slate-900/70 text-slate-200 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60 hover:text-amber-200'
+          }`}
+        >
+          {previewing ? '✕ Ön İzlemeyi Kapat' : '👁️ Ön İzle'}
+        </button>
+      </div>
+    )}
+  </div>
+);
+
 export const StadiumTab: React.FC<StadiumTabProps> = ({
   gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent,
   onUpgradeFacilityModule, onHireStaff, onDiscoverYouth, onPromoteYouth,
@@ -50,95 +142,96 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
   const [night, setNight] = useState(true);
   const [cinematic, setCinematic] = useState(false);
 
-  // ── ÖN İZLEME ── hover / göz butonu ile stadyumun nasıl duracağını gör, satın almadan önce
+  /* ══════════ ÖN İZLEME SİSTEMİ ══════════
+     Her seçeneğin yanında "👁️ Ön İzle" tuşu var: basınca değişiklik satın alınmadan
+     3D sahnede gösterilir (sahne ekranda değilse otomatik yukarı kayar), tekrar basınca
+     veya banner'daki ✕ ile kapanır. Banner'dan tek tıkla uygulanır/satın alınır. */
   const [previewDesign, setPreviewDesign] = useState<StadiumDesign | null>(null);
   const [previewBonus, setPreviewBonus] = useState<number | null>(null);
   const [previewVip, setPreviewVip] = useState<boolean | null>(null);
-  const isPreview = previewDesign !== null || previewBonus !== null || previewVip !== null;
+  const [previewTribunes, setPreviewTribunes] = useState<StadiumState['tribunes'] | null>(null);
+  const [previewLevel, setPreviewLevel] = useState<number | null>(null);
+  /** Aktif ön izlemenin kimliği + etiketi + (varsa) tek tıkla uygulama aksiyonu */
+  const [previewInfo, setPreviewInfo] = useState<{ id: string; label: string; applyLabel?: string; onApply?: () => void } | null>(null);
+  /** Tuşla sabitlenmiş ön izleme — hover'lar bunu bozamaz */
+  const pinned = previewInfo !== null;
+  const isPreview = pinned || previewDesign !== null || previewBonus !== null || previewVip !== null || previewTribunes !== null || previewLevel !== null;
 
   const stadium = gameState.stadium;
   const design = stadium.design;
   const displayDesign = previewDesign ?? design;
   const displayBonus = previewBonus ?? stadium.capacityBonus;
   const displayVip = previewVip ?? stadium.vip;
-  const displayStadium = { ...stadium, design: displayDesign, capacityBonus: displayBonus, vip: displayVip } as GameState['stadium'];
+  const displayLevel = previewLevel ?? gameState.stadiumLvl;
+  const displayStadium = {
+    ...stadium,
+    design: displayDesign,
+    capacityBonus: displayBonus,
+    vip: displayVip,
+    tribunes: previewTribunes ?? stadium.tribunes
+  } as GameState['stadium'];
 
   const capacity = stadiumCapacity(gameState);
-  const displayCapacity = stadiumCapacity({ ...gameState, stadium: displayStadium } as GameState);
+  const displayCapacity = stadiumCapacity({ ...gameState, stadiumLvl: displayLevel, stadium: displayStadium } as GameState);
   const baseCapacity = gameState.stadiumLvl * 5000 + 2000;
   const fillRate = Math.min(100, Math.round(((gameState.clubStats.totalAttendance || 0) / Math.max(1, (gameState.clubStats.totalWins || 1) * capacity)) * 100));
-  const preview = useMemo(() => previewHomeMatch({ ...gameState, stadium: displayStadium } as GameState, 3, 'sunny'), [gameState, displayStadium]);
+  const preview = useMemo(() => previewHomeMatch({ ...gameState, stadiumLvl: displayLevel, stadium: displayStadium } as GameState, 3, 'sunny'), [gameState, displayStadium, displayLevel]);
   const upgradeLevelCost = 1200000 * gameState.stadiumLvl;
   const bestTotal = Math.max(...TICKET_STRATEGIES.map(st =>
     previewHomeMatch({ ...gameState, stadium: { ...stadium, ticketMultiplier: st.multiplier } }, 3, 'sunny').total
   ));
 
-  const clearPreview = () => { setPreviewDesign(null); setPreviewBonus(null); setPreviewVip(null); };
-  const patchPreview = (patch: Partial<StadiumDesign>) => {
-    setPreviewDesign(prev => ({ ...(prev ?? design), ...patch }));
+  /** 3D sahne görünürde değilse ön izleme başlayınca oraya kaydır */
+  const sceneRef = useRef<HTMLDivElement | null>(null);
+  const focusScene = () => {
+    const el = sceneRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 8 || r.bottom > window.innerHeight - 8) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-  const bonusPreview = (addedSeats: number) => {
-    const remaining = MAX_CAPACITY - capacity;
-    const added = Math.min(addedSeats, remaining);
-    setPreviewBonus(stadium.capacityBonus + added);
+
+  interface PreviewPatch {
+    id: string;
+    label: string;
+    design?: Partial<StadiumDesign>;
+    bonus?: number;
+    vip?: boolean;
+    tribunes?: StadiumState['tribunes'];
+    level?: number;
+    applyLabel?: string;
+    onApply?: () => void;
+  }
+
+  const applyPatch = (p: PreviewPatch) => {
+    if (p.design) setPreviewDesign(prev => ({ ...(prev ?? design), ...p.design }));
+    if (p.bonus !== undefined) setPreviewBonus(p.bonus);
+    if (p.vip !== undefined) setPreviewVip(p.vip);
+    if (p.tribunes !== undefined) setPreviewTribunes(p.tribunes);
+    if (p.level !== undefined) setPreviewLevel(p.level);
   };
+
+  const resetPreviewValues = () => {
+    setPreviewDesign(null); setPreviewBonus(null); setPreviewVip(null);
+    setPreviewTribunes(null); setPreviewLevel(null);
+  };
+
+  const clearPreview = () => { resetPreviewValues(); setPreviewInfo(null); };
+
+  /** 👁️ Ön İzle tuşu — bas: 3D'de göster, tekrar bas: kapat */
+  const togglePreview = (p: PreviewPatch) => {
+    if (previewInfo?.id === p.id) { clearPreview(); return; }
+    resetPreviewValues();
+    applyPatch(p);
+    setPreviewInfo({ id: p.id, label: p.label, applyLabel: p.applyLabel, onApply: p.onApply });
+    focusScene();
+  };
+
+  /** Fare üzerine gelince ön izleme — yalnızca sabitlenmiş bir ön izleme yoksa */
+  const hoverPreview = (p: PreviewPatch) => { if (!pinned) applyPatch(p); };
+  const hoverEnd = () => { if (!pinned) resetPreviewValues(); };
 
   const isRainy = ['rain', 'storm', 'snow'].includes(gameState.weather);
   const roofProtects = displayDesign.roof === 'full' || displayDesign.roof === 'glass';
-
-  const lockBadge = (unlocked: boolean, price: number) =>
-    unlocked ? null : (
-      <span className="text-[9px] bg-amber-500/25 text-amber-200 px-1.5 py-0.5 rounded">
-        🔒 {formatMoney(price)}
-      </span>
-    );
-
-  const OptionCard: React.FC<{
-    active: boolean;
-    unlocked: boolean;
-    price: number;
-    icon: string;
-    label: string;
-    desc?: string;
-    onClick: () => void;
-    onPreview?: () => void;
-    onPreviewEnd?: () => void;
-  }> = ({ active, unlocked, price, icon, label, desc, onClick, onPreview, onPreviewEnd }) => (
-    <div
-      onMouseEnter={onPreview}
-      onMouseLeave={onPreviewEnd}
-      className={`relative text-left rounded-xl p-3 border-2 transition-all group ${
-        active ? 'bg-emerald-500/15 border-emerald-500'
-        : unlocked ? 'bg-slate-700/40 border-slate-700/60 hover:border-emerald-500/60'
-        : gameState.budget >= price ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400'
-        : 'bg-slate-800/60 border-slate-700/40 opacity-60'
-      }`}
-    >
-      <button
-        onClick={onClick}
-        disabled={!unlocked && gameState.budget < price}
-        className="w-full text-left disabled:cursor-not-allowed"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-white font-bold text-sm">{icon} {label}</span>
-          {lockBadge(unlocked, price)}
-        </div>
-        {desc && <div className="text-[10px] text-slate-400 mt-0.5">{desc}</div>}
-        {!unlocked && (
-          <div className="text-[10px] text-amber-300 mt-1">
-            {gameState.budget >= price ? 'Satın almak için tıkla' : `Yetersiz bütçe — ${formatMoney(price - gameState.budget)} eksik`}
-          </div>
-        )}
-      </button>
-      {onPreview && (
-        <button
-          onClick={onPreview}
-          title="Ön izle — nasıl duracağını gör"
-          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-900/70 hover:bg-slate-700 border border-slate-600 flex items-center justify-center text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
-        >👁️</button>
-      )}
-    </div>
-  );
 
   return (
     <div className="h-full overflow-y-auto">
@@ -169,8 +262,8 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
           </div>
         </div>
 
-        {/* 3D sahne */}
-        <div className="relative">
+        {/* 3D sahne — 👁️ Ön İzle tuşuna basınca burası gösterilir */}
+        <div className="relative scroll-mt-3" ref={sceneRef}>
           <Stadium3D
             design={displayDesign}
             capacity={displayCapacity}
@@ -236,11 +329,22 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             {displayVip && ' • 🥂 VIP'}
             {isPreview && <span className="ml-2 text-amber-300">👁️ ön izleme</span>}
           </div>
-          {/* ÖN İZLEME banner */}
+          {/* ÖN İZLEME banner — neyin ön izlendiğini söyler, tek tıkla uygular/satın alır */}
           {isPreview && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-4 py-2 rounded-full text-xs font-black shadow-lg flex items-center gap-3">
-              <span>👁️ ÖN İZLEME — satın almadan önce görünüm</span>
-              <button onClick={clearPreview} className="bg-black text-white px-3 py-1 rounded-full text-xs">✕ Kapat</button>
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 max-w-[94%] bg-amber-500 text-black px-3 py-2 rounded-2xl text-[11px] font-black shadow-lg flex items-center gap-2 flex-wrap justify-center">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />
+                👁️ ÖN İZLEME{previewInfo ? `: ${previewInfo.label}` : ' — satın almadan görünüm'}
+              </span>
+              {previewInfo?.onApply && (
+                <button
+                  onClick={() => { const fn = previewInfo.onApply; clearPreview(); fn?.(); }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-full text-[11px] font-black"
+                >
+                  {previewInfo.applyLabel ?? '✓ Uygula'}
+                </button>
+              )}
+              <button onClick={clearPreview} className="bg-black hover:bg-slate-800 text-white px-3 py-1 rounded-full text-[11px]">✕ Kapat</button>
             </div>
           )}
         </div>
@@ -275,7 +379,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
           <div className="absolute inset-0 pointer-events-none opacity-[0.04]" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent 0px, transparent 2px, white 2px, white 3px)' }} />
         </div>
         <div className="text-[11px] text-slate-400 px-1">
-          💡 <b>İpucu:</b> Bir seçeneğin üzerine <b>gelince</b> veya <b>👁️</b> ikonuna basınca stadyumun nasıl duracağını anında 3D'de görürsün. Satın almadan önce gece/gündüz ve sinematik ile kontrol et.
+          💡 <b>İpucu:</b> Her seçeneğin yanındaki <b className="text-amber-300">👁️ Ön İzle</b> tuşuna bas — değişiklik anında yukarıdaki 3D sahnede gösterilir (gerekirse ekran otomatik kayar), ama <b>satın alınmaz</b>. Beğenirsen sarı banner’dan <b>uygula/satın al</b>, beğenmezsen <b>✕ Kapat</b>. Gece/gündüz ve 🎬 sinematik ile de kontrol edebilirsin.
         </div>
 
         {/* Alt sekmeler — iki grup: stadyum & tesisler */}
@@ -318,78 +422,118 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
         {sub === 'design' && (
           <div className="space-y-4">
             <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-emerald-400 mb-3">🎨 Tribün Koltuk Rengi <span className="text-[10px] font-normal text-slate-400">— üzerine gel → ön izleme</span></h3>
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <h3 className="text-sm font-bold text-emerald-400">🎨 Tribün Koltuk Rengi</h3>
+                <span className="text-[10px] text-slate-400">renge tıkla → uygula • <b className="text-amber-300">👁️ Ön İzle</b> → satın almadan 3D gör</span>
+              </div>
               <div className="flex flex-wrap gap-2">
-                {FREE_SEAT_COLORS.map(hex => (
-                  <button
-                    key={hex}
-                    onClick={() => { onSetDesign({ seatColor: hex }); clearPreview(); }}
-                    onMouseEnter={() => patchPreview({ seatColor: hex })}
-                    onMouseLeave={() => setPreviewDesign(d => d?.seatColor === hex ? null : d)}
-                    onFocus={() => patchPreview({ seatColor: hex })}
-                    style={{ background: hex }}
-                    className={`w-11 h-11 rounded-xl border-4 transition-all ${displayDesign.seatColor === hex ? 'border-white scale-110' : 'border-slate-600/60 hover:scale-105'}`}
-                    title={`${hex} — ön izle`}
-                  />
-                ))}
+                {FREE_SEAT_COLORS.map(hex => {
+                  const patch: PreviewPatch = {
+                    id: `seat:${hex}`,
+                    label: `Koltuk rengi ${hex}`,
+                    design: { seatColor: hex },
+                    applyLabel: '✓ Rengi Uygula',
+                    onApply: () => onSetDesign({ seatColor: hex })
+                  };
+                  return (
+                  <div key={hex} className="flex flex-col items-center gap-1">
+                    <button
+                      onClick={() => { onSetDesign({ seatColor: hex }); clearPreview(); }}
+                      onMouseEnter={() => hoverPreview(patch)}
+                      onMouseLeave={hoverEnd}
+                      style={{ background: hex }}
+                      className={`w-11 h-11 rounded-xl border-4 transition-all ${displayDesign.seatColor === hex && !pinned ? 'border-white scale-110' : displayDesign.seatColor === hex ? 'border-amber-400 scale-110' : 'border-slate-600/60 hover:scale-105'}`}
+                      title={`${hex} — uygula`}
+                    />
+                    <EyeChip active={previewInfo?.id === patch.id} onToggle={() => togglePreview(patch)} />
+                  </div>
+                  );
+                })}
                 {PREMIUM_COLORS.map(c => {
                   const unlocked = isUnlocked(stadium, c.id);
-                  const isPreviewed = displayDesign.seatColor === c.hex && isPreview;
+                  const patch: PreviewPatch = {
+                    id: `seat:${c.hex}`,
+                    label: `${c.label} • ${c.hex}`,
+                    design: { seatColor: c.hex },
+                    applyLabel: unlocked ? '✓ Rengi Uygula' : `💰 Satın Al — ${formatMoney(c.price)}`,
+                    onApply: unlocked ? () => onSetDesign({ seatColor: c.hex }) : () => onBuyCosmetic(c.id)
+                  };
                   return (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        if (unlocked) { onSetDesign({ seatColor: c.hex }); clearPreview(); }
-                        else { patchPreview({ seatColor: c.hex }); }
-                      }}
-                      onMouseEnter={() => patchPreview({ seatColor: c.hex })}
-                      onMouseLeave={() => { if (previewDesign?.seatColor === c.hex) setPreviewDesign(null); }}
-                      style={{ background: c.hex }}
-                      className={`relative w-11 h-11 rounded-xl border-4 transition-all ${
-                        displayDesign.seatColor === c.hex ? (isPreviewed ? 'border-amber-400 scale-110 ring-2 ring-amber-400/40' : 'border-white scale-110')
-                        : unlocked ? 'border-slate-600/60 hover:scale-105' : 'border-amber-500/60 hover:scale-105'
-                      }`}
-                      title={unlocked ? `${c.label} — ön izle / uygula` : `${c.label} — ${formatMoney(c.price)} — ön izle`}
-                    >
-                      {!unlocked && <span className="absolute inset-0 flex items-center justify-center text-xs">🔒</span>}
-                    </button>
+                    <div key={c.id} className="flex flex-col items-center gap-1">
+                      <button
+                        onClick={() => { if (unlocked) { onSetDesign({ seatColor: c.hex }); clearPreview(); } else { togglePreview(patch); } }}
+                        onMouseEnter={() => hoverPreview(patch)}
+                        onMouseLeave={hoverEnd}
+                        style={{ background: c.hex }}
+                        className={`relative w-11 h-11 rounded-xl border-4 transition-all ${
+                          displayDesign.seatColor === c.hex ? 'border-amber-400 scale-110 ring-2 ring-amber-400/40'
+                          : unlocked ? 'border-slate-600/60 hover:scale-105' : 'border-amber-500/60 hover:scale-105'
+                        }`}
+                        title={unlocked ? `${c.label} — uygula` : `${c.label} — ${formatMoney(c.price)} — ön izle`}
+                      >
+                        {!unlocked && <span className="absolute inset-0 flex items-center justify-center text-xs">🔒</span>}
+                      </button>
+                      <EyeChip active={previewInfo?.id === patch.id} onToggle={() => togglePreview(patch)} />
+                    </div>
                   );
                 })}
               </div>
               <div className="text-[11px] text-slate-400 mt-2">
-                🔒 işaretli renkler ön izlemede görünür; satın alınca kalıcı olur. Kilitli renge tıkla → ön izle, sonra mağazadan satın al.
+                👁️ tuşuna bas → renk 3D stadyumda gösterilir ama <b>satın alınmaz</b>. Üstteki banner’dan <b>uygula / satın al</b> ya da <b>✕ kapat</b>.
               </div>
             </div>
 
             <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-cyan-400 mb-3">✨ Aksan Rengi (çatı kenarı, bayrak, LED pano) <span className="text-[10px] font-normal text-slate-400">— üzerine gel → ön izleme</span></h3>
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <h3 className="text-sm font-bold text-cyan-400">✨ Aksan Rengi <span className="text-[10px] font-normal text-slate-400">(çatı kenarı, bayrak, LED pano)</span></h3>
+                <span className="text-[10px] text-slate-400"><b className="text-amber-300">👁️ Ön İzle</b> ile önce gör, sonra uygula</span>
+              </div>
               <div className="flex flex-wrap gap-2">
-                {FREE_ACCENT_COLORS.map(hex => (
-                  <button
-                    key={hex}
-                    onClick={() => { onSetDesign({ accentColor: hex }); clearPreview(); }}
-                    onMouseEnter={() => patchPreview({ accentColor: hex })}
-                    onMouseLeave={() => setPreviewDesign(d => d?.accentColor === hex ? null : d)}
-                    style={{ background: hex }}
-                    className={`w-10 h-10 rounded-xl border-4 transition-all ${displayDesign.accentColor === hex ? 'border-white scale-110' : 'border-slate-600/60 hover:scale-105'}`}
-                    title={hex}
-                  />
-                ))}
+                {FREE_ACCENT_COLORS.map(hex => {
+                  const patch: PreviewPatch = {
+                    id: `accent:${hex}`,
+                    label: `Aksan rengi ${hex}`,
+                    design: { accentColor: hex },
+                    applyLabel: '✓ Rengi Uygula',
+                    onApply: () => onSetDesign({ accentColor: hex })
+                  };
+                  return (
+                  <div key={hex} className="flex flex-col items-center gap-1">
+                    <button
+                      onClick={() => { onSetDesign({ accentColor: hex }); clearPreview(); }}
+                      onMouseEnter={() => hoverPreview(patch)}
+                      onMouseLeave={hoverEnd}
+                      style={{ background: hex }}
+                      className={`w-10 h-10 rounded-xl border-4 transition-all ${displayDesign.accentColor === hex && !pinned ? 'border-white scale-110' : displayDesign.accentColor === hex ? 'border-amber-400 scale-110' : 'border-slate-600/60 hover:scale-105'}`}
+                      title={hex}
+                    />
+                    <EyeChip active={previewInfo?.id === patch.id} onToggle={() => togglePreview(patch)} />
+                  </div>
+                  );
+                })}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-                <h3 className="text-sm font-bold text-white mb-3">🏠 Çatı Tipi</h3>
+                <h3 className="text-sm font-bold text-white mb-1">🏠 Çatı Tipi</h3>
+                <p className="text-[10px] text-slate-400 mb-3">Her satırda <b className="text-amber-300">👁️ Ön İzle</b> tuşu var — basınca 3D sahnede görünür.</p>
                 <div className="space-y-2">
                   {(['none', 'canopy', 'full', 'glass'] as RoofStyle[]).map(roof => {
                     const id = `roof:${roof}`;
                     const unlocked = roof === 'none' || isUnlocked(stadium, id);
                     const option = COSMETICS.find(c => c.id === id);
+                    const patch: PreviewPatch = {
+                      id: `preview:${id}`,
+                      label: `${ROOF_LABEL[roof]} çatı`,
+                      design: { roof },
+                      applyLabel: unlocked ? '✓ Çatıyı Uygula' : `💰 Satın Al — ${formatMoney(option?.price ?? 0)}`,
+                      onApply: unlocked ? () => onSetDesign({ roof }) : () => onBuyCosmetic(id)
+                    };
                     return (
                       <OptionCard
                         key={roof}
-                        active={displayDesign.roof === roof && !isPreview}
+                        active={displayDesign.roof === roof && !pinned}
                         unlocked={unlocked}
                         price={option?.price ?? 0}
                         icon={roof === 'none' ? '🚫' : roof === 'canopy' ? '🏠' : roof === 'full' ? '🏟️' : '💎'}
@@ -399,10 +543,14 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                           : `${option?.desc} — kötü havada kaybın %${Math.round((ROOF_PROTECTION[roof] / 0.25) * 20 * 0.8)}'i telafi edilir`}
                         onClick={() => {
                           if (unlocked) { onSetDesign({ roof }); clearPreview(); }
-                          else { patchPreview({ roof }); }
+                          else { togglePreview(patch); }
                         }}
-                        onPreview={() => patchPreview({ roof })}
-                        onPreviewEnd={() => setPreviewDesign(d => d?.roof === roof ? null : d)}
+                        budget={gameState.budget}
+                        hasPreview
+                        previewing={previewInfo?.id === patch.id}
+                        onTogglePreview={() => togglePreview(patch)}
+                        onHover={() => hoverPreview(patch)}
+                        onHoverEnd={hoverEnd}
                       />
                     );
                   })}
@@ -410,16 +558,24 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
               </div>
 
               <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-                <h3 className="text-sm font-bold text-white mb-3">🏗️ Tribün Mimarisi</h3>
+                <h3 className="text-sm font-bold text-white mb-1">🏗️ Tribün Mimarisi</h3>
+                <p className="text-[10px] text-slate-400 mb-3">Önce <b className="text-amber-300">👁️ Ön İzle</b>, beğenirsen banner’dan uygula/satın al.</p>
                 <div className="space-y-2">
                   {(['classic', 'stepped', 'double', 'bowl'] as StandStyle[]).map(stand => {
                     const id = `stands:${stand}`;
                     const unlocked = stand === 'classic' || isUnlocked(stadium, id);
                     const option = COSMETICS.find(c => c.id === id);
+                    const patch: PreviewPatch = {
+                      id: `preview:${id}`,
+                      label: `${STAND_LABEL[stand]} tribün`,
+                      design: { stands: stand },
+                      applyLabel: unlocked ? '✓ Mimariyi Uygula' : `💰 Satın Al — ${formatMoney(option?.price ?? 0)}`,
+                      onApply: unlocked ? () => onSetDesign({ stands: stand }) : () => onBuyCosmetic(id)
+                    };
                     return (
                       <OptionCard
                         key={stand}
-                        active={displayDesign.stands === stand && !isPreview}
+                        active={displayDesign.stands === stand && !pinned}
                         unlocked={unlocked}
                         price={option?.price ?? 0}
                         icon={stand === 'classic' ? '🪑' : stand === 'stepped' ? '📐' : stand === 'double' ? '🏢' : '🥣'}
@@ -427,10 +583,14 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                         desc={option?.desc ?? 'Standart tek kat tribün'}
                         onClick={() => {
                           if (unlocked) { onSetDesign({ stands: stand }); clearPreview(); }
-                          else { patchPreview({ stands: stand }); }
+                          else { togglePreview(patch); }
                         }}
-                        onPreview={() => patchPreview({ stands: stand })}
-                        onPreviewEnd={() => setPreviewDesign(d => d?.stands === stand ? null : d)}
+                        budget={gameState.budget}
+                        hasPreview
+                        previewing={previewInfo?.id === patch.id}
+                        onTogglePreview={() => togglePreview(patch)}
+                        onHover={() => hoverPreview(patch)}
+                        onHoverEnd={hoverEnd}
                       />
                     );
                   })}
@@ -445,10 +605,17 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                   const id = `pitch:${pattern}`;
                   const unlocked = isUnlocked(stadium, id);
                   const option = COSMETICS.find(c => c.id === id);
+                  const patch: PreviewPatch = {
+                    id: `preview:${id}`,
+                    label: `${PITCH_LABEL[pattern]} çim`,
+                    design: { pitchPattern: pattern },
+                    applyLabel: unlocked ? '✓ Çimi Uygula' : `💰 Satın Al — ${formatMoney(option?.price ?? 0)}`,
+                    onApply: unlocked ? () => onSetDesign({ pitchPattern: pattern }) : () => onBuyCosmetic(id)
+                  };
                   return (
                     <OptionCard
                       key={pattern}
-                      active={displayDesign.pitchPattern === pattern && !isPreview}
+                      active={displayDesign.pitchPattern === pattern && !pinned}
                       unlocked={unlocked}
                       price={option?.price ?? 0}
                       icon={pattern === 'stripes' ? '🟩' : pattern === 'rings' ? '🎯' : '🟢'}
@@ -456,10 +623,14 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                       desc={option?.desc}
                       onClick={() => {
                         if (unlocked) { onSetDesign({ pitchPattern: pattern }); clearPreview(); }
-                        else { patchPreview({ pitchPattern: pattern }); }
+                        else { togglePreview(patch); }
                       }}
-                      onPreview={() => patchPreview({ pitchPattern: pattern })}
-                      onPreviewEnd={() => setPreviewDesign(d => d?.pitchPattern === pattern ? null : d)}
+                      budget={gameState.budget}
+                      hasPreview
+                      previewing={previewInfo?.id === patch.id}
+                      onTogglePreview={() => togglePreview(patch)}
+                      onHover={() => hoverPreview(patch)}
+                      onHoverEnd={hoverEnd}
                     />
                   );
                 })}
@@ -468,37 +639,50 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                 {(['flags', 'logoPitch'] as const).map(key => {
                   const option = COSMETICS.find(c => c.id === key)!;
                   const unlocked = isUnlocked(stadium, key);
+                  const realActive = key === 'flags' ? design.flags : design.logoOnPitch;
                   const active = key === 'flags' ? displayDesign.flags : displayDesign.logoOnPitch;
-                  const nextVal = !active;
-                  const isPrev = isPreview && active !== design[key as keyof StadiumDesign];
+                  const patch: PreviewPatch = {
+                    id: `preview:${key}`,
+                    label: option.label,
+                    design: key === 'flags' ? { flags: !realActive } : { logoOnPitch: !realActive },
+                    applyLabel: unlocked ? (realActive ? '✓ Kapat (uygula)' : '✓ Aç (uygula)') : `💰 Satın Al — ${formatMoney(option.price)}`,
+                    onApply: unlocked
+                      ? () => onSetDesign(key === 'flags' ? { flags: !realActive } : { logoOnPitch: !realActive })
+                      : () => onBuyCosmetic(key)
+                  };
                   return (
                     <div
                       key={key}
-                      onMouseEnter={() => patchPreview(key === 'flags' ? { flags: nextVal } : { logoOnPitch: nextVal })}
-                      onMouseLeave={() => setPreviewDesign(d => {
-                        if (!d) return d;
-                        // revert only if we were previewing this toggle
-                        if (key === 'flags' && d.flags === nextVal) return { ...d, flags: design.flags };
-                        if (key === 'logoPitch' && d.logoOnPitch === nextVal) return { ...d, logoOnPitch: design.logoOnPitch };
-                        return d;
-                      })}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-2 ${
-                        active ? (isPrev ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-emerald-500/20 border-emerald-500 text-emerald-300')
+                      onMouseEnter={() => hoverPreview(patch)}
+                      onMouseLeave={hoverEnd}
+                      className={`px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all flex items-center gap-3 ${
+                        previewInfo?.id === patch.id ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                        : active ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
                         : unlocked ? 'bg-slate-700/40 border-slate-600 text-slate-200'
                         : 'bg-amber-500/10 border-amber-500/40 text-amber-200'
                       }`}
                     >
                       <button
                         onClick={() => {
-                          if (!unlocked) { patchPreview(key === 'flags' ? { flags: true } : { logoOnPitch: true }); return; }
+                          if (!unlocked) { togglePreview(patch); return; }
                           onSetDesign(key === 'flags' ? { flags: !active } : { logoOnPitch: !active });
                           clearPreview();
                         }}
                         className="font-bold"
                       >
-                        {option.icon} {option.label} {active ? (isPrev ? '👁️' : '✓') : unlocked ? '— ön izle' : `🔒 ${formatMoney(option.price)}`}
+                        {option.icon} {option.label} {active ? '✓' : unlocked ? '— aç/kapat' : `🔒 ${formatMoney(option.price)}`}
                       </button>
-                      <span className="text-[10px] opacity-60">üzerine gel → ön izle</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); togglePreview(patch); }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all ${
+                          previewInfo?.id === patch.id
+                            ? 'bg-amber-400 text-black border-amber-300'
+                            : 'bg-slate-900/70 text-slate-200 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60 hover:text-amber-200'
+                        }`}
+                      >
+                        {previewInfo?.id === patch.id ? '✕ Ön İzlemeyi Kapat' : '👁️ Ön İzle'}
+                      </button>
                     </div>
                   );
                 })}
@@ -518,43 +702,59 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
               <div className="h-4 bg-slate-700 rounded-full overflow-hidden flex">
                 <div className="h-full bg-emerald-500" style={{ width: `${(baseCapacity / MAX_CAPACITY) * 100}%` }} title="Temel kapasite" />
                 <div className="h-full bg-amber-400" style={{ width: `${((capacity - baseCapacity) / MAX_CAPACITY) * 100}%` }} title="Satın alınan ek koltuklar" />
-                {isPreview && previewBonus !== null && previewBonus > stadium.capacityBonus && (
-                  <div className="h-full bg-amber-300/60 border-l-2 border-amber-200" style={{ width: `${((previewBonus - stadium.capacityBonus) / MAX_CAPACITY) * 100}%` }} title="Ön izleme" />
+                {isPreview && displayCapacity > capacity && (
+                  <div className="h-full bg-amber-300/70 border-l-2 border-amber-200" style={{ width: `${((displayCapacity - capacity) / MAX_CAPACITY) * 100}%` }} title="👁️ Ön izleme — eklenecek koltuklar" />
                 )}
               </div>
               <div className="flex gap-4 text-[11px] mt-2 text-slate-400 flex-wrap">
                 <span>🟩 Temel (seviye {gameState.stadiumLvl}): {baseCapacity.toLocaleString()}</span>
                 <span>🟨 Ek koltuk: {(capacity - baseCapacity).toLocaleString()}</span>
-                {isPreview && previewBonus !== null && <span className="text-amber-300">👁️ Ön izleme ek: +{(previewBonus - stadium.capacityBonus).toLocaleString()}</span>}
+                {isPreview && displayCapacity !== capacity && <span className="text-amber-300">👁️ Ön izleme: {displayCapacity > capacity ? '+' : ''}{(displayCapacity - capacity).toLocaleString()} koltuk → {displayCapacity.toLocaleString()}</span>}
                 <span>Doluluk geçmişi: %{fillRate}</span>
               </div>
             </div>
 
-            <div
-              onMouseEnter={() => setPreviewBonus(stadium.capacityBonus + 5000 > MAX_CAPACITY - baseCapacity ? stadium.capacityBonus : stadium.capacityBonus)}
-              className="bg-gradient-to-r from-blue-900/40 to-slate-800/50 rounded-2xl border border-blue-500/30 p-4 flex items-center justify-between flex-wrap gap-3"
-            >
+            {/* Seviye yükseltme — 👁️ Ön İzle ile tribünlerin nasıl büyüdüğünü gör */}
+            <div className="bg-gradient-to-r from-blue-900/40 to-slate-800/50 rounded-2xl border border-blue-500/30 p-4 flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h3 className="text-sm font-bold text-blue-300">⬆️ Stadyum Seviyesi Yükselt — üzerine gel → tribün büyümesini ön izle</h3>
+                <h3 className="text-sm font-bold text-blue-300">⬆️ Stadyum Seviyesi Yükselt</h3>
                 <p className="text-[11px] text-slate-300">
                   Seviye {gameState.stadiumLvl} → {gameState.stadiumLvl + 1} • +5.000 koltuk kapasiteli yeni tribün katı
                 </p>
               </div>
-              <button
-                disabled={gameState.budget < upgradeLevelCost || capacity >= MAX_CAPACITY}
-                onClick={() => { onUpgradeStadiumLevel(upgradeLevelCost); clearPreview(); }}
-                onMouseEnter={() => {
-                  if (capacity < MAX_CAPACITY) setPreviewBonus(Math.min(MAX_CAPACITY - baseCapacity, stadium.capacityBonus + 5000));
-                }}
-                onMouseLeave={() => setPreviewBonus(null)}
-                className={`px-5 py-3 rounded-xl font-bold text-sm transition-all ${
-                  gameState.budget >= upgradeLevelCost && capacity < MAX_CAPACITY
-                    ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                🏗️ Yükselt — {formatMoney(upgradeLevelCost)}
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => togglePreview({
+                    id: 'preview:level',
+                    label: `Seviye ${gameState.stadiumLvl + 1} stadyum (+5.000 koltuk)`,
+                    level: gameState.stadiumLvl + 1,
+                    applyLabel: `🏗️ Yükselt — ${formatMoney(upgradeLevelCost)}`,
+                    onApply: () => onUpgradeStadiumLevel(upgradeLevelCost)
+                  })}
+                  disabled={capacity >= MAX_CAPACITY}
+                  className={`px-4 py-3 rounded-xl font-black text-xs border transition-all ${
+                    previewInfo?.id === 'preview:level'
+                      ? 'bg-amber-400 text-black border-amber-300'
+                      : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {previewInfo?.id === 'preview:level' ? '✕ Ön İzlemeyi Kapat' : '👁️ Ön İzle'}
+                </button>
+                <button
+                  disabled={gameState.budget < upgradeLevelCost || capacity >= MAX_CAPACITY}
+                  onClick={() => { onUpgradeStadiumLevel(upgradeLevelCost); clearPreview(); }}
+                  onMouseEnter={() => hoverPreview({ id: 'preview:level', label: `Seviye ${gameState.stadiumLvl + 1} stadyum`, level: gameState.stadiumLvl + 1 })}
+                  onMouseLeave={hoverEnd}
+                  className={`px-5 py-3 rounded-xl font-bold text-sm transition-all ${
+                    gameState.budget >= upgradeLevelCost && capacity < MAX_CAPACITY
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                      : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  🏗️ Yükselt — {formatMoney(upgradeLevelCost)}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -562,30 +762,52 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                 const remaining = MAX_CAPACITY - capacity;
                 const canBuy = gameState.budget >= pack.price && remaining > 0;
                 const added = Math.min(pack.seats, remaining);
+                const patch: PreviewPatch = {
+                  id: `preview:${pack.id}`,
+                  label: `${pack.label} → kapasite ${(capacity + added).toLocaleString()}`,
+                  bonus: stadium.capacityBonus + added,
+                  applyLabel: canBuy ? `🏗️ Satın Al — ${formatMoney(pack.price)}` : undefined,
+                  onApply: canBuy ? () => onBuyCapacity(pack.id) : undefined
+                };
+                const previewing = previewInfo?.id === patch.id;
                 return (
                   <div
                     key={pack.id}
-                    onMouseEnter={() => bonusPreview(pack.seats)}
-                    onMouseLeave={() => setPreviewBonus(null)}
-                    className={`rounded-2xl border p-4 transition-all ${previewBonus !== null && displayCapacity === capacity + added ? 'border-amber-400 bg-amber-500/10' : 'bg-slate-800/50 border-slate-700/50'}`}
+                    onMouseEnter={() => hoverPreview(patch)}
+                    onMouseLeave={hoverEnd}
+                    className={`rounded-2xl border p-4 transition-all ${previewing ? 'border-amber-400 bg-amber-500/10' : 'bg-slate-800/50 border-slate-700/50'}`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-white font-bold">🏗️ {pack.label} <span className="text-[10px] text-slate-400">— üzerine gel → ön izle</span></span>
+                      <span className="text-white font-bold">🏗️ {pack.label}</span>
                       <span className="text-amber-400 font-black">{formatMoney(pack.price)}</span>
                     </div>
                     <div className="text-[11px] text-slate-400 mb-2">
                       {added.toLocaleString()} koltuk eklenir → yeni kapasite {(capacity + added).toLocaleString()}
-                      {isPreview && previewBonus !== null && <span className="text-amber-300"> • ön izlemede {(displayCapacity).toLocaleString()}</span>}
+                      {previewing && <span className="text-amber-300"> • 3D ön izlemede {displayCapacity.toLocaleString()}</span>}
                     </div>
-                    <button
-                      disabled={!canBuy}
-                      onClick={() => { onBuyCapacity(pack.id); clearPreview(); }}
-                      className={`w-full py-2 rounded-xl text-xs font-bold transition-all ${
-                        canBuy ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      {remaining <= 0 ? 'Maksimum kapasiteye ulaşıldı' : canBuy ? 'Koltukları ekle' : 'Bütçe yetersiz'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        disabled={!canBuy}
+                        onClick={() => { onBuyCapacity(pack.id); clearPreview(); }}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                          canBuy ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {remaining <= 0 ? 'Maksimum kapasite' : canBuy ? 'Koltukları ekle' : 'Bütçe yetersiz'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePreview(patch)}
+                        disabled={remaining <= 0}
+                        className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                          previewing
+                            ? 'bg-amber-400 text-black border-amber-300'
+                            : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                        }`}
+                      >
+                        {previewing ? '✕ Kapat' : '👁️ Ön İzle'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -627,8 +849,21 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                   const basePrice: Record<string, number> = { north: 650000, south: 650000, east: 850000, west: 900000 };
                   const cost = Math.round((basePrice[tri.id]||650000) * (0.9 + lvl*0.35));
                   const seats = tri.baseSeats;
+                  const triPatch: PreviewPatch = {
+                    id: `preview:tribune:${tri.id}`,
+                    label: `${tri.name} → Seviye ${lvl + 1} (+${seats.toLocaleString()} koltuk)`,
+                    tribunes: { ...(stadium.tribunes ?? { north: 1, south: 1, east: 1, west: 1 }), [tri.id]: Math.min(5, lvl + 1) },
+                    applyLabel: gameState.budget >= cost ? `⬆️ Yükselt — ${formatMoney(cost)}` : undefined,
+                    onApply: gameState.budget >= cost ? () => onUpgradeTribune?.(tri.id) : undefined
+                  };
+                  const triPreviewing = previewInfo?.id === triPatch.id;
                   return (
-                    <div key={tri.id} className="bg-slate-700/40 rounded-xl p-3 border border-slate-600/30">
+                    <div
+                      key={tri.id}
+                      onMouseEnter={() => !isMax && hoverPreview(triPatch)}
+                      onMouseLeave={hoverEnd}
+                      className={`bg-slate-700/40 rounded-xl p-3 border transition-all ${triPreviewing ? 'border-amber-400 bg-amber-500/10' : 'border-slate-600/30'}`}
+                    >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">{tri.icon}</span>
@@ -643,9 +878,25 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                         <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full" style={{width: `${(lvl/5)*100}%`}} />
                       </div>
                       <div className="text-[11px] text-slate-300 mb-2">+{seats.toLocaleString()} koltuk / seviye • Toplam: {(stadiumCapacity(gameState)- (gameState.stadiumLvl*5000+2000) - (gameState.stadium?.capacityBonus||0)).toLocaleString()} tribün koltuğu</div>
-                      <button disabled={isMax || gameState.budget < cost} onClick={()=> onUpgradeTribune?.(tri.id as any)} className={`w-full py-2 rounded-lg text-xs font-bold ${isMax?'bg-slate-700 text-slate-400 cursor-not-allowed': gameState.budget>=cost?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-slate-700 text-slate-400 cursor-not-allowed'}`}>
-                        {isMax ? 'Maks seviye (5/5)' : `Yükselt Seviye ${lvl+1} — ${cost.toLocaleString()} $`}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button disabled={isMax || gameState.budget < cost} onClick={()=> { onUpgradeTribune?.(tri.id as any); clearPreview(); }} className={`flex-1 py-2 rounded-lg text-xs font-bold ${isMax?'bg-slate-700 text-slate-400 cursor-not-allowed': gameState.budget>=cost?'bg-emerald-600 hover:bg-emerald-500 text-white':'bg-slate-700 text-slate-400 cursor-not-allowed'}`}>
+                          {isMax ? 'Maks seviye (5/5)' : `Yükselt Seviye ${lvl+1} — ${cost.toLocaleString()} $`}
+                        </button>
+                        {!isMax && (
+                          <button
+                            type="button"
+                            onClick={() => togglePreview(triPatch)}
+                            className={`shrink-0 px-3 py-2 rounded-lg text-[11px] font-black border transition-all ${
+                              triPreviewing
+                                ? 'bg-amber-400 text-black border-amber-300'
+                                : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                            }`}
+                            title="Tribünün büyümüş halini 3D sahnede gör"
+                          >
+                            {triPreviewing ? '✕ Kapat' : '👁️ Ön İzle'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -733,16 +984,17 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
         {sub === 'shop' && (
           <div className="space-y-3">
             <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-emerald-400 mb-1">🛍️ Stadyum Kozmetikleri <span className="text-[10px] font-normal text-slate-400">— üzerine gel → ön izle</span></h3>
+              <h3 className="text-sm font-bold text-emerald-400 mb-1">🛍️ Stadyum Kozmetikleri</h3>
               <div className="text-[11px] text-slate-400 mb-3">
-                Kozmetikler stadyumun görünümünü değiştirir; bazıları taraftar morali ve bilet geliri de kazandırır. Üzerine gelince 3D'de ön izlenir.
+                Kozmetikler stadyumun görünümünü değiştirir; bazıları taraftar morali ve bilet geliri de kazandırır.
+                Her kartta <b className="text-amber-300">👁️ Ön İzle</b> tuşu var: basınca 3D sahnede görünür, satın alınmaz — beğenirsen sarı banner’dan satın alırsın.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {COSMETICS.filter(c => c.price > 0).map(option => {
                   const owned = isUnlocked(stadium, option.id);
                   const affordable = gameState.budget >= option.price;
-                  // ön izleme preview'u: ilgili tasarımı geçici göster
-                  const getPreviewPatch = (): Partial<StadiumDesign> | null => {
+                  // 👁️ Ön İzle tuşu için: bu kozmetiğin 3D karşılığı
+                  const designPatch = ((): Partial<StadiumDesign> | null => {
                     if (option.field === 'roof') return { roof: option.value as RoofStyle };
                     if (option.field === 'stands') return { stands: option.value as StandStyle };
                     if (option.field === 'pitchPattern') return { pitchPattern: option.value as PitchPattern };
@@ -750,45 +1002,58 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                     if (option.field === 'logoOnPitch') return { logoOnPitch: true };
                     if (option.field === 'floodlights') return { floodlights: true };
                     return null;
+                  })();
+                  const patch: PreviewPatch = {
+                    id: `preview:cosmetic:${option.id}`,
+                    label: `${option.icon} ${option.label}`,
+                    design: designPatch ?? undefined,
+                    vip: option.id === 'vip' ? true : undefined,
+                    applyLabel: affordable ? `💰 Satın Al — ${formatMoney(option.price)}` : undefined,
+                    onApply: affordable ? () => onBuyCosmetic(option.id) : undefined
                   };
-                  const patch = getPreviewPatch();
+                  const previewing = previewInfo?.id === patch.id;
                   return (
                     <div
                       key={option.id}
-                      onMouseEnter={() => {
-                        if (!owned && patch) patchPreview(patch);
-                        if (option.id === 'vip' && !stadium.vip) setPreviewVip(true);
-                      }}
-                      onMouseLeave={() => {
-                        if (patch && previewDesign) {
-                          // sadece bu kozmetiğin etkisini geri al
-                          if (option.field === 'roof' && previewDesign.roof === patch!.roof) setPreviewDesign(d => d ? { ...d, roof: design.roof } : null);
-                          else if (option.field === 'stands' && previewDesign.stands === patch!.stands) setPreviewDesign(d => d ? { ...d, stands: design.stands } : null);
-                          else if (option.field === 'pitchPattern' && previewDesign.pitchPattern === patch!.pitchPattern) setPreviewDesign(d => d ? { ...d, pitchPattern: design.pitchPattern } : null);
-                          else if (option.field === 'flags' && previewDesign.flags) setPreviewDesign(d => d ? { ...d, flags: design.flags } : null);
-                          else if (option.field === 'logoOnPitch' && previewDesign.logoOnPitch) setPreviewDesign(d => d ? { ...d, logoOnPitch: design.logoOnPitch } : null);
-                        }
-                        if (option.id === 'vip' && previewVip) setPreviewVip(null);
-                      }}
-                      className={`rounded-xl p-3 border ${owned ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-700/40 border-slate-700/60 hover:border-amber-500/40'}`}
+                      onMouseEnter={() => !owned && hoverPreview(patch)}
+                      onMouseLeave={hoverEnd}
+                      className={`rounded-xl p-3 border transition-all ${
+                        previewing ? 'bg-amber-500/10 border-amber-400'
+                        : owned ? 'bg-emerald-500/10 border-emerald-500/40'
+                        : 'bg-slate-700/40 border-slate-700/60 hover:border-amber-500/40'
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-white font-bold text-sm">{option.icon} {option.label} {!owned && <span className="text-[10px] text-slate-400">— üzerine gel ön izle</span>}</span>
+                        <span className="text-white font-bold text-sm">{option.icon} {option.label}</span>
                         <span className={`font-black text-sm ${owned ? 'text-emerald-400' : 'text-amber-400'}`}>
                           {owned ? 'SAHİPSİN ✓' : formatMoney(option.price)}
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-400 my-1">{option.desc}</div>
                       {!owned && (
-                        <button
-                          disabled={!affordable}
-                          onClick={() => { onBuyCosmetic(option.id); clearPreview(); }}
-                          className={`w-full py-2 rounded-lg text-xs font-bold ${
-                            affordable ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {affordable ? 'Satın Al — kalıcı uygula' : `Eksik: ${formatMoney(option.price - gameState.budget)}`}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            disabled={!affordable}
+                            onClick={() => { onBuyCosmetic(option.id); clearPreview(); }}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold ${
+                              affordable ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            {affordable ? 'Satın Al — kalıcı uygula' : `Eksik: ${formatMoney(option.price - gameState.budget)}`}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => togglePreview(patch)}
+                            className={`shrink-0 px-3 py-2 rounded-lg text-[11px] font-black border transition-all ${
+                              previewing
+                                ? 'bg-amber-400 text-black border-amber-300'
+                                : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                            }`}
+                            title="Satın almadan 3D stadyumda gör"
+                          >
+                            {previewing ? '✕ Kapat' : '👁️ Ön İzle'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -797,36 +1062,59 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             </div>
 
             <div className="bg-slate-800/60 backdrop-blur-xl rounded-2xl border border-slate-700/60 p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-white mb-3">🎨 Özel Koltuk Renkleri <span className="text-[10px] font-normal text-slate-400">— üzerine gel ön izle</span></h3>
+              <h3 className="text-sm font-bold text-white mb-1">🎨 Özel Koltuk Renkleri</h3>
+              <p className="text-[10px] text-slate-400 mb-3">👁️ <b className="text-amber-300">Ön İzle</b> tuşuna bas → renk 3D stadyumda görünür, satın alınmaz.</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {PREMIUM_COLORS.map(c => {
                   const owned = isUnlocked(stadium, c.id);
+                  const patch: PreviewPatch = {
+                    id: `seat:${c.hex}`,
+                    label: `${c.label} • ${c.hex}`,
+                    design: { seatColor: c.hex },
+                    applyLabel: owned ? '✓ Rengi Uygula' : gameState.budget >= c.price ? `💰 Kilidi Aç — ${formatMoney(c.price)}` : undefined,
+                    onApply: owned ? () => onSetDesign({ seatColor: c.hex }) : gameState.budget >= c.price ? () => onBuyCosmetic(c.id) : undefined
+                  };
+                  const previewing = previewInfo?.id === patch.id;
                   return (
                     <div
                       key={c.id}
-                      onMouseEnter={() => patchPreview({ seatColor: c.hex })}
-                      onMouseLeave={() => setPreviewDesign(d => d?.seatColor === c.hex ? null : d)}
-                      className={`rounded-xl p-3 text-center border ${displayDesign.seatColor === c.hex && isPreview ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-700/40 border-transparent'}`}
+                      onMouseEnter={() => hoverPreview(patch)}
+                      onMouseLeave={hoverEnd}
+                      className={`rounded-xl p-3 text-center border transition-all ${previewing ? 'bg-amber-500/10 border-amber-400' : 'bg-slate-700/40 border-transparent'}`}
                     >
                       <div className="w-10 h-10 rounded-lg mx-auto mb-2 border-2 border-slate-600" style={{ background: c.hex }} />
                       <div className="text-white text-xs font-bold">{c.label}</div>
                       <div className={`text-[10px] mb-2 ${owned ? 'text-emerald-400' : 'text-amber-400'}`}>
                         {owned ? 'Açık ✓' : formatMoney(c.price)}
                       </div>
-                      <button
-                        disabled={!owned && gameState.budget < c.price}
-                        onClick={() => {
-                          if (owned) { onSetDesign({ seatColor: c.hex }); clearPreview(); }
-                          else { onBuyCosmetic(c.id); clearPreview(); }
-                        }}
-                        className={`w-full py-1.5 rounded-lg text-[11px] font-bold ${
-                          owned ? 'bg-slate-600 hover:bg-slate-500 text-white'
-                          : gameState.budget >= c.price ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                          : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                        }`}
-                      >
-                        {owned ? 'Uygula' : 'Kilidi Aç'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          disabled={!owned && gameState.budget < c.price}
+                          onClick={() => {
+                            if (owned) { onSetDesign({ seatColor: c.hex }); clearPreview(); }
+                            else { onBuyCosmetic(c.id); clearPreview(); }
+                          }}
+                          className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold ${
+                            owned ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                            : gameState.budget >= c.price ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                            : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {owned ? 'Uygula' : 'Kilidi Aç'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => togglePreview(patch)}
+                          title="3D stadyumda ön izle"
+                          className={`shrink-0 px-2 py-1.5 rounded-lg text-[11px] font-black border transition-all ${
+                            previewing
+                              ? 'bg-amber-400 text-black border-amber-300'
+                              : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                          }`}
+                        >
+                          {previewing ? '✕' : '👁️'}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -860,6 +1148,37 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             onDismissScoutReport={onDismissScoutReport}
             onCancelScoutMission={onCancelScoutMission}
           />
+        )}
+
+        {/* ── SABİT ÖN İZLEME ÇUBUĞU ── aşağıda gezinirken de 3D'ye dön / uygula / kapat */}
+        {isPreview && (
+          <div className="sticky bottom-0 z-30 mt-4 pb-1">
+            <div className="bg-amber-500/95 backdrop-blur text-black rounded-2xl px-3 py-2 flex items-center gap-2 flex-wrap shadow-[0_-6px_24px_rgba(0,0,0,0.4)] border border-amber-300">
+              <span className="text-[11px] font-black flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />
+                👁️ ÖN İZLEME{previewInfo ? `: ${previewInfo.label}` : ''}
+              </span>
+              <span className="text-[10px] font-bold text-black/70">— henüz satın alınmadı</span>
+              <span className="flex-1" />
+              {previewInfo?.onApply && (
+                <button
+                  onClick={() => { const fn = previewInfo.onApply; clearPreview(); fn?.(); }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-full text-[11px] font-black"
+                >
+                  {previewInfo.applyLabel ?? '✓ Uygula'}
+                </button>
+              )}
+              <button
+                onClick={focusScene}
+                className="bg-black/80 hover:bg-black text-white px-3 py-1 rounded-full text-[11px] font-bold"
+              >
+                🎥 3D'yi göster
+              </button>
+              <button onClick={clearPreview} className="bg-black hover:bg-slate-800 text-white px-3 py-1 rounded-full text-[11px] font-black">
+                ✕ Kapat
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FacilityModuleId, FacilityState, GameState } from '../../types/game';
 import {
   FACILITY_MODULES, FACILITY_MAX_LEVEL, facilityUpgradeCost, facilityEffects, normalizeFacility,
@@ -26,6 +26,25 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
   const [cinematic, setCinematic] = useState(false);
   /** Ön izleme: bir modülün bir üst seviyesini satın almadan gör (etki sayıları anında) */
   const [previewModule, setPreviewModule] = useState<FacilityModuleId | null>(null);
+  /** 👁️ Ön İzle tuşuyla sabitlenmiş mi? (hover bunu bozamaz) */
+  const [pinnedModule, setPinnedModule] = useState<FacilityModuleId | null>(null);
+  const sceneRef = useRef<HTMLDivElement | null>(null);
+  /** Ön izleme başlayınca 3D sahne ekranda değilse oraya kaydır */
+  const focusScene = () => {
+    const el = sceneRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 8 || r.bottom > window.innerHeight - 8) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const toggleModulePreview = (id: FacilityModuleId) => {
+    if (pinnedModule === id) { setPinnedModule(null); setPreviewModule(null); return; }
+    setPinnedModule(id);
+    setPreviewModule(id);
+    focusScene();
+  };
+  const clearModulePreview = () => { setPinnedModule(null); setPreviewModule(null); };
+  const hoverModule = (id: FacilityModuleId) => { if (!pinnedModule) setPreviewModule(id); };
+  const hoverModuleEnd = () => { if (!pinnedModule) setPreviewModule(null); };
   /** 3D sahne ön izlemesi — fare kartların üzerinde gezerken sürekli yeniden kurulmasın diye geciktirilir */
   const [sceneModule, setSceneModule] = useState<FacilityModuleId | null>(null);
   useEffect(() => {
@@ -112,8 +131,8 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
         </div>
       </div>
 
-      {/* ── 3D sahne ── */}
-      <div className="relative">
+      {/* ── 3D sahne ── 👁️ Ön İzle tuşuna basınca burası gösterilir */}
+      <div className="relative scroll-mt-3" ref={sceneRef}>
         <TrainingComplex3D
           facility={sceneFacility}
           clubColor={gameState.stadium?.design?.seatColor || '#1d4ed8'}
@@ -142,9 +161,20 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
           </button>
         </div>
         {isPreviewing && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-4 py-2 rounded-full text-[11px] font-black shadow-lg flex items-center gap-3">
-            <span>👁️ ÖN İZLEME — seviye {displayFacility[previewModule!]}/5 satın almadan önce gör</span>
-            <button onClick={() => setPreviewModule(null)} className="bg-black text-white px-3 py-1 rounded-full text-[11px]">✕ Kapat</button>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 max-w-[94%] bg-amber-500 text-black px-3 py-2 rounded-2xl text-[11px] font-black shadow-lg flex items-center gap-2 flex-wrap justify-center">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-black animate-pulse" />
+              👁️ ÖN İZLEME: {FACILITY_MODULES.find(m => m.id === previewModule)?.name} — seviye {displayFacility[previewModule!]}/5 (satın alınmadı)
+            </span>
+            {previewModule && facility[previewModule] < FACILITY_MAX_LEVEL && gameState.budget >= facilityUpgradeCost(previewModule, facility[previewModule]) && (
+              <button
+                onClick={() => { const id = previewModule; clearModulePreview(); onUpgradeFacilityModule(id); }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-full text-[11px] font-black"
+              >
+                ⬆️ Yükselt — {formatMoney(facilityUpgradeCost(previewModule, facility[previewModule]))}
+              </button>
+            )}
+            <button onClick={clearModulePreview} className="bg-black hover:bg-slate-800 text-white px-3 py-1 rounded-full text-[11px]">✕ Kapat</button>
           </div>
         )}
       </div>
@@ -172,7 +202,7 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
       {/* ── Modül kartları ── */}
       <div className="flex items-center gap-3 pt-1">
         <span className="text-sm font-black text-white">🏗️ Tesis Modülleri</span>
-        <span className="text-[11px] text-slate-400">— kartın üzerine gel → bir üst seviyeyi ön izle</span>
+        <span className="text-[11px] text-slate-400">— <b className="text-amber-300">👁️ Ön İzle</b> tuşuna bas → bir üst seviye 3D sahnede görünür (satın alınmaz)</span>
         <span className="flex-1 h-px bg-slate-700/60" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -187,10 +217,10 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
             <div
               key={mod.id}
               title={mod.stats(realLevel).map(st => `${st.label}: ${st.value}`).join(' • ')}
-              onMouseEnter={() => !isMax && setPreviewModule(mod.id)}
-              onMouseLeave={() => setPreviewModule(p => (p === mod.id ? null : p))}
+              onMouseEnter={() => !isMax && hoverModule(mod.id)}
+              onMouseLeave={hoverModuleEnd}
               className={`rounded-2xl border p-4 transition-all ${
-                previewing ? 'bg-amber-500/10 border-amber-400/70'
+                previewing ? 'bg-amber-500/10 border-amber-400/70 ring-2 ring-amber-400/25'
                 : isMax ? 'bg-emerald-500/10 border-emerald-500/40'
                 : 'bg-slate-800/60 border-slate-700/60 hover:border-emerald-500/50'
               }`}
@@ -219,15 +249,30 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
                   ★ MAKSİMUM SEVİYE
                 </div>
               ) : (
-                <button
-                  disabled={!affordable}
-                  onClick={() => { onUpgradeFacilityModule(mod.id); setPreviewModule(null); }}
-                  className={`w-full py-2 rounded-xl text-xs font-black transition-all ${
-                    affordable ? `bg-gradient-to-r ${mod.color} text-white hover:opacity-90` : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {affordable ? `⬆️ Yükselt — ${formatMoney(cost)}` : `Eksik ${formatMoney(cost - gameState.budget)}`}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={!affordable}
+                    onClick={() => { onUpgradeFacilityModule(mod.id); clearModulePreview(); }}
+                    className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
+                      affordable ? `bg-gradient-to-r ${mod.color} text-white hover:opacity-90` : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {affordable ? `⬆️ Yükselt — ${formatMoney(cost)}` : `Eksik ${formatMoney(cost - gameState.budget)}`}
+                  </button>
+                  {/* 👁️ ÖN İZLE TUŞU — 3D komplekste bir üst seviyeyi satın almadan gösterir */}
+                  <button
+                    type="button"
+                    onClick={() => toggleModulePreview(mod.id)}
+                    title="Bir üst seviyeyi 3D antrenman kompleksinde gör"
+                    className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black border transition-all ${
+                      previewing
+                        ? 'bg-amber-400 text-black border-amber-300'
+                        : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                    }`}
+                  >
+                    {previewing ? '✕ Kapat' : '👁️ Ön İzle'}
+                  </button>
+                </div>
               )}
             </div>
           );
