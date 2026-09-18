@@ -812,7 +812,10 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       new THREE.BoxGeometry(1.9, 2.5, 7.3),
       new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, side: THREE.DoubleSide })
     );
-    net.position.set(dir * -1.0, 1.25, 0);
+    // Ağ, kale çizgisinin saha dışına taşan tarafında olmalı.  Önceden
+    // `dir * -1` kullanıldığı için iki ağ da sahanın içine bakıyor ve
+    // kaleler ters kurulmuş gibi görünüyordu (özellikle yayın kamerasında).
+    net.position.set(dir * 1.0, 1.25, 0);
     goal.add(left, right, bar, net);
     goal.position.x = dir * (PITCH_L / 2);
     group.add(goal);
