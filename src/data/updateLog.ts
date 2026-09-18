@@ -14,7 +14,8 @@ export const UPDATE_LOG: UpdateEntry[] = [
     tag: 'DÜZELTME',
     title: '🍔 Tesisler Artık 3D\'de Görünüyor + 3D Tam Ekran + Konsol Uyarıları Temizlendi',
     items: [
-      '🍔 Büfe, taraftar mağazası, restoran, bar, müze, çocuk alanı ve otopark artık stadyumun 3D sahnesinde gerçekten görünüyor (büfe seviyesi arttıkça kulübe + masa + şemsiye sayısı da artar)',
+      '🛠️ ASIL HATA BULUNDU: "Seviye Yükselt" tuşu hiçbir şey yapmıyordu — tesis yükseltme fonksiyonu App bağlantısında eksikti. Artık büfe/mağaza/otopark gerçekten satın alınıyor ve sahneye ekleniyor',
+      '🍔 Büfe, taraftar mağazası, restoran, bar, müze, çocuk alanı ve otopark artık stadyumun 3D sahnesinde gerçekten görünür (büfe seviyesi arttıkça kulübe + masa + şemsiye sayısı da artar; ilk seviyeden itibaren otopark alanı çizilir)',
       '👁️ İç Tesisler sekmesindeki her tesisin yanına "Ön İzle" tuşu eklendi: bir üst seviyeyi satın almadan 3D\'de görürsün — yeni yapı sarı halka + ışık sütunu ile işaretlenir, kamera oraya bakar',
       '🎯 Tesis yükseltmesi satın alınınca 3D sahne anında tazelenir ve yeni yapı 12 saniye boyunca işaretli kalır (eskiden sahne yeniden kurulmadığı için büfe alınsa bile görünmüyordu)',
       '📺 Stadyum sekmesine "3D Tam Ekran" tuşu eklendi: sahne tüm pencereyi kaplar, ESC veya ✕ ile çıkılır',

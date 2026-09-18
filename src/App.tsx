@@ -126,6 +126,9 @@ function App() {
     upgradeStadiumLevel,
     upgradeTribune,
     hostStadiumEvent,
+    // ⚠️ Stadyum iç tesisleri (büfe, mağaza, otopark…): bu satır eksikti,
+    // bu yüzden "Seviye Yükselt" tuşları hiçbir şey yapmıyordu.
+    upgradeStadiumFacility,
     setTacticsSlider,
     buyDevice,
     setActiveDevice,
@@ -1214,6 +1217,7 @@ function App() {
                 onUpgradeStadiumLevel={upgradeStadiumLevel}
                 onUpgradeTribune={upgradeTribune}
                 onHostEvent={hostStadiumEvent}
+                onUpgradeStadiumFacility={upgradeStadiumFacility}
                 onUpgradeFacilityModule={upgradeFacilityModule}
                 onHireStaff={hireStaff}
                 onDiscoverYouth={discoverYouthPlayer}
