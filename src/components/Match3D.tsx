@@ -231,7 +231,8 @@ export const Match3D: React.FC<Match3DProps> = ({
       sponsorText: gameState.activeSponsor
         ? `${gameState.activeSponsor.name.toUpperCase()} • RESMİ SPONSOR • `
         : `${gameState.teamName.toUpperCase()} • RESMİ SPONSOR • `,
-      logo: userIsHome ? gameState.teamLogo : opponent.logo
+      logo: userIsHome ? gameState.teamLogo : opponent.logo,
+      facilities: userIsHome ? ((gameState.stadium as any)?.facilities || {}) : {}
     });
     scene.add(bundle.group);
     // Eğik açıda çim/tribün dokuları keskin kalsın

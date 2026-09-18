@@ -371,6 +371,8 @@ export interface StadiumBuildOptions {
   wet?: boolean;
   /** Kulüp adı — skorbord ve giriş tabelasında görünür */
   teamName?: string;
+  /** Tesis seviyeleri — 3D temsili */
+  facilities?: Record<string, number>;
 }
 
 export interface StadiumSceneBundle {
@@ -1183,6 +1185,77 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       t.position.set(x, 0, z);
       group.add(t);
     });
+  }
+
+  /* ── Stadyum tesisleri 3D temsili — seviye arttıkça büyür ── */
+  {
+    const facs: Record<string, number> = (opts.facilities as any) || {};
+    const plazaFacMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
+    const buffetMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 });
+    const shopMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(design.seatColor), roughness: 0.6 });
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.7 });
+    // Büfe: giriş meydanı çevresinde küçük kulübeler
+    const buffetLvl = facs.buffet || 0;
+    for (let i = 0; i < Math.min(buffetLvl, 5); i++) {
+      const kiosk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 2.8), i % 2 === 0 ? buffetMat : plazaFacMat);
+      kiosk.position.set(-40 + i * 18, 1.2, halfZ + 18 + (i % 2) * 4);
+      kiosk.castShadow = true;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 3.2), new THREE.MeshStandardMaterial({ color: 0xdc2626 }));
+      roof.position.set(0, 1.35, 0);
+      kiosk.add(roof);
+      group.add(kiosk);
+    }
+    // Fan Shop
+    if ((facs.fanShop || 0) > 0) {
+      const shop = new THREE.Mesh(new THREE.BoxGeometry(8 + facs.fanShop * 1.5, 4.2, 6), shopMat);
+      shop.position.set(halfX + 12, 2.1, halfZ - 10);
+      shop.castShadow = true;
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.9, 0.4), new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: new THREE.Color(design.seatColor), emissiveIntensity: opts.night ? 0.8 : 0.2 }));
+      sign.position.set(0, 2.4, 3.2);
+      shop.add(sign);
+      group.add(shop);
+    }
+    // Restoran
+    if ((facs.restaurant || 0) > 0) {
+      const rest = new THREE.Mesh(new THREE.BoxGeometry(10 + facs.restaurant * 2, 4.5, 8), new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.6 }));
+      rest.position.set(-halfX - 14, 2.25, halfZ - 8);
+      rest.castShadow = true;
+      group.add(rest);
+    }
+    // Bar
+    if ((facs.bar || 0) > 0) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(7, 3.8, 5), barMat);
+      bar.position.set(-halfX - 10, 1.9, -halfZ + 12);
+      bar.castShadow = true;
+      group.add(bar);
+    }
+    // LED Ekran (ikinci)
+    if ((facs.ledScreen || 0) > 0) {
+      const extraScreen = new THREE.Mesh(new THREE.BoxGeometry(12 + facs.ledScreen * 2, 6, 0.8), new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: new THREE.Color(0x22d3ee), emissiveIntensity: opts.night ? 1.2 : 0.4 }));
+      extraScreen.position.set(0, height + 8 + facs.ledScreen, halfZ + 2);
+      group.add(extraScreen);
+    }
+    // Müze
+    if ((facs.museum || 0) > 0) {
+      const museum = new THREE.Mesh(new THREE.BoxGeometry(9, 5, 7), new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.5 }));
+      museum.position.set(halfX + 10, 2.5, -halfZ + 20);
+      museum.castShadow = true;
+      group.add(museum);
+    }
+    // Çocuk alanı
+    if ((facs.kidsZone || 0) > 0) {
+      for (let i = 0; i < facs.kidsZone; i++) {
+        const slide = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 3 + i * 0.5, 8), new THREE.MeshStandardMaterial({ color: 0xf472b6 }));
+        slide.position.set(halfX - 20 - i * 4, 1.5, halfZ + 25);
+        group.add(slide);
+      }
+    }
+    // Otopark genişletmesi
+    if ((facs.parking || 0) > 1) {
+      const extraPark = new THREE.Mesh(new THREE.BoxGeometry(20 + facs.parking * 5, 0.12, 30), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+      extraPark.position.set(halfX + 30, 0.07, 45);
+      group.add(extraPark);
+    }
   }
 
   /* ── Karşı skorbord (büyük stadyumlarda denge) ── */

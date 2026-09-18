@@ -1,4 +1,4 @@
-import { RoofStyle, StandStyle, PitchPattern, StadiumState } from '../types/game';
+import { RoofStyle, StandStyle, PitchPattern, StadiumState, StadiumFacilities, StadiumFacilityId, StadiumFacilityDef } from '../types/game';
 
 export interface CosmeticOption {
   id: string;
@@ -91,6 +91,47 @@ export const PITCH_LABEL: Record<PitchPattern, string> = {
   plain: 'Düz',
 };
 
+export const STADIUM_FACILITY_DEFS: StadiumFacilityDef[] = [
+  { id: 'buffet', name: 'Büfe', icon: '🍔', desc: 'Sıcak sosisli, köfte ekmek, patates ve içecek. Her iç saha maçında taraftar başına gelir getirir.', baseCost: 180000, incomePerFan: 4.5, happiness: 2 },
+  { id: 'fanShop', name: 'Taraftar Mağazası', icon: '👕', desc: 'Forma, atkı, şapka satışı. Yıldız oyuncularla birlikte satış patlar.', baseCost: 250000, incomePerFan: 5.2, happiness: 3 },
+  { id: 'restaurant', name: 'Restoran', icon: '🍽️', desc: 'Maç öncesi/sonrası aile restoranı. VIP ve loca misafirleri için premium gelir.', baseCost: 420000, incomePerFan: 7.0, happiness: 3, boardBonus: 1 },
+  { id: 'bar', name: 'Spor Bar', icon: '🍺', desc: 'Maç izleme barı, canlı müzik. Genç taraftarın favorisi.', baseCost: 300000, incomePerFan: 6.0, happiness: 4 },
+  { id: 'parking', name: 'Otopark', icon: '🅿️', desc: 'Kapalı otopark ve vale. Seyirciyi artırır, kötü havada bile doluluk sağlar.', baseCost: 350000, incomePerFan: 3.8, happiness: 2 },
+  { id: 'toilets', name: 'Tuvalet & Temizlik', icon: '🚻', desc: 'Modern, temiz tuvaletler ve bakım ekibi. Taraftar memnuniyetinin temeli.', baseCost: 150000, incomePerFan: 0.8, happiness: 5 },
+  { id: 'security', name: 'Güvenlik & Turnike', icon: '🛡️', desc: 'Hızlı turnikeler, güvenlik kameraları. Kargaşayı azaltır, doluluğu artırır.', baseCost: 200000, incomePerFan: 1.2, happiness: 3, boardBonus: 2 },
+  { id: 'ledScreen', name: 'Dev LED Ekran', icon: '📺', desc: 'Skor, tekrar ve reklam ekranı. Sponsor gelirini artırır.', baseCost: 600000, incomePerFan: 2.5, happiness: 4 },
+  { id: 'soundSystem', name: 'Ses Sistemi', icon: '🔊', desc: 'Stadyum anons ve müzik sistemi. Atmosferi 2 kat artırır.', baseCost: 280000, incomePerFan: 1.5, happiness: 4 },
+  { id: 'museum', name: 'Kulüp Müzesi', icon: '🏛️', desc: 'Kupalar, efsaneler, tarih koridoru. Turist çeker, marka değeri artar.', baseCost: 500000, incomePerFan: 3.0, happiness: 5, boardBonus: 2 },
+  { id: 'kidsZone', name: 'Çocuk Alanı', icon: '🎈', desc: 'Çocuk oyun parkı, yüz boyama, maskot. Aile tribününü doldurur.', baseCost: 220000, incomePerFan: 2.8, happiness: 6 },
+  { id: 'medicalRoom', name: 'İlk Yardım', icon: '🏥', desc: 'Sağlık odası ve ambulans. Sakatlık riskini azaltır, yönetim güveni artar.', baseCost: 180000, incomePerFan: 0.5, happiness: 2, boardBonus: 3 },
+];
+
+export const STADIUM_FACILITY_MAP: Record<StadiumFacilityId, StadiumFacilityDef> = STADIUM_FACILITY_DEFS.reduce((acc, f) => ({ ...acc, [f.id]: f }), {} as Record<StadiumFacilityId, StadiumFacilityDef>);
+
+export function defaultFacilities(): StadiumFacilities {
+  return {
+    buffet: 0,
+    fanShop: 0,
+    restaurant: 0,
+    bar: 0,
+    parking: 0,
+    toilets: 1, // başlangıçta 1 seviye tuvalet
+    security: 1,
+    ledScreen: 0,
+    soundSystem: 1,
+    museum: 0,
+    kidsZone: 0,
+    medicalRoom: 0,
+  };
+}
+
+export function facilityUpgradeCost(id: StadiumFacilityId, level: number): number {
+  const def = STADIUM_FACILITY_MAP[id];
+  const base = def?.baseCost ?? 200000;
+  const lvl = Math.max(0, level);
+  return Math.round(base * Math.pow(1.75, lvl) / 1000) * 1000;
+}
+
 export function defaultStadium(): StadiumState {
   return {
     design: {
@@ -109,6 +150,9 @@ export function defaultStadium(): StadiumState {
     cosmetics: ['floodlights', 'pitch:plain'],
     tribunes: { north: 1, south: 1, east: 1, west: 1 },
     lastEventIncome: 0,
+    facilities: defaultFacilities(),
+    facilityIncomeTotal: 0,
+    lastFacilityIncome: 0,
   };
 }
 

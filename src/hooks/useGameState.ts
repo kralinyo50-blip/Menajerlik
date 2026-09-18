@@ -21,11 +21,13 @@ import {
 } from '../utils/life';
 import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
-  stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier
+  stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier,
+  facilityIncomePerFan, facilityHappinessBonus, getStadiumFacilities
 } from '../utils/stadium';
 import { StadiumDesign as StadiumDesignType } from '../types/game';
 import {
-  CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS
+  CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS,
+  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost as stadiumFacilityUpgradeCost, defaultFacilities
 } from '../data/stadium';
 import {
   assignKeyPlayers, buildGenericMarketPlayers, buildMarketStars, generateLoanList,
@@ -362,6 +364,9 @@ export const useGameState = () => {
       lastDailyReward: null,
       loanList: [],
       outgoingLoans: [],
+      lastMarketRefreshWeek: 1,
+      matchesSinceMarketRefresh: 0,
+      botTransfers: [],
       stadium: defaultStadium(),
       facility: defaultFacility(),
       clubPhilosophy: null,
@@ -379,11 +384,18 @@ export const useGameState = () => {
       socialFeed: []
     };
 
-    // Transfer pazarı: generic oyuncular + bilindik yıldızlar
+    // Transfer pazarı: genişletildi — 30-40 oyuncu, her 3 maçta yenilenir
+    const genericCount = 24 + Math.floor(Math.random() * 7); // 24-30
     initialState.marketList = [
-      ...buildGenericMarketPlayers(initialState, 6),
+      ...buildGenericMarketPlayers(initialState, genericCount),
       ...buildMarketStars(initialState)
     ];
+    // 36'ya tamamla
+    if (initialState.marketList.length < 28) {
+      const extra = buildGenericMarketPlayers(initialState, 28 - initialState.marketList.length);
+      initialState.marketList = [...initialState.marketList, ...extra];
+    }
+    initialState.marketList = initialState.marketList.slice(0, 36);
 
     // Kiralık listesi
     initialState.loanList = generateLoanList(initialState, 5);
@@ -433,6 +445,14 @@ export const useGameState = () => {
       baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
       (state as any).stadium = baseStadium;
     }
+    if (!(state as any).stadium?.facilities) {
+      const baseStadium = (state as any).stadium || {};
+      baseStadium.facilities = defaultFacilities();
+      (state as any).stadium = baseStadium;
+    }
+    if ((state as any).lastMarketRefreshWeek === undefined) (state as any).lastMarketRefreshWeek = 1;
+    if ((state as any).matchesSinceMarketRefresh === undefined) (state as any).matchesSinceMarketRefresh = 0;
+    if (!(state as any).botTransfers) (state as any).botTransfers = [];
     if ((state as any).tactics) {
       const tac: any = (state as any).tactics;
       if (tac.defensiveLine == null) tac.defensiveLine = 50;
@@ -771,6 +791,14 @@ export const useGameState = () => {
     if ((loaded as any).weeklySocialEarnings === undefined) (loaded as any).weeklySocialEarnings = 0;
     if ((loaded as any).lastSocialPayoutWeek === undefined) (loaded as any).lastSocialPayoutWeek = 0;
     if ((loaded as any).clubStats && (loaded as any).clubStats.socialEarnings === undefined) (loaded as any).clubStats.socialEarnings = 0;
+    if ((loaded as any).lastMarketRefreshWeek === undefined) (loaded as any).lastMarketRefreshWeek = 1;
+    if ((loaded as any).matchesSinceMarketRefresh === undefined) (loaded as any).matchesSinceMarketRefresh = 0;
+    if (!(loaded as any).botTransfers) (loaded as any).botTransfers = [];
+    if (!(loaded as any).stadium?.facilities) {
+      const baseStadium = (loaded as any).stadium || defaultStadium();
+      baseStadium.facilities = defaultFacilities();
+      (loaded as any).stadium = baseStadium;
+    }
     setGameState(loaded);
     return true;
   }, []);
@@ -780,25 +808,34 @@ export const useGameState = () => {
   }, []);
 
   /* ══════════════ MARKET & TESİS ══════════════ */
-  const refreshMarket = useCallback(() => {
+  const refreshMarket = useCallback((free = false) => {
     setGameState(prev => {
       if (!prev) return null;
 
-      const cost = marketRefreshCost(prev.skills?.scouting ?? 0, prev.scoutLvl || 1);
-      if (prev.budget < cost) return prev;
+      const cost = free ? 0 : marketRefreshCost(prev.skills?.scouting ?? 0, prev.scoutLvl || 1);
+      if (!free && prev.budget < cost) return prev;
 
       const exclude = [...prev.team11, ...prev.bench].map(p => p.name.replace(/^[^\w]+\s/, ''));
+      const genericCount = 24 + Math.floor(Math.random() * 8); // 24-31
       const newMarket = [
         // Scout ağı yeteneği pazar kalitesini yükseltir
-        ...buildGenericMarketPlayers({ ...prev, scoutLvl: (prev.scoutLvl || 1) + (prev.skills?.scouting ?? 0) }, 5 + Math.floor(Math.random() * 3)),
+        ...buildGenericMarketPlayers({ ...prev, scoutLvl: (prev.scoutLvl || 1) + (prev.skills?.scouting ?? 0) }, genericCount),
         ...buildMarketStars(prev, exclude)
       ];
+      // 30-36 arası garanti
+      const finalMarket = newMarket.slice(0, 36);
+      if (finalMarket.length < 28) {
+        const extra = buildGenericMarketPlayers({ ...prev, scoutLvl: (prev.scoutLvl || 1) + (prev.skills?.scouting ?? 0) }, 28 - finalMarket.length);
+        finalMarket.push(...extra);
+      }
 
       return {
         ...prev,
-        marketList: newMarket,
+        marketList: finalMarket.slice(0, 36),
         budget: prev.budget - cost,
-        news: [`📋 Transfer listesi güncellendi ($${cost.toLocaleString()}). ${newMarket.length} oyuncu izleniyor.`, ...prev.news.slice(0, 4)]
+        lastMarketRefreshWeek: prev.week,
+        matchesSinceMarketRefresh: 0,
+        news: [free ? `🔄 Transfer pazarı otomatik yenilendi! ${finalMarket.length} oyuncu izleniyor (her 3 maçta bir).` : `📋 Transfer listesi güncellendi ($${cost.toLocaleString()}). ${finalMarket.length} oyuncu izleniyor.`, ...prev.news.slice(0, 4)]
       };
     });
   }, []);
@@ -1680,34 +1717,82 @@ export const useGameState = () => {
         }
       }
 
-      /* — Rakip transferleri — */
-      if (Math.random() < 0.30) {
+      /* — Rakip transferleri — Gerçekçi simülasyon: bütçe/pozisyon bazlı + haber akışı — */
+      {
         const botTeams = newState.league.filter(t => !t.isUser);
-        const transferringTeam = botTeams[Math.floor(Math.random() * botTeams.length)];
-        if (transferringTeam) {
-          const isYouthTransfer = Math.random() < 0.4;
-          const ovrChange = isYouthTransfer ? Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 3);
-          transferringTeam.ovr = Math.min(95, transferringTeam.ovr + ovrChange);
-          newState.news = [
-            isYouthTransfer
-              ? `📰 ${transferringTeam.name} genç bir yetenek transfer etti!`
-              : `🔥 ${transferringTeam.name} yıldız bir oyuncu transfer etti! (+${ovrChange} OVR)`,
-            ...newState.news.slice(0, 4)
-          ];
+        const transfersThisWeek: any[] = [];
+        // Her hafta %55 ihtimalle 1-2 rakip transfer yapar
+        if (!isCup && Math.random() < 0.55) {
+          const numTransfers = Math.random() < 0.7 ? 1 : 2;
+          const shuffled = [...botTeams].sort(() => Math.random() - 0.5);
+          for (let i = 0; i < numTransfers && i < shuffled.length; i++) {
+            const team = shuffled[i];
+            const isYouth = Math.random() < 0.38;
+            const ovrChange = isYouth ? 1 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 3);
+            const fee = isYouth ? Math.round(150000 + Math.random() * 600000) : Math.round(400000 + Math.random() * 2500000);
+            team.ovr = Math.min(94, team.ovr + ovrChange);
+            const playerName = `${FIRST_NAMES[Math.floor(Math.random()*FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random()*LAST_NAMES.length)]}`;
+            const bt = {
+              week: newState.week,
+              season: newState.season,
+              club: team.name,
+              logo: team.logo,
+              type: 'in' as const,
+              playerName,
+              ovrChange,
+              fee
+            };
+            (newState.botTransfers = newState.botTransfers || []).push(bt);
+            transfersThisWeek.push(bt);
+          }
+          if (transfersThisWeek.length > 0) {
+            transfersThisWeek.forEach((bt: any) => {
+              newState.news = [`${bt.fee > 1000000 ? '🔥' : '📰'} ${bt.club}: ${bt.playerName} transfer edildi! (+${bt.ovrChange} OVR • $${bt.fee.toLocaleString()})`, ...newState.news.slice(0, 4)];
+              newState.boardMessages = [`📢 ${bt.club}, ${bt.playerName} oyuncusunu kadrosuna kattı (S${bt.season} H${bt.week}).`, ...newState.boardMessages.slice(0, 5)];
+            });
+          }
+        }
+        // Sezon ortası / yaz dönemi: daha büyük dalga
+        if (newState.week === 9 || newState.week === 18) {
+          botTeams.forEach(team => {
+            const teamRank = newState.league.findIndex(t => t.name === team.name) + 1;
+            const transferChance = teamRank > 5 ? 0.75 : 0.45;
+            if (Math.random() < transferChance) {
+              const ovrBump = 1 + Math.floor(Math.random() * 3);
+              team.ovr = Math.min(94, team.ovr + ovrBump);
+              const playerName = `${FIRST_NAMES[Math.floor(Math.random()*FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random()*LAST_NAMES.length)]}`;
+              (newState.botTransfers = newState.botTransfers || []).push({
+                week: newState.week,
+                season: newState.season,
+                club: team.name,
+                logo: team.logo,
+                type: 'in',
+                playerName,
+                ovrChange: ovrBump,
+                fee: Math.round(300000 + Math.random()*2000000)
+              });
+            }
+          });
+          const periodName = newState.week === 9 ? 'Ara transfer dönemi' : 'Yaz transfer dönemi';
+          newState.news = [`📋 ${periodName} sona erdi — ${botTeams.length} kulüp kadrosunu güçlendirdi! Transfer geçmişi: Ofis → Rakipler`, ...newState.news.slice(0, 4)];
         }
       }
 
-      if (newState.week === 9 || newState.week === 18) {
-        const botTeams = newState.league.filter(t => !t.isUser);
-        botTeams.forEach(team => {
-          const teamRank = newState.league.findIndex(t => t.name === team.name) + 1;
-          const transferChance = teamRank > 5 ? 0.7 : 0.4;
-          if (Math.random() < transferChance) {
-            team.ovr = Math.min(95, team.ovr + 1 + Math.floor(Math.random() * 4));
-          }
-        });
-        const periodName = newState.week === 9 ? 'Ara transfer dönemi' : 'Yaz transfer dönemi';
-        newState.news = [`📋 ${periodName} sona erdi. Rakipler güçlendi!`, ...newState.news.slice(0, 4)];
+      /* — Pazar otomatik yenileme: her 3 maçta bir — */
+      if (!isCup) {
+        newState.matchesSinceMarketRefresh = (newState.matchesSinceMarketRefresh || 0) + 1;
+        if (newState.matchesSinceMarketRefresh >= 3) {
+          const exclude = [...newState.team11, ...newState.bench].map(p => p.name.replace(/^[^\w]+\s/, ''));
+          const genericCount = 24 + Math.floor(Math.random() * 8);
+          const newMarket = [
+            ...buildGenericMarketPlayers({ ...newState, scoutLvl: (newState.scoutLvl || 1) + (newState.skills?.scouting ?? 0) }, genericCount),
+            ...buildMarketStars(newState, exclude)
+          ];
+          newState.marketList = newMarket.slice(0, 36);
+          newState.lastMarketRefreshWeek = newState.week;
+          newState.matchesSinceMarketRefresh = 0;
+          newState.news = [`🔄 Transfer pazarı otomatik yenilendi! ${newState.marketList.length} yeni oyuncu eklendi (her 3 maçta bir).`, ...newState.news.slice(0, 4)];
+        }
       }
 
       /* — Hafta ilerle — */
@@ -2982,6 +3067,27 @@ export const useGameState = () => {
     });
   }, []);
 
+  const upgradeStadiumFacility = useCallback((facilityId: import('../types/game').StadiumFacilityId) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const facs = stadium.facilities ?? defaultFacilities();
+      const lvl = (facs as any)[facilityId] ?? 0;
+      if (lvl >= 5) return prev;
+      const cost = stadiumFacilityUpgradeCost(facilityId, lvl);
+      if (prev.budget < cost) return prev;
+      const def = STADIUM_FACILITY_MAP[facilityId];
+      const nextFacs = { ...facs, [facilityId]: lvl + 1 } as any;
+      return {
+        ...prev,
+        budget: prev.budget - cost,
+        fanHappiness: Math.min(100, (prev.fanHappiness||60) + (def?.happiness || 1)),
+        stadium: { ...stadium, facilities: nextFacs },
+        news: [`${def?.icon || '🏗️'} ${def?.name || facilityId} seviye ${lvl+1} oldu! ($${cost.toLocaleString()}) — ${def?.desc || ''}`, ...prev.news.slice(0,4)]
+      };
+    });
+  }, []);
+
   const hostStadiumEvent = useCallback((eventId: 'concert'|'fair') => {
     setGameState(prev => {
       if (!prev) return null;
@@ -3443,6 +3549,7 @@ export const useGameState = () => {
     setTicketMultiplier,
     upgradeStadiumLevel,
     upgradeTribune,
+    upgradeStadiumFacility,
     hostStadiumEvent,
     setTacticsSlider,
     buyDevice,

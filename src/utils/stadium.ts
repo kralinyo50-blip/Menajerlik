@@ -1,5 +1,5 @@
-import { GameState, StadiumDesign, StadiumState } from '../types/game';
-import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES } from '../data/stadium';
+import { GameState, StadiumDesign, StadiumState, StadiumFacilities } from '../types/game';
+import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES, STADIUM_FACILITY_MAP, STADIUM_FACILITY_DEFS } from '../data/stadium';
 
 /** Toplam stadyum kapasitesi */
 export function stadiumCapacity(state: { stadiumLvl: number; stadium?: StadiumState }): number {
@@ -52,7 +52,7 @@ export function gateMultiplier(state: GameState): number {
   return mult;
 }
 
-/** Tribün kozmetiklerinin taraftar morali katkısı (iç saha maçı başına) */
+/** Tribün kozmetiklerinin taraftar morali katkısı (iç saha maçı başına) + tesisler */
 export function stadiumLoveBonus(state: GameState): number {
   const design = state.stadium?.design;
   if (!design) return 0;
@@ -60,6 +60,7 @@ export function stadiumLoveBonus(state: GameState): number {
   if (design.flags) love += 1;
   if (design.logoOnPitch) love += 1;
   if (state.stadium?.vip) love += 1;
+  love += facilityHappinessBonus(state) * 0.15;
   return love;
 }
 
@@ -91,12 +92,64 @@ export function starShopMultiplier(state: GameState): number {
   return 1 + starBonuses(state).shop;
 }
 
-/** Tribüne gelen her seyircinin büfe/ürün harcaması — stadyumu doldurmak kazandırır + yıldızlar forma sattırır */
+export function getStadiumFacilities(state: GameState): StadiumFacilities {
+  const f = state.stadium?.facilities;
+  if (f) return f;
+  // fallback for old saves
+  return {
+    buffet: 0, fanShop: 0, restaurant: 0, bar: 0, parking: 0,
+    toilets: 1, security: 1, ledScreen: 0, soundSystem: 1,
+    museum: 0, kidsZone: 0, medicalRoom: 0
+  };
+}
+
+export function facilityIncomePerFan(state: GameState): number {
+  const facs = getStadiumFacilities(state);
+  let income = 0;
+  (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
+    const lvl = facs[k] || 0;
+    const def = STADIUM_FACILITY_MAP[k as any];
+    if (def && lvl > 0) {
+      income += def.incomePerFan * lvl;
+    }
+  });
+  return income;
+}
+
+export function facilityHappinessBonus(state: GameState): number {
+  const facs = getStadiumFacilities(state);
+  let happy = 0;
+  (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
+    const lvl = facs[k] || 0;
+    const def = STADIUM_FACILITY_MAP[k as any];
+    if (def && lvl > 0) happy += def.happiness * lvl * 0.3;
+  });
+  return Math.min(15, happy);
+}
+
+export function facilityBoardBonus(state: GameState): number {
+  const facs = getStadiumFacilities(state);
+  let bonus = 0;
+  (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
+    const lvl = facs[k] || 0;
+    const def = STADIUM_FACILITY_MAP[k as any];
+    if (def?.boardBonus && lvl > 0) bonus += def.boardBonus * lvl * 0.2;
+  });
+  return bonus;
+}
+
+export function totalFacilityLevel(state: GameState): number {
+  const facs = getStadiumFacilities(state);
+  return Object.values(facs).reduce((a, b) => a + (b || 0), 0);
+}
+
+/** Tribüne gelen her seyircinin büfe/ürün harcaması — stadyumu doldurmak kazandırır + yıldızlar forma sattırır + tesisler */
 export function fanSpendingPerFan(state: GameState): number {
   let perFan = 12;
   if (state.stadium?.vip) perFan += 4;
   if ((state.stadium?.design?.roof ?? 'none') !== 'none') perFan += 2;
   perFan += starBonuses(state).perFan;
+  perFan += facilityIncomePerFan(state);
   return perFan;
 }
 

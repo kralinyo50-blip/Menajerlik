@@ -23,6 +23,8 @@ interface Stadium3DProps {
   wet?: boolean;
   /** Kulüp adı — skorbord ve giriş tabelasında görünür */
   teamName?: string;
+  /** Tesis seviyeleri */
+  facilities?: Record<string, number>;
 }
 
 /**
@@ -30,7 +32,7 @@ interface Stadium3DProps {
  * Kendi orbit kontrolü: sürükle = döndür, tekerlek/pinch = yakınlaştır, çift tık = sıfırla.
  */
 export const Stadium3D: React.FC<Stadium3DProps> = ({
-  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false, teamName = 'STADYUM'
+  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false, teamName = 'STADYUM', facilities
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -39,6 +41,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
   const cinematicRef = useRef(cinematic);
   const crowdRef = useRef(crowdIntensity);
   const wetRef = useRef(wet);
+  const facilitiesRef = useRef(facilities);
+  facilitiesRef.current = facilities;
   nightRef.current = night;
   cinematicRef.current = cinematic;
   crowdRef.current = crowdIntensity;
@@ -158,7 +162,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
 
     /* ── Sahne ── */
-    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current });
+    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current, facilities: facilities as any });
     scene.add(bundle.group);
     // Gökyüzü: prosedürel gradyan dokusu (yoksa düz renk)
     scene.background = bundle.skyTexture ?? new THREE.Color(bundle.sky);

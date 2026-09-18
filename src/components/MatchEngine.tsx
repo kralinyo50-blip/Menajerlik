@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameState, Player, Team, MatchEvent, Weather, PlayerRating } from '../types/game';
-import { MATCH_EVENTS, WEATHER_INFO, ROLE_NAMES, HOME_ADVANTAGE, AWAY_PENALTY, FIRST_NAMES, LAST_NAMES } from '../data/constants';
+import { MATCH_EVENTS, WEATHER_INFO, ROLE_NAMES, HOME_ADVANTAGE, AWAY_PENALTY, FIRST_NAMES, LAST_NAMES, FORMATIONS, TACTICS_SLIDERS } from '../data/constants';
 import { DIFFICULTY_CONFIG } from '../data/achievements';
 import { facilityEffects } from '../data/facility';
 import { InGameMinigame, MinigameContext, MinigameResult } from './InGameMinigames';
@@ -47,7 +47,6 @@ interface MatchEngineProps {
 type Phase = 'pre' | 'first' | 'half' | 'second' | 'et' | 'pens' | 'done';
 type Talk = 'praise' | 'hairdryer' | 'calm';
 
-/** Kompakt istatistik çipi — maç ekranında az yer kaplar */
 const MiniStat: React.FC<{ label: string; value: string; hint?: string; wide?: boolean }> = ({ label, value, hint, wide }) => (
   <div
     title={hint}
@@ -60,6 +59,78 @@ const MiniStat: React.FC<{ label: string; value: string; hint?: string; wide?: b
 
 const randomOpponentName = () =>
   `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
+
+// ── Formasyon profilleri — gerçek futbol mantığı ──
+interface FormationProfile {
+  midfieldWeight: number; // orta saha üstünlüğü
+  wingWeight: number; // kanat oyunu
+  defensiveSolid: number; // savunma sağlamlığı
+  attackBias: number; // hücum eğilimi
+  possessionBase: number;
+}
+
+const FORMATION_PROFILES: Record<string, FormationProfile> = {
+  '4-3-3': { midfieldWeight: 0.52, wingWeight: 0.72, defensiveSolid: 0.50, attackBias: 0.68, possessionBase: 54 },
+  '4-4-2': { midfieldWeight: 0.58, wingWeight: 0.55, defensiveSolid: 0.60, attackBias: 0.55, possessionBase: 50 },
+  '4-2-3-1': { midfieldWeight: 0.65, wingWeight: 0.50, defensiveSolid: 0.62, attackBias: 0.60, possessionBase: 56 },
+  '3-5-2': { midfieldWeight: 0.78, wingWeight: 0.45, defensiveSolid: 0.48, attackBias: 0.58, possessionBase: 58 },
+  '3-4-3': { midfieldWeight: 0.55, wingWeight: 0.70, defensiveSolid: 0.40, attackBias: 0.75, possessionBase: 52 },
+  '5-3-2': { midfieldWeight: 0.48, wingWeight: 0.35, defensiveSolid: 0.82, attackBias: 0.38, possessionBase: 44 },
+  '4-1-4-1': { midfieldWeight: 0.70, wingWeight: 0.48, defensiveSolid: 0.65, attackBias: 0.52, possessionBase: 55 },
+};
+
+function getFormationProfile(name: string): FormationProfile {
+  return FORMATION_PROFILES[name] || FORMATION_PROFILES['4-3-3'];
+}
+
+// ── xG modeli ──
+function calculateXG(params: {
+  distance: number; // 6-30m
+  angle: number; // 0-90 deg, 0 = kaleye dik
+  shotType: 'open' | 'header' | 'volley' | 'oneonone' | 'long' | 'freekick' | 'penalty';
+  pressure: number; // 0-1
+  keeperOvr: number;
+  weather: Weather;
+}): number {
+  let base = 0;
+  const d = params.distance;
+  // mesafeye göre baz xG
+  if (d <= 6) base = 0.55;
+  else if (d <= 11) base = 0.28 - (d - 6) * 0.03;
+  else if (d <= 18) base = 0.13 - (d - 11) * 0.012;
+  else if (d <= 25) base = 0.045 - (d - 18) * 0.004;
+  else base = 0.015;
+
+  // açı etkisi
+  const angleFactor = Math.max(0.35, 1 - (params.angle / 90) * 0.65);
+  base *= angleFactor;
+
+  // şut tipi
+  const typeMult: Record<string, number> = {
+    open: 1.0,
+    header: 0.72,
+    volley: 0.68,
+    oneonone: 1.55,
+    long: 0.45,
+    freekick: 0.85,
+    penalty: 2.8,
+  };
+  base *= typeMult[params.shotType] || 1;
+
+  // baskı
+  base *= (1 - params.pressure * 0.55);
+
+  // kaleci
+  const keeperFactor = Math.max(0.75, Math.min(1.25, 1 - (params.keeperOvr - 75) * 0.012));
+  base *= keeperFactor;
+
+  // hava
+  if (params.weather === 'rain' || params.weather === 'storm') base *= 0.88;
+  if (params.weather === 'snow') base *= 0.82;
+  if (params.weather === 'wind') base *= 0.90;
+
+  return Math.max(0.01, Math.min(0.92, base));
+}
 
 export const MatchEngine: React.FC<MatchEngineProps> = ({
   gameState, opponent, isHome, isCup, weather, onMatchEnd
@@ -96,13 +167,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [celebration, setCelebration] = useState<{ team: 'home' | 'away'; player?: string; key: number } | null>(null);
   const [subBoard, setSubBoard] = useState<{ outName: string; inName: string; outRole: string; inRole: string; key: number } | null>(null);
   const [cardPop, setCardPop] = useState<{ player: string; kind: 'yellow' | 'red' | 'second'; key: number } | null>(null);
-  /** ⏸️ Simülasyon dondurma — değişiklik ekranı açıkken dakika akışı tamamen durur */
   const [freeze, setFreeze] = useState<{ icon: string; reason: string } | null>(null);
-  /** 🐢 Kart sonrası yavaş çekim — kısa süre sonra kendiliğinden normal hıza döner */
   const [slowMo, setSlowMo] = useState(false);
-  /** 📜 Olay akışı kutusu — yer kaplamasın diye kapatılabilir */
   const [consoleOpen, setConsoleOpen] = useState(true);
-  // 🎥 3D maç görünümü (düşük performanslı cihazlarda ve yazılımsal WebGL'de 2D'ye düşer)
   const [view3d, setView3d] = useState(!gameState.life?.lowPerf && !isSoftwareWebGL());
 
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -112,8 +179,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const pausedRef = useRef(false);
   const extraTimeRef = useRef(false);
   const mgCountRef = useRef(0);
-  // Aynı akışta art arda gelen goller gerçekçi değildir; bir golden sonra
-  // oyunun yeniden kurulması için en az iki simülasyon dakikası bırakılır.
   const lastGoalMinuteRef = useRef(-99);
   const playedRef = useRef<Set<number>>(new Set(gameState.team11.map(p => p.id)));
   const cardMapRef = useRef<Map<number, { yellow: number; red: number }>>(new Map());
@@ -122,22 +187,20 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const handlerRef = useRef<(m: number, extra: boolean) => void>(() => {});
   const slowMoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Gecikmeli devam ettirme sırasında fazı doğru okumak için */
   const phaseRef = useRef<Phase>('pre');
+
+  // Taktik zincir durumu — gerçek maç akışı için
+  const possessionChainRef = useRef<{ team: 'home' | 'away'; phase: 'build' | 'mid' | 'final'; passes: number }>({ team: 'home', phase: 'build', passes: 0 });
+  const momentumRef = useRef<{ home: number; away: number }>({ home: 0, away: 0 });
 
   const pushSpiker = useCallback((txt: string) => {
     setSpiker(txt);
-    setTimeout(() => setSpiker(null), 2000);
+    setTimeout(() => setSpiker(null), 2200);
   }, []);
 
   const soundOn = gameState.soundOn !== false;
   const play = useCallback((fn: () => void) => { if (soundOn) fn(); }, [soundOn]);
 
-  /* ══════════ SİMÜLASYON KONTROLÜ ══════════
-     ⏸️ freeze : sen bir şey yaparken (ör. oyuncu değişikliği) dakika akışı tamamen durur,
-                 işlemi bitirince kaldığı yerden devam eder.
-     🐢 slowMo : kart gösterildiğinde simülasyon yavaş çekime geçer, birkaç saniye sonra
-                 kendiliğinden normal hızına döner. */
   const pauseSim = useCallback((icon: string, reason: string) => {
     if (resumeTimer.current) { clearTimeout(resumeTimer.current); resumeTimer.current = null; }
     pausedRef.current = true;
@@ -154,7 +217,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     }
     resumeTimer.current = setTimeout(() => {
       resumeTimer.current = null;
-      // devre arası / maç sonu gibi durumlarda akışı kendimiz başlatmayız
       if (running()) pausedRef.current = false;
       setFreeze(null);
     }, delay);
@@ -174,9 +236,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
   }, []);
 
-  /* 🏟️ Maç ekranı açıkken alttaki sekmelerin 3D sahneleri (Stadyum/Antrenman/Hayat)
-     görünmese de her karede çiziliyordu — zayıf GPU'da yük ikiye katlanıp donma/çökmeye
-     yol açıyordu. Maç boyunca arka plan 3D render'ları uyku moduna alınır. */
   useEffect(() => {
     setBackgroundRenderPaused(true);
     return () => setBackgroundRenderPaused(false);
@@ -186,20 +245,37 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const diffCfg = DIFFICULTY_CONFIG[difficulty];
   const weatherInfo = WEATHER_INFO[weather] || WEATHER_INFO.cloudy;
 
-  /* ══════════ GÜÇ HESABI ══════════ */
+  // ── Taktik sliderları ──
+  const tac: any = gameState.tactics as any;
+  const defensiveLine = tac.defensiveLine ?? 50;
+  const width = tac.width ?? 50;
+  const creativity = tac.creativity ?? 50;
+  const pressingIntensity = tac.pressingIntensity ?? 50;
+  const tempoValue = tac.tempoValue ?? 50;
+
+  const formationProfile = getFormationProfile(gameState.tactics.formation || '4-3-3');
+
+  // ── Güç hesabı — taktik sliderlar ve formasyon ağırlıklarıyla ──
   const calculateStrength = useCallback(() => {
     const available = activeLineup.filter(p => !p.injured && !sentOff.includes(p.id));
     const pool = available.length > 0 ? available : activeLineup;
     const avgOvr = pool.length > 0 ? pool.reduce((acc, p) => acc + p.ovr, 0) / pool.length : 0;
-    // 🧩 Takım uyumu: yeni transferler (özellikle takımın çok üstündeki yıldızlar)
-    // alışana kadar düşük oynar — ~8 maçta tam uyum
     const chemistryVal = gameState.teamChemistry ?? 55;
     const effOf = (p: Player) => effectiveOvr(p, avgOvr, chemistryVal);
     const effAvg = pool.length > 0 ? pool.reduce((acc, p) => acc + effOf(p), 0) / pool.length : avgOvr;
     const teamAdaptPct = pool.length > 0
       ? Math.round(pool.reduce((acc, p) => acc + adaptationPct(p), 0) / pool.length * 100)
       : 100;
-    // ⭐ Yıldız etkisi: uyumlu ve formda yıldızlar ortalamanın üstünde katkı verir
+
+    // Rol bazlı güç ayrımı — gerçek futbol
+    const attackers = pool.filter(p => p.role === 'FW' || p.role === 'OS');
+    const midfielders = pool.filter(p => p.role === 'OS' || p.role === 'SB');
+    const defenders = pool.filter(p => p.role === 'STP' || p.role === 'SB' || p.role === 'KL');
+
+    const attOvr = attackers.length ? attackers.reduce((a, p) => a + effOf(p), 0) / attackers.length : effAvg;
+    const midOvr = midfielders.length ? midfielders.reduce((a, p) => a + effOf(p), 0) / midfielders.length : effAvg;
+    const defOvr = defenders.length ? defenders.reduce((a, p) => a + effOf(p), 0) / defenders.length : effAvg;
+
     let starAttack = 0;
     let starDefense = 0;
     pool.forEach(p => {
@@ -213,7 +289,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     starAttack = Math.min(8, starAttack);
     starDefense = Math.min(8, starDefense);
 
-    // 🏋️ Antrenman kompleksi etkileri (taktik merkezi maç gücü, rejenerasyon riski vb.)
     const facilityEff = facilityEffects(gameState.facility);
 
     const avgEnergy = pool.reduce((acc, p) => acc + p.energy, 0) / Math.max(1, pool.length);
@@ -222,56 +297,65 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
     let attackBonus = 0;
     let defenseBonus = 0;
+    let midfieldBonus = 0;
+    let possessionBonus = 0;
 
-    if (gameState.tactics.style === 'attack') { attackBonus += 12; defenseBonus -= 8; }
-    if (gameState.tactics.style === 'defense') { attackBonus -= 8; defenseBonus += 12; }
-    if (gameState.tactics.style === 'possession') { attackBonus += 5; defenseBonus += 5; }
-    if (gameState.tactics.pressing === 'high') { attackBonus += 5; defenseBonus -= 2; }
-    if (gameState.tactics.pressing === 'low') { defenseBonus += 5; }
+    // Temel taktik
+    if (gameState.tactics.style === 'attack') { attackBonus += 12; defenseBonus -= 8; possessionBonus -= 3; }
+    if (gameState.tactics.style === 'defense') { attackBonus -= 8; defenseBonus += 12; possessionBonus -= 2; }
+    if (gameState.tactics.style === 'possession') { attackBonus += 5; defenseBonus += 5; possessionBonus += 8; midfieldBonus += 6; }
+    if (gameState.tactics.pressing === 'high') { attackBonus += 5; defenseBonus -= 2; midfieldBonus += 4; }
+    if (gameState.tactics.pressing === 'low') { defenseBonus += 5; midfieldBonus -= 3; }
     if (gameState.tactics.tempo === 'fast') { attackBonus += 7; defenseBonus -= 2; }
-    if (gameState.tactics.tempo === 'slow') { defenseBonus += 7; }
-    // 5 kaydırıcı — mild dengeli (ortalama görsel, gerçekçi)
-    const tac: any = gameState.tactics as any;
-    const dl = tac.defensiveLine ?? 50;
-    const wd = tac.width ?? 50;
-    const cr = tac.creativity ?? 50;
-    const pi = tac.pressingIntensity ?? 50;
-    const tv = tac.tempoValue ?? 50;
-    // defensiveLine: yüksek = önde basar, riskli
-    attackBonus += (dl - 50) * 0.08;
-    defenseBonus += (50 - dl) * 0.06;
-    // width: geniş = kanat hücumu
-    attackBonus += (wd - 50) * 0.05;
-    defenseBonus += (50 - wd) * 0.04;
-    // creativity: yaratıcı = hücum + ama top kaybı
-    attackBonus += (cr - 50) * 0.07;
-    defenseBonus += (50 - cr) * 0.05;
-    // pressingIntensity: string ile zaten var ama slider ince ayar
-    attackBonus += (pi - 50) * 0.06;
-    defenseBonus += (50 - pi) * 0.03;
-    // tempoValue
-    attackBonus += (tv - 50) * 0.07;
-    defenseBonus += (50 - tv) * 0.05;
+    if (gameState.tactics.tempo === 'slow') { defenseBonus += 7; possessionBonus += 5; }
 
-    // Ev sahibi avantajı / deplasman
-    if (isHome) { attackBonus += HOME_ADVANTAGE; defenseBonus += HOME_ADVANTAGE; }
+    // ── SLIDER ETKİLERİ — gerçekçi ──
+    // Defensive Line: yüksek = önde savunma, ofsayt tuzağı, ama arkada boşluk
+    // 0 = derinde bekle, 100 = orta sahaya kadar çık
+    const dlNorm = (defensiveLine - 50) / 50; // -1 to 1
+    attackBonus += dlNorm * 6; // önde oynamak hücumu artırır
+    defenseBonus += dlNorm * -4 + (dlNorm > 0 ? -Math.abs(dlNorm) * 3 : Math.abs(dlNorm) * 4); // çok önde risk
+    midfieldBonus += dlNorm * 5;
+    // Width: genişlik
+    const wNorm = (width - 50) / 50;
+    attackBonus += wNorm * 4; // geniş oyun kanatları açar
+    possessionBonus += wNorm * -2 + (wNorm < 0 ? 3 : 0); // dar oyun topu tutar
+    // Creativity: yaratıcılık
+    const cNorm = (creativity - 50) / 50;
+    attackBonus += cNorm * 7; // yaratıcı hücum
+    midfieldBonus += cNorm * 4;
+    defenseBonus += cNorm * -3; // yaratıcılık risk getirir
+    // Pressing Intensity
+    const pNorm = (pressingIntensity - 50) / 50;
+    midfieldBonus += pNorm * 8; // yoğun pres orta sahayı domine eder
+    attackBonus += pNorm * 3;
+    defenseBonus += pNorm * 2;
+    // Tempo
+    const tNorm = (tempoValue - 50) / 50;
+    attackBonus += tNorm * 5;
+    possessionBonus += tNorm * -6; // yüksek tempo topu daha çok kaybettirir
+
+    // Formasyon profili
+    midfieldBonus += (formationProfile.midfieldWeight - 0.5) * 16;
+    attackBonus += (formationProfile.attackBias - 0.5) * 12;
+    defenseBonus += (formationProfile.defensiveSolid - 0.5) * 12;
+    possessionBonus += (formationProfile.possessionBase - 50) * 0.5;
+
+    // Ev sahibi
+    if (isHome) { attackBonus += HOME_ADVANTAGE; defenseBonus += HOME_ADVANTAGE; midfieldBonus += 2; possessionBonus += 3; }
     else { attackBonus -= AWAY_PENALTY; defenseBonus -= AWAY_PENALTY; }
 
-    // Kaptan sahada mı?
     const captainPlaying = available.some(p => p.id === gameState.captainId);
-    if (captainPlaying) { attackBonus += 2; defenseBonus += 2; }
+    if (captainPlaying) { attackBonus += 2; defenseBonus += 2; midfieldBonus += 2; }
 
-    // Analist personeli
-    if (gameState.staff?.some(s => s.type === 'analyst')) { attackBonus += 3; defenseBonus += 3; }
+    if (gameState.staff?.some(s => s.type === 'analyst')) { attackBonus += 3; defenseBonus += 3; midfieldBonus += 2; }
 
-    // 📊 Taktik & Analiz Merkezi (3D antrenman kompleksi) — maç hazırlığı bonusu
     if (facilityEff.matchBonus > 0) {
       attackBonus += facilityEff.matchBonus;
       defenseBonus += facilityEff.matchBonus;
+      midfieldBonus += facilityEff.matchBonus * 0.7;
     }
 
-    // Menajer yeteneği: Taktik Zekâsı
-    // Menajerin kendi formu (Hayat sekmesi): kondisyon ve keyif sahaya yansır
     const lifeBonus = managerMatchBonus(gameState);
     attackBonus += lifeBonus.attack;
     defenseBonus += lifeBonus.defense;
@@ -280,18 +364,19 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     if (tactSkill > 0) {
       attackBonus += skillTacticsBonus(tactSkill);
       defenseBonus += skillTacticsBonus(tactSkill);
+      midfieldBonus += skillTacticsBonus(tactSkill) * 0.6;
     }
 
-    // Devre arası konuşma etkisi
     attackBonus += talkBonus.attack;
     defenseBonus += talkBonus.defense;
+    midfieldBonus += talkBonus.morale * 0.3;
 
-    // 10 kişi kaldıysa ceza
     const redPenalty = sentOffRef.current.length * 6;
     attackBonus -= redPenalty;
     defenseBonus -= redPenalty;
+    midfieldBonus -= redPenalty * 0.8;
+    possessionBonus -= redPenalty * 1.2;
 
-    // Yıldız katkısı
     attackBonus += starAttack;
     defenseBonus += starDefense;
 
@@ -302,25 +387,30 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     return {
       attack: (effAvg + attackBonus) * energyMultiplier * moraleMultiplier * chemBonus,
       defense: (effAvg + defenseBonus) * energyMultiplier * moraleMultiplier * chemBonus,
+      midfield: (effAvg + midfieldBonus) * energyMultiplier * moraleMultiplier * chemBonus,
+      possessionBase: 50 + possessionBonus,
       overall: Math.round(avgOvr),
       effectiveRounded: Math.round(effAvg),
       penaltyTotal: Math.max(0, avgOvr - effAvg),
       teamAdaptPct,
       starAttack,
       starDefense,
-      effectiveOverall: effAvg * energyMultiplier * moraleMultiplier * chemBonus
+      attOvr,
+      midOvr,
+      defOvr,
+      effectiveOverall: effAvg * energyMultiplier * moraleMultiplier * chemBonus,
+      midfieldOverall: (effAvg + midfieldBonus) * energyMultiplier * moraleMultiplier * chemBonus,
     };
-  }, [gameState, activeLineup, isHome, sentOff, talkBonus]);
+  }, [gameState, activeLineup, isHome, sentOff, talkBonus, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile]);
 
   const userStrength = calculateStrength();
   const oppOvr = Math.floor(opponent.ovr * (diffCfg?.oppOvrMult || 1));
   const oppStrength = {
     attack: oppOvr * (isHome ? 1 : 1.03),
     defense: oppOvr * (isHome ? 1 : 1.03),
+    midfield: oppOvr * (isHome ? 0.98 : 1.02),
     overall: oppOvr
   };
-  // Kaleciyi takım ortalamasından ayrı ele alıyoruz. Böylece iyi bir kaleci
-  // sadece savunma puanını değil, net pozisyonların sonucunu da etkiler.
   const userKeeper = activeLineup.find(p => p.role === 'KL' && !p.injured && !sentOff.includes(p.id));
   const userKeeperSaveBonus = userKeeper
     ? Math.max(-0.035, Math.min(0.06, (userKeeper.ovr - 72) * 0.002 + ((userKeeper.energy - 55) * 0.00035) + ((userKeeper.morale - 50) * 0.0002)))
@@ -331,20 +421,23 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     setEvents(prev => [...prev, event]);
   }, []);
 
-  const getRandomPlayer = useCallback((forGoal: boolean = false): Player => {
-    const available = activeLineup.filter(p => !p.injured && !sentOff.includes(p.id));
-    const pool = available.length > 0 ? available : activeLineup;
+  const getRandomPlayer = useCallback((forGoal: boolean = false, roleFilter?: Player['role'][]): Player => {
+    let pool = activeLineup.filter(p => !p.injured && !sentOff.includes(p.id));
+    if (pool.length === 0) pool = activeLineup;
+    if (roleFilter && roleFilter.length > 0) {
+      const filtered = pool.filter(p => roleFilter.includes(p.role));
+      if (filtered.length > 0) pool = filtered;
+    }
     if (forGoal) {
-      // İyi oyuncular gerçekten daha çok skor yapar: efektif OVR + form + moral + enerji
       const tAvg = pool.reduce((a, p) => a + p.ovr, 0) / Math.max(1, pool.length);
       const chem = gameState.teamChemistry ?? 55;
       const weights = pool.map(p => {
         let base: number;
         if (gameState.setPieceTakers?.penalty === p.id) base = 5.5;
-        else if (p.role === 'FW') base = 5;
-        else if (p.role === 'OS') base = 2.5;
-        else if (p.role === 'SB') base = 1.2;
-        else base = 0.5;
+        else if (p.role === 'FW') base = 5.2;
+        else if (p.role === 'OS') base = 2.8;
+        else if (p.role === 'SB') base = 1.3;
+        else base = 0.4;
         const eff = effectiveOvr(p, tAvg, chem);
         const ovrF = 0.4 + eff / 100;
         const formF = 0.7 + (p.form ?? 5) / 16.6;
@@ -362,7 +455,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     return pool[Math.floor(Math.random() * pool.length)];
   }, [activeLineup, sentOff, gameState.setPieceTakers, gameState.teamChemistry]);
 
-  const addUserGoal = useCallback((player: Player | null, assist: Player | null, description: string) => {
+  const addUserGoal = useCallback((player: Player | null, assist: Player | null, description: string, xgVal?: number) => {
     lastGoalMinuteRef.current = minuteRef.current;
     scoreRef.current.u += 1;
     setUserScore(scoreRef.current.u);
@@ -379,26 +472,27 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       });
     }
     play(sfx.goal);
-    pushSpiker(`⚽ GOOOOLL! ${player?.name || 'Takım'} affetmedi! xG ${ (Math.random()*0.4+0.3).toFixed(2)}`);
+    pushSpiker(`⚽ GOOOOLL! ${player?.name || 'Takım'} affetmedi! xG ${xgVal ? xgVal.toFixed(2) : (Math.random()*0.4+0.3).toFixed(2)}`);
     setGoalFlash(true);
     setTimeout(() => setGoalFlash(false), 900);
-    // kısa gol kutlaması — performansa hafif, sadece CSS
     setCelebration({ team: 'home', player: player?.name, key: Date.now() });
     setTimeout(() => setCelebration(null), 3400);
-    addEvent({ minute: minuteRef.current, type: 'goal', team: 'home', player: player?.name, description });
+    addEvent({ minute: minuteRef.current, type: 'goal', team: 'home', player: player?.name, description, xg: xgVal });
+    momentumRef.current.home = Math.min(5, momentumRef.current.home + 1.5);
+    momentumRef.current.away = Math.max(-3, momentumRef.current.away - 0.8);
   }, [addEvent, play]);
 
-  /* ══════════ DAKİKA SİMÜLASYONU ══════════ */
+  // ── GERÇEKÇİ MAÇ SİMÜLASYONU — ZİNCİRLEME MODEL ──
   const simulateMinute = useCallback((currentMinute: number, isExtra: boolean) => {
     const fatigueGoalMult = currentMinute > 80 ? 0.86 : currentMinute > 66 ? 0.93 : 1;
     const goalMult = (weatherInfo.goalMult || 1) * (isExtra ? 0.75 : 1) * fatigueGoalMult;
-    // yorgunluk anonsu — canlı 2D tempo ile eş zamanlı
+
+    // Yorgunluk ve zemin
     if ((currentMinute === 68 || currentMinute === 83) && Math.random() < 0.72) {
       const tiredPool = activeLineup.filter(p => !sentOff.includes(p.id) && !p.injured).sort((a, b) => a.energy - b.energy);
       const tired = tiredPool[0];
       if (tired) addEvent({ minute: currentMinute, type: 'info', team: 'home', description: `🥵 ${tired.name} yorgun düşüyor — tempo düştü, 2D'de ağırlaştılar! Değişiklik düşün.` });
     }
-    // kaygan zemin — yağmur/kar’da kayma + faul artışı
     const isWet = weather === 'rain' || weather === 'storm' || weather === 'snow';
     if (isWet && Math.random() < 0.072 && currentMinute > 10) {
       const slipper = Math.random() < 0.62 ? getRandomPlayer(false) : null;
@@ -411,121 +505,336 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
     }
 
-    // Top hakimiyeti kayması
-    if (Math.random() < 0.3) {
-      const ovrDiff = userStrength.effectiveOverall - oppStrength.overall;
-      const drift = (Math.random() - 0.5) * 6 + ovrDiff * 0.15;
-      setPossession(prev => Math.max(25, Math.min(75, prev + drift)));
+    // ── 1. ORTA SAHA SAVAŞI — top kimde? ──
+    // Orta saha üstünlüğü + pres + momentum
+    const midDiff = userStrength.midfield - oppStrength.midfield;
+    const pressingFactor = (pressingIntensity - 50) / 100; // -0.5 to 0.5
+    const momentum = momentumRef.current.home - momentumRef.current.away;
+    const midfieldWinChance = 0.5 + midDiff * 0.012 + pressingFactor * 0.08 + momentum * 0.03 + (userStrength.possessionBase - 50) * 0.008;
+
+    // Possession drift — daha yumuşak, gerçekçi
+    if (Math.random() < 0.38) {
+      const drift = (Math.random() - 0.5) * 4 + (midfieldWinChance - 0.5) * 8;
+      setPossession(prev => Math.max(28, Math.min(72, prev + drift)));
     }
 
-    if (Math.random() < 0.20) {
-      const ovrDiff = userStrength.effectiveOverall - oppStrength.overall;
-      const dominanceFactor = 0.5 + (ovrDiff * 0.02);
-      const userDominance = Math.max(0.22, Math.min(0.82, dominanceFactor));
-      const isUserAttack = Math.random() < userDominance;
-
-      if (isUserAttack) {
-        setShots(s => ({ ...s, home: s.home + 1 }));
-        const thisXg = 0.08 + Math.random()*0.32;
-        setXg(x => ({ ...x, home: +(x.home + thisXg).toFixed(2) }));
-        if (Math.random() < 0.25) setCorners(c => ({ ...c, home: c.home + 1 }));
-
-        const goalChance = Math.max(0.035, (0.22 + Math.max(-0.12, Math.min(0.28, ovrDiff * 0.01)) + userStrength.starAttack * 0.005 - oppKeeperSaveBonus) * goalMult);
-        const roll = Math.random();
-
-        if (roll < goalChance && currentMinute - lastGoalMinuteRef.current >= 2) {
-          // İnteraktif duran top — maç başına en fazla 2 kez
-          if (mgCountRef.current < 2 && Math.random() < 0.22 && !pausedRef.current) {
-            const isPen = Math.random() < 0.55;
-            const takerId = isPen ? gameState.setPieceTakers?.penalty : gameState.setPieceTakers?.freekick;
-            const taker = activeLineup.find(p => p.id === takerId && !p.injured && !sentOff.includes(p.id));
-            const scorer = taker || getRandomPlayer(true);
-            mgCountRef.current += 1;
-            pausedRef.current = true;
-            setPendingScorer(scorer);
+    // Top hakimiyeti değişimi
+    if (Math.random() < 0.22) {
+      const newTeam = Math.random() < midfieldWinChance ? 'home' : 'away';
+      if (newTeam !== possessionChainRef.current.team) {
+        possessionChainRef.current = { team: newTeam, phase: 'build', passes: 0 };
+        // Top kapma olayı
+        if (Math.random() < 0.55) {
+          const tackler = newTeam === 'home' ? getRandomPlayer(false, ['STP', 'SB']) : null;
+          const type = Math.random() < 0.5 ? 'tackle' : 'interception';
+          if (tackler) {
             addEvent({
               minute: currentMinute,
-              type: 'info',
-              team: 'home',
-              description: isPen
-                ? `⏸️ PENALTI! ${scorer.name} topun başında — sen kullan!`
-                : `⏸️ TEHLİKELİ FRİKİK! ${scorer.name} vuracak — sen kontrol et!`
+              type: type as any,
+              team: newTeam,
+              player: tackler.name,
+              description: type === 'tackle' ? `🦶 ${tackler.name} kritik müdahale! Topu kazandı` : `🛡️ ${tackler.name} araya girdi, pası kesti!`
             });
-            setMatchMinigame({
-              type: isPen ? 'penalty' : 'freekick',
-              title: isPen ? 'Penaltı!' : 'Frikik!',
-              description: `${currentMinute}' — ${scorer.name}`,
-              inMatch: true,
-              playerName: scorer.name
+          } else {
+            addEvent({
+              minute: currentMinute,
+              type: type as any,
+              team: newTeam,
+              description: `${newTeam === 'home' ? gameState.teamName : opponent.name} topu kazandı — ${type === 'tackle' ? 'müdahale' : 'pres'} başarılı!`
             });
-            return;
           }
-          lastGoalMinuteRef.current = currentMinute;
-          const scorer = getRandomPlayer(true);
-          const assister = Math.random() > 0.35 ? getRandomPlayer(false) : null;
-          const template = MATCH_EVENTS.goals[Math.floor(Math.random() * MATCH_EVENTS.goals.length)];
-          const desc = template.replace('{player}', scorer.name) +
-            (assister && assister.id !== scorer.id ? ` (Asist: ${assister.name})` : '');
-          addUserGoal(scorer, assister, desc);
-        } else if (roll < goalChance + 0.3) {
-          const player = getRandomPlayer(true);
-          addEvent({
-            minute: currentMinute, type: 'chance', team: 'home', player: player.name,
-            description: `${player.name} şut çekti ama kaleci kurtardı!`
-          });
-        } else if (roll < goalChance + 0.45) {
-          addEvent({
-            minute: currentMinute, type: 'save', team: 'home',
-            description: MATCH_EVENTS.saves[Math.floor(Math.random() * MATCH_EVENTS.saves.length)]
-          });
         }
       } else {
-        setShots(s => ({ ...s, away: s.away + 1 }));
-        const thisXgA = 0.06 + Math.random()*0.28;
-        setXg(x => ({ ...x, away: +(x.away + thisXgA).toFixed(2) }));
-        if (Math.random() < 0.25) setCorners(c => ({ ...c, away: c.away + 1 }));
-        const goalChance = Math.max(0.035, (0.18 + Math.max(-0.12, Math.min(0.18, -ovrDiff * 0.008)) - userStrength.starDefense * 0.004 - userKeeperSaveBonus) * goalMult);
-        const roll = Math.random();
-
-        if (roll < goalChance && currentMinute - lastGoalMinuteRef.current >= 2) {
-          if (mgCountRef.current < 2 && Math.random() < 0.28 && !pausedRef.current) {
-            mgCountRef.current += 1;
-            pausedRef.current = true;
-            addEvent({
-              minute: currentMinute, type: 'info', team: 'away',
-              description: '⏸️ RAKİP NET POZİSYON! Kaleci, kurtar!'
-            });
-            setMatchMinigame({
-              type: 'keeper_save', title: 'Kaleci Anı!',
-              description: `${currentMinute}' — ${opponent.name} tehlikeli pozisyon`,
-              inMatch: true, playerName: 'Kaleci'
-            });
-            return;
-          }
-          lastGoalMinuteRef.current = currentMinute;
-          scoreRef.current.o += 1;
-          setOppScore(scoreRef.current.o);
-          play(sfx.conceded);
-          pushSpiker(`❌ ${opponent.name} cezayı kesti! Tribünler sustu...`);
-          setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
-          setTimeout(() => setCelebration(null), 2200);
-          addEvent({
-            minute: currentMinute, type: 'goal', team: 'away',
-            player: randomOpponentName(),
-            description: `❌ ${opponent.name} gol buldu!`
-          });
-        } else if (roll < goalChance + 0.25) {
-          addEvent({ minute: currentMinute, type: 'chance', team: 'away', description: `${opponent.name} tehlikeli bir atak geliştiriyor...` });
-        } else if (roll < goalChance + 0.4) {
-          addEvent({ minute: currentMinute, type: 'save', team: 'home', description: `🧤 Kalecimiz ${opponent.name} şutunu yerden kontrol etti!` });
+        possessionChainRef.current.passes += 1;
+        if (possessionChainRef.current.passes > 3 && possessionChainRef.current.phase === 'build') {
+          possessionChainRef.current.phase = 'mid';
+        }
+        if (possessionChainRef.current.passes > 7 && possessionChainRef.current.phase === 'mid') {
+          possessionChainRef.current.phase = 'final';
         }
       }
     }
 
-    /* — Kartlar — */
-    if (Math.random() < 0.016 && currentMinute > 10) {
-      const player = getRandomPlayer();
-      const isRed = Math.random() < 0.1;
+    // ── 2. ŞANS YARATMA — pas zinciri başarılı mı? ──
+    const chain = possessionChainRef.current;
+    const chainTeam = chain.team;
+    const isUserChain = chainTeam === 'home';
+
+    // Pas başarı şansı — yaratıcılık, tempo, pres
+    const creativityFactor = (creativity - 50) / 50; // -1 to 1
+    const tempoFactor = (tempoValue - 50) / 50;
+    const buildSuccessBase = isUserChain
+      ? 0.62 + (userStrength.midOvr - 70) * 0.008 + creativityFactor * 0.08 + tempoFactor * -0.05
+      : 0.58 + (oppStrength.midfield - 70) * 0.008;
+
+    // Düşük tempo daha güvenli pas, yüksek tempo daha riskli
+    const passRisk = 0.15 + Math.abs(tempoFactor) * 0.12 + (creativityFactor > 0 ? creativityFactor * 0.08 : 0);
+    const losesPossession = Math.random() < passRisk && chain.phase !== 'build';
+
+    if (losesPossession) {
+      possessionChainRef.current = { team: isUserChain ? 'away' : 'home', phase: 'build', passes: 0 };
+      return;
+    }
+
+    // Final bölgesine ulaşıldı mı?
+    const finalChance = chain.phase === 'final' ? 0.32 : chain.phase === 'mid' ? 0.12 : 0.04;
+    // Ofansif taktikler ve genişlik final şansını artırır
+    const widthFactor = (width - 50) / 50;
+    const dlFactor = (defensiveLine - 50) / 50;
+    const finalBoost = (isUserChain ? (formationProfile.attackBias - 0.5) * 0.15 + widthFactor * 0.08 + dlFactor * 0.06 : 0);
+    const shouldCreateChance = Math.random() < (finalChance + finalBoost);
+
+    if (!shouldCreateChance) {
+      // Ara pas trafiği — hafif olaylar
+      if (Math.random() < 0.28) {
+        const mover = isUserChain ? getRandomPlayer(false) : null;
+        if (mover && isUserChain) {
+          const moves = chain.phase === 'build'
+            ? [`⚽ ${mover.name} geriden oyun kuruyor`, `🔄 ${mover.name} stoperlerle paslaşıyor`, `↗️ ${mover.name} orta sahaya taşıdı`]
+            : [`⚽ ${mover.name} topu sürüyor — kanada açıldı`, `🌀 ${mover.name} topu saklıyor, tempo yapıyor`, `🎯 Orta sahada ${mover.name} oyunu kuruyor`];
+          addEvent({ minute: currentMinute, type: 'info', team: 'home', description: moves[Math.floor(Math.random() * moves.length)] });
+        } else if (!isUserChain) {
+          const awayMoves = chain.phase === 'build'
+            ? [`🔴 ${opponent.name} geriden kuruyor`, `🔄 ${opponent.name} pas trafiği kuruyor`]
+            : [`🔴 ${opponent.name} top çeviriyor`, `↘️ ${opponent.name} kanattan geliyor`, `💨 ${opponent.name} hızlı hücuma çıkıyor`];
+          addEvent({ minute: currentMinute, type: 'away' as any, description: awayMoves[Math.floor(Math.random() * awayMoves.length)] } as any);
+          // Fix: use proper team
+          setEvents(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.minute === currentMinute) {
+              last.team = 'away';
+            }
+            return prev;
+          });
+        }
+      }
+      return;
+    }
+
+    // ── 3. ŞANS TİPİ BELİRLEME ──
+    // Kanat vs merkez, ortalar vs ara paslar
+    const isWidePlay = Math.random() < (formationProfile.wingWeight * 0.5 + widthFactor * 0.25 + 0.15);
+    const isThroughBall = !isWidePlay && Math.random() < (0.25 + creativityFactor * 0.18);
+    const isCross = isWidePlay && Math.random() < 0.65;
+    const isLongShot = !isWidePlay && !isThroughBall && Math.random() < 0.18;
+    const isSetPiece = Math.random() < 0.12; // korner/frikik sonrası
+
+    let shotType: 'open' | 'header' | 'volley' | 'oneonone' | 'long' | 'freekick' | 'penalty' = 'open';
+    let distance = 16 + Math.random() * 10;
+    let angle = Math.random() * 35;
+    let pressure = 0.3 + Math.random() * 0.4;
+
+    if (isCross) {
+      shotType = Math.random() < 0.6 ? 'header' : 'volley';
+      distance = 6 + Math.random() * 8;
+      angle = 15 + Math.random() * 40;
+      pressure = 0.4 + Math.random() * 0.3;
+    } else if (isThroughBall) {
+      shotType = Math.random() < 0.45 ? 'oneonone' : 'open';
+      distance = 8 + Math.random() * 8;
+      angle = Math.random() * 25;
+      pressure = 0.15 + Math.random() * 0.25;
+    } else if (isLongShot) {
+      shotType = 'long';
+      distance = 22 + Math.random() * 8;
+      angle = Math.random() * 30;
+      pressure = 0.2 + Math.random() * 0.3;
+    } else {
+      distance = 12 + Math.random() * 10;
+      angle = Math.random() * 30;
+      pressure = 0.35 + Math.random() * 0.35;
+    }
+
+    // Ofsayt kontrolü — defans çizgisi yüksekse ofsayt daha olası
+    const offsideLineRisk = isUserChain
+      ? Math.max(0, (50 - defensiveLine) / 100) // rakip derindeyse ofsayt az
+      : Math.max(0, (defensiveLine - 50) / 100 * 0.8); // biz öndeysek rakip ofsayta düşer
+
+    // Ama through ball'lar ofsayt riskini artırır
+    const offsideChance = (isThroughBall ? 0.18 : 0.06) + offsideLineRisk * 0.25;
+    if (Math.random() < offsideChance) {
+      const offPlayer = isUserChain ? getRandomPlayer(true, ['FW', 'OS']) : null;
+      addEvent({
+        minute: currentMinute,
+        type: 'offside',
+        team: chainTeam,
+        player: offPlayer?.name,
+        description: offPlayer ? `🚩 ${offPlayer.name} ofsayta yakalandı! ${isThroughBall ? 'Ara pası biraz hızlı...' : 'Savunma çizgisi dikkatli'}` : `🚩 Ofsayt! ${chainTeam === 'home' ? gameState.teamName : opponent.name} atağı durdu`
+      });
+      possessionChainRef.current = { team: isUserChain ? 'away' : 'home', phase: 'build', passes: 0 };
+      return;
+    }
+
+    // ── 4. xG HESABI VE ŞUT ──
+    const keeperOvr = isUserChain ? oppOvr : (userKeeper?.ovr || 70);
+    const xgVal = calculateXG({ distance, angle, shotType, pressure, keeperOvr, weather });
+
+    // Şut çekildi
+    if (isUserChain) {
+      setShots(s => ({ ...s, home: s.home + 1 }));
+      setXg(x => ({ ...x, home: +(x.home + xgVal).toFixed(2) }));
+      if (isSetPiece || isCross) {
+        if (Math.random() < 0.5) setCorners(c => ({ ...c, home: c.home + 1 }));
+      }
+    } else {
+      setShots(s => ({ ...s, away: s.away + 1 }));
+      setXg(x => ({ ...x, away: +(x.away + xgVal).toFixed(2) }));
+      if (isSetPiece || isCross) {
+        if (Math.random() < 0.5) setCorners(c => ({ ...c, away: c.away + 1 }));
+      }
+    }
+
+    // Gol şansı — xG'ye göre + taktik bonuslar
+    const ovrDiff = isUserChain ? userStrength.attack - oppStrength.defense : oppStrength.attack - userStrength.defense;
+    const formBoost = isUserChain ? userStrength.starAttack * 0.015 : 0;
+    const defReduction = isUserChain ? 0 : userStrength.starDefense * 0.01;
+    const keeperSave = isUserChain ? oppKeeperSaveBonus : userKeeperSaveBonus;
+
+    // xG'yi gol olasılığına çevir — xG zaten olasılık ama OVR farkı ve kaleci eklenir
+    let goalProb = xgVal * 0.85; // xG'nin %85'i baz
+    goalProb += ovrDiff * 0.003; // OVR farkı küçük etki
+    goalProb += formBoost;
+    goalProb -= defReduction;
+    goalProb -= keeperSave;
+    goalProb *= goalMult;
+    goalProb = Math.max(0.02, Math.min(0.88, goalProb));
+
+    const roll = Math.random();
+
+    if (isUserChain) {
+      // Kullanıcı atağı
+      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 2) {
+        // Mini oyun tetikleme — sadece yüksek xG'lerde ve nadir
+        if (mgCountRef.current < 2 && xgVal > 0.28 && Math.random() < 0.22 && !pausedRef.current) {
+          const isPen = shotType === 'penalty' || (Math.random() < 0.35 && xgVal > 0.5);
+          const takerId = isPen ? gameState.setPieceTakers?.penalty : gameState.setPieceTakers?.freekick;
+          const taker = activeLineup.find(p => p.id === takerId && !p.injured && !sentOff.includes(p.id));
+          const scorer = taker || getRandomPlayer(true, isCross ? ['FW', 'STP'] : ['FW', 'OS']);
+          mgCountRef.current += 1;
+          pausedRef.current = true;
+          setPendingScorer(scorer);
+          addEvent({
+            minute: currentMinute,
+            type: 'info',
+            team: 'home',
+            description: isPen
+              ? `⏸️ PENALTI! ${scorer.name} topun başında — sen kullan! (xG ${xgVal.toFixed(2)})`
+              : `⏸️ TEHLİKELİ ${isCross ? 'KAFA' : 'ŞUT'}! ${scorer.name} vuracak — sen kontrol et! (xG ${xgVal.toFixed(2)})`
+          });
+          setMatchMinigame({
+            type: isPen ? 'penalty' : 'freekick',
+            title: isPen ? 'Penaltı!' : isCross ? 'Kafa Vuruşu!' : 'Frikik!',
+            description: `${currentMinute}' — ${scorer.name} • xG ${xgVal.toFixed(2)}`,
+            inMatch: true,
+            playerName: scorer.name
+          });
+          return;
+        }
+
+        const scorer = getRandomPlayer(true, isCross ? ['FW', 'STP', 'OS'] : ['FW', 'OS']);
+        const assister = Math.random() > 0.32 ? getRandomPlayer(false, isWidePlay ? ['SB', 'OS'] : ['OS', 'SB']) : null;
+        let desc = '';
+        if (isCross) {
+          desc = shotType === 'header'
+            ? `${assister ? assister.name + ' ortaladı, ' : ''}${scorer.name} kafayla ağlara gönderdi!`
+            : `${assister ? assister.name + ' ortası, ' : ''}${scorer.name} voleyle bitirdi!`;
+        } else if (isThroughBall) {
+          desc = `${assister ? assister.name + ' ara pası, ' : ''}${scorer.name} ${shotType === 'oneonone' ? 'kaleciyle karşı karşıya affetmedi' : 'ceza sahasında bitirdi'}!`;
+        } else if (isLongShot) {
+          desc = `${scorer.name} uzaklardan sert vurdu — kaleci çaresiz!`;
+        } else {
+          const template = MATCH_EVENTS.goals[Math.floor(Math.random() * MATCH_EVENTS.goals.length)];
+          desc = template.replace('{player}', scorer.name) + (assister && assister.id !== scorer.id ? ` (Asist: ${assister.name})` : '');
+        }
+        addUserGoal(scorer, assister, desc, xgVal);
+        possessionChainRef.current = { team: 'away', phase: 'build', passes: 0 };
+      } else if (roll < goalProb + 0.28) {
+        const player = getRandomPlayer(true, isCross ? ['FW', 'STP'] : ['FW', 'OS']);
+        const saveDesc = shotType === 'header'
+          ? `${player.name} kafa vuruşu — kaleci son anda çeldi!`
+          : shotType === 'long'
+          ? `${player.name} uzaktan denedi — kaleci uzandı kurtardı!`
+          : `${player.name} şut çekti ama kaleci kurtardı! (xG ${xgVal.toFixed(2)})`;
+        addEvent({ minute: currentMinute, type: 'save', team: 'home', player: player.name, description: saveDesc, xg: xgVal });
+        momentumRef.current.home = Math.min(3, momentumRef.current.home + 0.2);
+      } else if (roll < goalProb + 0.42) {
+        addEvent({
+          minute: currentMinute, type: 'chance', team: 'home',
+          description: `${getRandomPlayer(true).name} pozisyonu harcadı — ${shotType === 'header' ? 'kafa auta' : shotType === 'long' ? 'top üstten auta' : 'şut yandan auta'}! (xG ${xgVal.toFixed(2)})`,
+          xg: xgVal
+        });
+      } else {
+        // Bloklandı / korner
+        if (Math.random() < 0.35) {
+          setCorners(c => ({ ...c, home: c.home + 1 }));
+          addEvent({ minute: currentMinute, type: 'corner', team: 'home', description: `🚩 Korner! ${gameState.teamName} baskıyı sürdürüyor (xG ${xgVal.toFixed(2)})`, xg: xgVal });
+        } else {
+          addEvent({ minute: currentMinute, type: 'info', team: 'home', description: `🛡️ ${opponent.name} savunması ${shotType === 'header' ? 'kafayı' : 'şutu'} blokladı!` });
+        }
+      }
+    } else {
+      // Rakip atağı
+      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 2) {
+        if (mgCountRef.current < 2 && xgVal > 0.25 && Math.random() < 0.28 && !pausedRef.current) {
+          mgCountRef.current += 1;
+          pausedRef.current = true;
+          addEvent({ minute: currentMinute, type: 'info', team: 'away', description: `⏸️ RAKİP NET POZİSYON! xG ${xgVal.toFixed(2)} — Kaleci, kurtar!` });
+          setMatchMinigame({
+            type: 'keeper_save', title: 'Kaleci Anı!',
+            description: `${currentMinute}' — ${opponent.name} tehlikeli pozisyon • xG ${xgVal.toFixed(2)}`,
+            inMatch: true, playerName: 'Kaleci'
+          });
+          return;
+        }
+        lastGoalMinuteRef.current = currentMinute;
+        scoreRef.current.o += 1;
+        setOppScore(scoreRef.current.o);
+        play(sfx.conceded);
+        pushSpiker(`❌ ${opponent.name} cezayı kesti! xG ${xgVal.toFixed(2)} — Tribünler sustu...`);
+        setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
+        setTimeout(() => setCelebration(null), 2200);
+        addEvent({
+          minute: currentMinute, type: 'goal', team: 'away',
+          player: randomOpponentName(),
+          description: `❌ ${opponent.name} gol buldu! ${isCross ? 'Orta kafa golü' : isThroughBall ? 'Ara pası golü' : 'Organize atak'} (xG ${xgVal.toFixed(2)})`,
+          xg: xgVal
+        });
+        momentumRef.current.away = Math.min(4, momentumRef.current.away + 1.2);
+        momentumRef.current.home = Math.max(-3, momentumRef.current.home - 0.6);
+        possessionChainRef.current = { team: 'home', phase: 'build', passes: 0 };
+      } else if (roll < goalProb + 0.25) {
+        addEvent({ minute: currentMinute, type: 'chance', team: 'away', description: `${opponent.name} tehlikeli geldi — xG ${xgVal.toFixed(2)} ama sonuç yok!`, xg: xgVal });
+        momentumRef.current.away = Math.min(2, momentumRef.current.away + 0.15);
+      } else if (roll < goalProb + 0.42) {
+        addEvent({ minute: currentMinute, type: 'save', team: 'home', description: `🧤 Kalecimiz ${opponent.name} ${shotType === 'header' ? 'kafa vuruşunu' : 'şutunu'} kurtardı! (xG ${xgVal.toFixed(2)})`, xg: xgVal });
+      } else {
+        if (Math.random() < 0.32) {
+          setCorners(c => ({ ...c, away: c.away + 1 }));
+          addEvent({ minute: currentMinute, type: 'corner', team: 'away', description: `🚩 Korner — ${opponent.name} yükleniyor`, xg: xgVal });
+        }
+      }
+    }
+
+    // ── FAUL & KARTLAR — pres yoğunluğuna bağlı ──
+    const foulBase = 0.055 + (pressingIntensity - 50) / 500 + (isWet ? 0.02 : 0);
+    if (Math.random() < foulBase) {
+      const foulTeam = Math.random() < 0.5 ? 'home' : 'away';
+      setFouls(f => foulTeam === 'home' ? { ...f, home: f.home + 1 } : { ...f, away: f.away + 1 });
+      if (Math.random() < 0.35) {
+        const foulPlayer = foulTeam === 'home' ? getRandomPlayer(false, ['STP', 'SB']) : null;
+        addEvent({
+          minute: currentMinute,
+          type: 'foul',
+          team: foulTeam as any,
+          player: foulPlayer?.name,
+          description: foulPlayer ? `⚠️ ${foulPlayer.name} faul yaptı — ${pressingIntensity > 70 ? 'yoğun presin bedeli' : 'sert müdahale'}` : `⚠️ Faul — ${foulTeam === 'home' ? gameState.teamName : opponent.name} serbest vuruş kazandı`
+        });
+      }
+    }
+
+    if (Math.random() < (0.012 + (pressingIntensity - 50) / 5000) && currentMinute > 10) {
+      const player = getRandomPlayer(false, ['STP', 'SB', 'OS']);
+      const isRed = Math.random() < 0.09;
       const record = cardMapRef.current.get(player.id) || { yellow: 0, red: 0 };
 
       if (isRed) {
@@ -536,9 +845,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         play(sfx.card);
         setCardPop({ player: player.name, kind: 'red', key: Date.now() });
         setTimeout(() => setCardPop(null), 2600);
-        // 🐢 kırmızı kart → simülasyon yavaş çekime geçer, sonra devam eder
         triggerSlowMo(3600);
-        pushSpiker(`🟥 ${player.name} kırmızı kart! Hakem oyunu durdurdu — yavaş çekim...`);
+        pushSpiker(`🟥 ${player.name} kırmızı kart!`);
         addEvent({
           minute: currentMinute, type: 'card', team: 'home', player: player.name,
           description: `🟥 ${player.name} kırmızı kart gördü! ${gameState.teamName} 10 kişi kaldı!`
@@ -556,11 +864,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         const secondYellow = record.yellow >= 2;
         setCardPop({ player: player.name, kind: secondYellow ? 'second' : 'yellow', key: Date.now() });
         setTimeout(() => setCardPop(null), 2600);
-        // 🐢 kart anı → kısa yavaş çekim, ardından simülasyon normal devam eder
         triggerSlowMo(secondYellow ? 3400 : 2600);
-        pushSpiker(secondYellow
-          ? `🟨🟥 ${player.name} ikinci sarıdan atıldı — oyun yavaşlıyor...`
-          : `🟨 ${player.name} sarı kart gördü — hakem oyunu yavaşlattı`);
+        pushSpiker(secondYellow ? `🟨🟥 ${player.name} ikinci sarıdan atıldı` : `🟨 ${player.name} sarı kart gördü`);
         if (secondYellow) {
           record.red += 1;
           cardMapRef.current.set(player.id, record);
@@ -570,16 +875,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         }
         addEvent({
           minute: currentMinute, type: 'card', team: 'home', player: player.name,
-          description: secondYellow
-            ? `🟨🟥 ${player.name} ikinci sarıdan atıldı!`
-            : `🟨 ${player.name} sarı kart gördü.`
+          description: secondYellow ? `🟨🟥 ${player.name} ikinci sarıdan atıldı!` : `🟨 ${player.name} sarı kart gördü.`
         });
       }
     }
 
-    /* — Sakatlıklar (gerçekten uygulanır) — */
-    const injuryChance = 0.005 * (diffCfg?.injuryMult || 1) * (weatherInfo.injuryMult || 1) *
-      (1 - skillInjuryReduction(gameState.skills?.medical ?? 0));
+    // Sakatlıklar
+    const injuryChance = 0.0045 * (diffCfg?.injuryMult || 1) * (weatherInfo.injuryMult || 1) *
+      (1 - skillInjuryReduction(gameState.skills?.medical ?? 0)) * (isWet ? 1.15 : 1) * (pressingIntensity > 75 ? 1.2 : 1);
     if (Math.random() < injuryChance && currentMinute > 15) {
       const player = getRandomPlayer();
       if (!player.injured) {
@@ -591,7 +894,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           minute: currentMinute, type: 'injury', team: 'home', player: player.name,
           description: `🏥 ${player.name} sakatlandı ve oyuna devam edemiyor (${weeks} hafta)!`
         });
-        // Otomatik değişiklik hakkı varsa yedekten oyuncu girsin
         if (substitutions.length < 5) {
           const replacement = activeBench.find(p => !p.injured);
           if (replacement) {
@@ -612,45 +914,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
     }
 
-    /* — Top sürme / pas trafiği — canlı 2D için sürekli hareket (abartmadan, hafif) */
-    if (Math.random() < 0.32) {
-      const userHas = Math.random() < (possession / 100);
-      if (userHas) {
-        const p = getRandomPlayer(false);
-        const dribbles = [
-          `⚽ ${p.name} topu sürüyor — kanada açıldı`,
-          `⚽ ${p.name} driplingle 2 adam geçti!`,
-          `↗️ ${p.name} ara pası arıyor...`,
-          `🌀 ${p.name} topu saklıyor, tempo yapıyor`,
-          `🎯 Orta sahada ${p.name} oyunu kuruyor`,
-          `💨 ${p.name} hızlandı, bindirmeye gitti`,
-        ];
-        addEvent({ minute: currentMinute, type: 'info', team: 'home', description: dribbles[Math.floor(Math.random() * dribbles.length)] });
-      } else {
-        const awayMoves = [
-          `🔴 ${opponent.name} top çeviriyor`,
-          `🔴 ${opponent.name} baskıyla topu geri kazandı`,
-          `↘️ ${opponent.name} kanattan geliyor`,
-          `🔄 ${opponent.name} pas trafiği kuruyor`,
-          `💨 ${opponent.name} hızlı hücuma çıkıyor`,
-        ];
-        addEvent({ minute: currentMinute, type: 'info', team: 'away', description: awayMoves[Math.floor(Math.random() * awayMoves.length)] });
-      }
-    }
-
-    /* — FauL & yorum — */
-    if (Math.random() < 0.08) {
-      setFouls(f => (Math.random() < 0.5 ? { ...f, home: f.home + 1 } : { ...f, away: f.away + 1 }));
-    }
-    if (Math.random() < 0.04) {
+    // Tempo yüksekse daha fazla olay, düşükse daha sakin
+    const tempoEventChance = 0.18 + (tempoValue - 50) / 500;
+    if (Math.random() < tempoEventChance && currentMinute % 7 === 0) {
       const comments = [
-        'Orta saha mücadelesi kızışıyor...',
-        'Taraftarlar ayakta!',
-        'Teknik direktörler kenarda talimat veriyor.',
-        'Tempo yükseliyor!',
+        `Orta saha mücadelesi kızışıyor... (pres %${pressingIntensity})`,
+        `Taraftarlar ayakta! ${possessionChainRef.current.team === 'home' ? gameState.teamName : opponent.name} baskı kuruyor`,
+        `Teknik direktörler kenarda talimat veriyor — defans çizgisi ${defensiveLine > 60 ? 'önde' : defensiveLine < 40 ? 'derinde' : 'dengede'}`,
+        `${width > 65 ? 'Kanatlar geniş, ortalar geliyor' : width < 35 ? 'Dar alanda kısa paslar' : 'Orta koridor kalabalık'}`,
         WEATHER_INFO[weather]?.desc ?? 'Hava koşulları oyunu etkiliyor.',
-        `${gameState.teamName} baskı kuruyor.`,
-        `${opponent.name} kontra arıyor.`
+        `${creativity > 70 ? 'Yaratıcı ara paslar deneniyor' : creativity < 30 ? 'Güvenli, garanti paslar' : 'Dengeli hücum'}`,
       ];
       addEvent({
         minute: currentMinute, type: 'info', team: 'home',
@@ -660,10 +933,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [
     userStrength, oppStrength, userKeeperSaveBonus, oppKeeperSaveBonus, opponent.name, gameState.teamName, gameState.setPieceTakers,
     addEvent, getRandomPlayer, diffCfg, weatherInfo, weather, addUserGoal, activeLineup, activeBench,
-    substitutions, sentOff, play, triggerSlowMo, pushSpiker
+    substitutions, sentOff, play, triggerSlowMo, pushSpiker, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile
   ]);
 
-  /* ══════════ MAÇ AKIŞI ══════════ */
   const buildRatings = useCallback((): { ratings: PlayerRating[]; motmPlayerId: number | null; motmName: string } => {
     const uScore = scoreRef.current.u;
     const oScore = scoreRef.current.o;
@@ -676,7 +948,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       const stats = scorers.get(p.id) || { goals: 0, assists: 0 };
       const card = cardMapRef.current.get(p.id) || { yellow: 0, red: 0 };
       const injured = injuryMapRef.current.has(p.id);
-      // Yıldızlar yüksek, uyumsuz yeniler düşük reyting alır
       const indBonus = Math.max(-0.8, Math.min(1.2, (effectiveOvr(p, rAvg, rChem) - rAvg) * 0.14));
       const base = 6.1 + ((p.form ?? 5) / 10) * 0.5 + indBonus;
       const rating =
@@ -699,7 +970,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     let motmPlayerId: number | null = best?.playerId ?? null;
     let motmName = best?.name ?? '—';
 
-    // Rakip daha iyi oynadıysa maçın adamı onlardan olabilir
     if (oScore > uScore && Math.random() < 0.65) {
       motmPlayerId = null;
       motmName = `${randomOpponentName()} (${opponent.name})`;
@@ -781,8 +1051,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   useEffect(() => {
     if (!matchRunning) { stopTimer(); return; }
     stopTimer();
-    // ⏱️ 1x = maç ~2 dk sürer (1333 ms/dk), 2x = ~1 dk (667 ms/dk)
-    // 🐢 yavaş çekim — kart anında dakika aralığı uzar, sonra normale döner
     const tickMs = (1333 / speed) * (slowMo ? 3.2 : 1);
     timerRef.current = setInterval(() => {
       if (pausedRef.current || finishedRef.current) return;
@@ -801,9 +1069,10 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     setPhase('first');
     pausedRef.current = false;
     playedRef.current = new Set(gameState.team11.map(p => p.id));
+    possessionChainRef.current = { team: isHome ? 'home' : 'away', phase: 'build', passes: 0 };
+    momentumRef.current = { home: isHome ? 0.5 : -0.3, away: isHome ? -0.3 : 0.5 };
     play(sfx.whistle);
-    addEvent({ minute: 0, type: 'info', team: 'home', description: '🏟️ Hakem düdüğü çaldı, maç başladı!' });
-    // 🧩 Uyum / ⭐ yıldız bilgilendirmesi
+    addEvent({ minute: 0, type: 'info', team: 'home', description: `🏟️ Hakem düdüğü çaldı, maç başladı! Formasyon: ${gameState.tactics.formation} • ${formationProfile.midfieldWeight > 0.6 ? 'Orta saha kalabalık' : 'Kanatlar açık'} • Pres %${pressingIntensity} • Tempo %${tempoValue}` });
     const sAvg = activeLineup.reduce((a, p) => a + p.ovr, 0) / Math.max(1, activeLineup.length);
     const sChem = gameState.teamChemistry ?? 55;
     const adapting = activeLineup.filter(p => adaptationPct(p) < 0.5 && (p.ovr - sAvg) >= 3);
@@ -821,7 +1090,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const leading = scoreRef.current.u - scoreRef.current.o;
     let effect = { attack: 0, defense: 0, morale: 0 };
     let text = '';
-    // %20 ihtimalle konuşma tutmaz
     const reacted = Math.random() > 0.2;
 
     if (!reacted) {
@@ -856,7 +1124,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   const skipMatch = () => {
     disableMinigames();
-    // atlanırken yavaş çekim / dondurma olmaz
     if (slowMoTimer.current) { clearTimeout(slowMoTimer.current); slowMoTimer.current = null; }
     setSlowMo(false);
     resumeSim(0);
@@ -890,14 +1157,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const handleMinigameComplete = useCallback((result: MinigameResult) => {
     const scorer = pendingScorer;
     if (result.goalScored) {
-      addUserGoal(scorer, null, result.news);
+      addUserGoal(scorer, null, result.news, 0.75);
     } else if (result.goalConceded) {
       scoreRef.current.o += 1;
       setOppScore(scoreRef.current.o);
       play(sfx.conceded);
       setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
       setTimeout(() => setCelebration(null), 2200);
-      addEvent({ minute: minuteRef.current, type: 'goal', team: 'away', description: result.news });
+      addEvent({ minute: minuteRef.current, type: 'goal', team: 'away', description: result.news, xg: 0.65 });
     } else {
       addEvent({
         minute: minuteRef.current,
@@ -923,13 +1190,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     setActiveBench(prev => [...prev.filter(p => p.id !== inId), { ...outPlayer, t: undefined, l: undefined }]);
     setSubstitutions(prev => [...prev, outId]);
     addEvent({ minute: minuteRef.current, type: 'substitution', team: 'home', description: `🔄 ${outPlayer.name} ⇄ ${inPlayer.name}` });
-    // yedek kulübesi sinematiği — tabelalı, koşarak girme hissi, hafif
     play(sfx.whistle);
     setSubBoard({ outName: outPlayer.name, inName: inPlayer.name, outRole: outPlayer.role, inRole: inPlayer.role, key: Date.now() });
     setTimeout(() => setSubBoard(null), 2800);
     setShowSubModal(false);
     setSubOut(null);
-    // ▶️ değişiklik tamam — simülasyon kısa bir duraksamanın ardından kaldığı yerden devam eder
     addEvent({ minute: minuteRef.current, type: 'info', team: 'home', description: `▶️ Değişiklik tamamlandı, oyun yeniden başladı (${inPlayer.name} sahada).` });
     resumeSim(900);
   };
@@ -958,7 +1223,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     onMatchEnd(scoreRef.current.u, scoreRef.current.o, scorerArray, extras);
   };
 
-  // Sadece konsol kutusu kayar — skor her zaman görünür kalır
   useEffect(() => {
     const el = consoleRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -982,9 +1246,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   return (
     <div className={`fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-0 sm:p-2 lg:p-3 overflow-y-auto overflow-x-hidden ${goalFlash ? 'animate-goal-flash' : ''}`}>
       <div className="w-full max-w-5xl xl:max-w-6xl bg-gradient-to-b from-emerald-900 to-slate-900 rounded-none sm:rounded-2xl lg:rounded-3xl overflow-y-auto overflow-x-hidden custom-scroll shadow-2xl border-0 sm:border border-emerald-500/30 my-auto flex flex-col max-h-[100dvh] sm:max-h-[96dvh] lg:max-h-[92dvh]">
-        {/* Header + maç ilerleme çubuğu */}
         <div className="bg-gradient-to-r from-emerald-600 via-emerald-600 to-cyan-700 p-2 lg:p-3 flex items-center justify-between gap-2 flex-shrink-0 relative overflow-hidden rounded-t-none sm:rounded-t-2xl lg:rounded-t-3xl">
-          {/* dakika ilerleme */}
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
             <div className="h-full bg-white/80 transition-all duration-500" style={{ width: `${Math.min(100, (minute / (extraTime ? 120 : 90)) * 100)}%` }} />
           </div>
@@ -1001,93 +1263,49 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               {weatherInfo.icon} {weatherInfo.label}
             </span>
             {extraTime && <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-900/60">UZATMA</span>}
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                managerMatchBonus(gameState).attack > 0.2 ? 'bg-emerald-900/60 text-emerald-200'
-                : managerMatchBonus(gameState).attack < -0.1 ? 'bg-red-900/60 text-red-200'
-                : 'bg-black/25 text-white/80'
-              }`}
-              title="Menajerin kendi formu (Hayat sekmesi) maç performansını etkiler"
-            >
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${managerMatchBonus(gameState).attack > 0.2 ? 'bg-emerald-900/60 text-emerald-200' : managerMatchBonus(gameState).attack < -0.1 ? 'bg-red-900/60 text-red-200' : 'bg-black/25 text-white/80'}`}>
               🧑‍💼 {managerMatchBonus(gameState).label}
+            </span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/25">
+              {gameState.tactics.formation} • xG {xg.home.toFixed(2)}-{xg.away.toFixed(2)}
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {/* ⏸️ / 🐢 simülasyon durumu */}
             {freeze ? (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-sky-500 text-white flex items-center gap-1" title="Sen işlem yaparken maç durur">
-                {freeze.icon} DONDURULDU
-              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-sky-500 text-white flex items-center gap-1">⏸️ DONDURULDU</span>
             ) : slowMo ? (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black flex items-center gap-1 animate-pulse" title="Kart gösterildi — yavaş çekim">
-                🐢 YAVAŞ ÇEKİM
-              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black flex items-center gap-1 animate-pulse">🐢 YAVAŞ ÇEKİM</span>
             ) : null}
             {([1, 2] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setSpeed(s)}
-                title={s === 1 ? '1x — maç ~2 dakika sürer' : '2x — maç ~1 dakika sürer'}
-                className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${
-                  speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70 hover:bg-emerald-800'
-                }`}
-              >
-                {s}x
-              </button>
+              <button key={s} onClick={() => setSpeed(s)} className={`px-2 py-0.5 rounded text-xs font-bold ${speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70'}`}>{s}x</button>
             ))}
-            {/* 4x yerine: maçı doğrudan atla */}
-            <button
-              onClick={skipMatch}
-              disabled={!matchRunning}
-              title="Kalan dakikaları anında simüle et"
-              className="px-2 py-0.5 rounded text-xs font-bold transition-all bg-slate-600/70 text-white/85 hover:bg-slate-500 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              ⏭️ Atla
-            </button>
+            <button onClick={skipMatch} disabled={!matchRunning} className="px-2 py-0.5 rounded text-xs font-bold bg-slate-600/70 text-white/85 disabled:opacity-40">⏭️ Atla</button>
           </div>
         </div>
 
-        {/* ⏸️ Dondurma / 🐢 yavaş çekim şeridi */}
         {(freeze || slowMo) && phase !== 'pre' && phase !== 'done' && (
-          <div
-            className={`px-3 py-1 text-[11px] font-black flex items-center justify-center gap-2 ${
-              freeze ? 'bg-sky-500/90 text-white' : 'bg-amber-400/90 text-black'
-            }`}
-          >
-            {freeze ? (
-              <>
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                {freeze.icon} {freeze.reason} — dakika {String(minute).padStart(2, '0')}' sabit, bitirince devam eder
-              </>
-            ) : (
-              <>🐢 KART! Simülasyon yavaş çekimde — birazdan normal hızına dönecek</>
-            )}
+          <div className={`px-3 py-1 text-[11px] font-black flex items-center justify-center gap-2 ${freeze ? 'bg-sky-500/90 text-white' : 'bg-amber-400/90 text-black'}`}>
+            {freeze ? <><span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />{freeze.icon} {freeze.reason} — dakika {String(minute).padStart(2, '0')}' sabit</> : <>🐢 KART! Simülasyon yavaş çekimde</>}
           </div>
         )}
 
-        {/* Spiker */}
         {spiker && (
           <div className="bg-amber-500 text-black text-xs font-bold px-3 py-1.5 flex items-center gap-2 animate-pulse">
             <span className="bg-black text-amber-400 px-1.5 py-0.5 rounded text-[10px]">SPİKER</span>
             <span className="truncate">{spiker}</span>
           </div>
         )}
-        {/* Scoreboard — her zaman görünür (sticky skor) */}
+
         <div className="bg-gradient-to-b from-slate-800 to-slate-900 px-2 py-2 lg:px-4 lg:py-3 flex-shrink-0 sticky top-0 z-20 shadow-[0_8px_24px_rgba(0,0,0,0.45)] border-b border-emerald-500/20">
           <div className="flex items-center justify-between max-w-xl mx-auto">
             <div className="text-center flex-1">
               <div className="text-2xl lg:text-3xl">{gameState.teamLogo}</div>
               <div className="text-white font-bold text-xs lg:text-base truncate px-1">{gameState.teamName}</div>
-              <div className="text-emerald-400 text-xs font-bold" title={userStrength.penaltyTotal > 0.5 ? `Takım uyumu %${userStrength.teamAdaptPct} — bazı oyuncular henüz alışamadı` : `Takım uyumu %${userStrength.teamAdaptPct}`}>
-                {userStrength.penaltyTotal > 0.5 ? (
-                  <>OVR {userStrength.overall} → <span className="text-amber-300">sahada ~{userStrength.effectiveRounded}</span> 🧩%{userStrength.teamAdaptPct}</>
-                ) : (
-                  <>OVR: {userStrength.overall} <span className="text-slate-400">🧩%{userStrength.teamAdaptPct}</span></>
-                )}
+              <div className="text-emerald-400 text-xs font-bold">
+                {userStrength.penaltyTotal > 0.5 ? <>OVR {userStrength.overall} → <span className="text-amber-300">sahada ~{userStrength.effectiveRounded}</span> 🧩%{userStrength.teamAdaptPct}</> : <>OVR: {userStrength.overall} <span className="text-slate-400">🧩%{userStrength.teamAdaptPct}</span></>}
                 {sentOff.length > 0 && <span className="text-red-400"> • {11 - sentOff.length} kişi</span>}
               </div>
             </div>
-
             <div className="px-2 lg:px-6">
               <div className="text-3xl lg:text-5xl font-black text-white flex items-center gap-2 lg:gap-4">
                 <span className={score.u > score.o ? 'text-emerald-400' : ''}>{score.u}</span>
@@ -1095,47 +1313,42 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 <span className={score.o > score.u ? 'text-red-400' : ''}>{score.o}</span>
               </div>
               <div className="text-center mt-1">
-                <div className="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none">
-                  {String(minute).padStart(2, '0')}'
-                </div>
-                <div className="text-[10px] text-slate-500">
-                  {phase === 'pre' ? 'Başlamadı' : phase === 'half' ? 'Devre arası' : phase === 'done' ? 'Bitti' : extraTime ? 'Uzatma' : 'Devam ediyor'}
-                </div>
-                {talk && (
-                  <div className="text-[10px] text-amber-300 mt-0.5">
-                    💬 {talk === 'praise' ? 'Övgü' : talk === 'hairdryer' ? 'Fırça' : 'Sakin taktik'}
-                  </div>
-                )}
+                <div className="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none">{String(minute).padStart(2, '0')}'</div>
+                <div className="text-[10px] text-slate-500">{phase === 'pre' ? 'Başlamadı' : phase === 'half' ? 'Devre arası' : phase === 'done' ? 'Bitti' : extraTime ? 'Uzatma' : 'Devam ediyor'}</div>
+                {talk && <div className="text-[10px] text-amber-300 mt-0.5">💬 {talk === 'praise' ? 'Övgü' : talk === 'hairdryer' ? 'Fırça' : 'Sakin taktik'}</div>}
               </div>
             </div>
-
             <div className="text-center flex-1">
               <div className="text-2xl lg:text-3xl">{opponent.logo}</div>
               <div className="text-white font-bold text-xs lg:text-base truncate px-1">{opponent.name}</div>
               <div className="text-slate-400 text-xs">OVR: {oppOvr}{!isHome && <span className="text-amber-300"> • ev sahibi</span>}</div>
             </div>
           </div>
-
           {(phase !== 'pre') && (
             <div className="mt-2 max-w-3xl mx-auto">
-              {/* Kompakt istatistik şeridi — tek satır, az yer kaplar */}
               <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                <MiniStat wide label="TOP HAKİMİYETİ" value={`%${Math.round(possession)} - %${Math.round(100 - possession)}`} hint="Top hakimiyeti" />
-                <MiniStat label="ŞUT" value={`${shots.home} - ${shots.away}`} hint="Şutlar" />
+                <MiniStat wide label="TOP HAKİMİYETİ" value={`%${Math.round(possession)} - %${Math.round(100 - possession)}`} />
+                <MiniStat label="ŞUT" value={`${shots.home} - ${shots.away}`} />
                 <MiniStat label="KORNER" value={`${corners.home} - ${corners.away}`} />
                 <MiniStat label="FAUL" value={`${fouls.home} - ${fouls.away}`} />
-                <MiniStat wide label="xG" value={`${xg.home.toFixed(2)} - ${xg.away.toFixed(2)}`} hint="Beklenen gol (xG)" />
-                <MiniStat label="DEĞİŞİKLİK" value={`${substitutions.length}/5`} hint="Kullanılan değişiklik hakkı" />
+                <MiniStat wide label="xG" value={`${xg.home.toFixed(2)} - ${xg.away.toFixed(2)}`} />
+                <MiniStat label="DEĞİŞİKLİK" value={`${substitutions.length}/5`} />
               </div>
               <div className="mt-1 h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
                 <div className="bg-emerald-500 h-full transition-all duration-700" style={{ width: `${possession}%` }} />
                 <div className="bg-red-500 h-full transition-all duration-700" style={{ width: `${100 - possession}%` }} />
               </div>
+              <div className="mt-1 flex justify-center gap-2 text-[9px] text-slate-500">
+                <span>Defans Çizgisi: {defensiveLine}</span>
+                <span>• Genişlik: {width}</span>
+                <span>• Yaratıcılık: {creativity}</span>
+                <span>• Pres: {pressingIntensity}</span>
+                <span>• Tempo: {tempoValue}</span>
+              </div>
             </div>
           )}
         </div>
 
-        {/* 🎥 Canlı saha — 3D (menajer kamerası) veya 2D yedek görünüm */}
         {phase !== 'pre' && phase !== 'pens' && (
           <div className="px-2 lg:px-4 pt-3 flex-shrink-0">
             {view3d ? (
@@ -1162,12 +1375,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             ) : (
               <>
                 <div className="mb-1 flex justify-end">
-                  <button
-                    onClick={() => setView3d(true)}
-                    className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-700/70 hover:bg-emerald-600 text-white"
-                  >
-                    🎥 3D Görünüme Dön
-                  </button>
+                  <button onClick={() => setView3d(true)} className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-700/70 hover:bg-emerald-600 text-white">🎥 3D Görünüme Dön</button>
                 </div>
                 <LivePitch
                   minute={minute}
@@ -1184,167 +1392,109 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                   weather={weather}
                   paused={freeze !== null}
                   slowMo={slowMo}
+                  tactics={gameState.tactics}
                 />
               </>
             )}
           </div>
         )}
 
-        {/* Match Console - kompakt + kapatılabilir (yer kazanmak için) */}
         <div className="px-2 pt-2 lg:px-4 flex-shrink-0">
           <div className="flex items-center justify-between gap-2 mb-1 px-1">
-            <span className="text-[10px] tracking-widest font-black text-slate-400">📜 MAÇ ANLATIMI</span>
-            <button
-              onClick={() => setConsoleOpen(o => !o)}
-              className="text-[10px] font-bold text-slate-300 bg-slate-700/60 hover:bg-slate-600 px-2 py-0.5 rounded-full border border-slate-600/40"
-            >
+            <span className="text-[10px] tracking-widest font-black text-slate-400">📜 MAÇ ANLATIMI • GERÇEKÇİ xG MODELİ</span>
+            <button onClick={() => setConsoleOpen(o => !o)} className="text-[10px] font-bold text-slate-300 bg-slate-700/60 hover:bg-slate-600 px-2 py-0.5 rounded-full border border-slate-600/40">
               {consoleOpen ? '▲ Kapat' : `▼ Aç (${events.length})`}
             </button>
           </div>
           {consoleOpen && (
-          <div ref={consoleRef} className="bg-black/50 rounded-xl border border-emerald-500/30 h-28 lg:h-36 overflow-y-auto custom-scroll p-2 lg:p-3 font-mono text-[11px] lg:text-xs">
-            {events.map((event, i) => (
-              <div
-                key={i}
-                className={`mb-1.5 ${
-                  event.type === 'goal' || event.type === 'penalty'
-                    ? event.team === 'home' ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'
-                    : event.type === 'injury' ? 'text-orange-400'
-                    : event.type === 'card' ? 'text-yellow-400'
-                    : event.type === 'substitution' ? 'text-blue-400'
-                    : 'text-slate-300'
-                }`}
-              >
-                <span className="text-slate-500">[{event.minute}']</span> {event.description}
-              </div>
-            ))}
-          </div>
+            <div ref={consoleRef} className="bg-black/50 rounded-xl border border-emerald-500/30 h-28 lg:h-36 overflow-y-auto custom-scroll p-2 lg:p-3 font-mono text-[11px] lg:text-xs">
+              {events.map((event, i) => (
+                <div key={i} className={`mb-1.5 ${
+                  event.type === 'goal' ? event.team === 'home' ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'
+                  : event.type === 'offside' ? 'text-purple-300'
+                  : event.type === 'tackle' ? 'text-cyan-300'
+                  : event.type === 'interception' ? 'text-blue-300'
+                  : event.type === 'corner' ? 'text-amber-300'
+                  : event.type === 'foul' ? 'text-orange-300'
+                  : event.type === 'injury' ? 'text-orange-400'
+                  : event.type === 'card' ? 'text-yellow-400'
+                  : event.type === 'substitution' ? 'text-blue-400'
+                  : 'text-slate-300'
+                }`}>
+                  <span className="text-slate-500">[{event.minute}']</span> {event.description} {event.xg ? <span className="text-[9px] text-slate-500">xG {event.xg.toFixed(2)}</span> : null}
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Controls */}
         <div className="p-2 lg:p-4 bg-slate-900/50 flex gap-3 justify-center flex-wrap flex-shrink-0 rounded-b-none sm:rounded-b-2xl lg:rounded-b-3xl">
           {phase === 'pre' && (
             <div className="w-full">
               <div className="text-center text-slate-300 text-xs mb-3">
                 {weatherInfo.icon} {weatherInfo.label} — {weatherInfo.desc}
                 <br />
-                {isHome
-                  ? '🏟️ Kendi sahamızda, taraftar desteği arkamızda (+ev sahibi avantajı)'
-                  : '🚌 Deplasmandayız, rakip ev sahibi avantajına sahip'}
+                {isHome ? '🏟️ Kendi sahamızda (+ev sahibi avantajı)' : '🚌 Deplasmandayız'} • Formasyon {gameState.tactics.formation} • Orta saha {Math.round(userStrength.midfieldOverall)} vs {oppStrength.midfield} • xG modeli aktif
               </div>
               <div className="flex justify-center">
-                <button
-                  onClick={startMatch}
-                  className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-sm lg:text-lg rounded-xl shadow-lg shadow-emerald-500/30 transition-all"
-                >
-                  ▶️ Maçı Başlat
-                </button>
+                <button onClick={startMatch} className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-bold text-sm lg:text-lg rounded-xl shadow-lg shadow-emerald-500/30">▶️ Maçı Başlat</button>
               </div>
             </div>
           )}
-
           {(phase === 'first' || phase === 'second' || phase === 'et') && (
             <>
-              <button
-                onClick={() => { setShowSubModal(true); pauseSim('⏸️', 'Değişiklik yapılıyor — simülasyon donduruldu'); }}
-                disabled={substitutions.length >= 5}
-                className="px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 text-white font-medium rounded-xl transition-all text-sm"
-              >
-                🔄 Değişiklik ({5 - substitutions.length})
-              </button>
-              <button
-                onClick={skipMatch}
-                className="px-4 py-3 bg-slate-600 hover:bg-slate-500 text-white font-medium rounded-xl transition-all text-sm"
-              >
-                ⏭️ Atla
-              </button>
+              <button onClick={() => { setShowSubModal(true); pauseSim('⏸️', 'Değişiklik yapılıyor'); }} disabled={substitutions.length >= 5} className="px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 text-white font-medium rounded-xl text-sm">🔄 Değişiklik ({5 - substitutions.length})</button>
+              <button onClick={skipMatch} className="px-4 py-3 bg-slate-600 hover:bg-slate-500 text-white font-medium rounded-xl text-sm">⏭️ Atla</button>
             </>
           )}
-
           {phase === 'half' && (
             <div className="w-full">
               <div className="text-center text-white font-bold mb-2">💬 Devre Arası Takım Konuşması</div>
-              <div className="text-center text-slate-400 text-xs mb-3">
-                Skor {score.u}-{score.o} • Oyuncular seni dinliyor
-              </div>
+              <div className="text-center text-slate-400 text-xs mb-3">Skor {score.u}-{score.o} • xG {xg.home.toFixed(2)}-{xg.away.toFixed(2)} • Oyuncular seni dinliyor</div>
               <div className="grid grid-cols-3 gap-2 max-w-xl mx-auto">
-                <button onClick={() => applyTeamTalk('praise')} className="py-3 rounded-xl bg-emerald-600/70 hover:bg-emerald-500 text-white text-sm font-bold">
-                  👏 Öv<br /><span className="text-[10px] font-normal">Moral +, hücum +</span>
-                </button>
-                <button onClick={() => applyTeamTalk('hairdryer')} className="py-3 rounded-xl bg-red-600/70 hover:bg-red-500 text-white text-sm font-bold">
-                  😤 Fırça<br /><span className="text-[10px] font-normal">Hücum ++, moral −</span>
-                </button>
-                <button onClick={() => applyTeamTalk('calm')} className="py-3 rounded-xl bg-blue-600/70 hover:bg-blue-500 text-white text-sm font-bold">
-                  🧠 Sakin<br /><span className="text-[10px] font-normal">Defans ++, disiplin</span>
-                </button>
+                <button onClick={() => applyTeamTalk('praise')} className="py-3 rounded-xl bg-emerald-600/70 hover:bg-emerald-500 text-white text-sm font-bold">👏 Öv<br /><span className="text-[10px] font-normal">Moral +, hücum +</span></button>
+                <button onClick={() => applyTeamTalk('hairdryer')} className="py-3 rounded-xl bg-red-600/70 hover:bg-red-500 text-white text-sm font-bold">😤 Fırça<br /><span className="text-[10px] font-normal">Hücum ++, moral −</span></button>
+                <button onClick={() => applyTeamTalk('calm')} className="py-3 rounded-xl bg-blue-600/70 hover:bg-blue-500 text-white text-sm font-bold">🧠 Sakin<br /><span className="text-[10px] font-normal">Defans ++, disiplin</span></button>
               </div>
             </div>
           )}
-
           {phase === 'done' && (
             <div className="w-full">
               <div className={`text-center py-3 bg-gradient-to-r ${getResultText().bg} to-transparent rounded-xl mb-3`}>
                 <span className={`text-2xl font-black ${getResultText().color}`}>{getResultText().text}</span>
-                <div className="text-slate-400 text-xs mt-1">
-                  Şutlar: {shots.home}-{shots.away} • Korner: {corners.home}-{corners.away} • Top: %{Math.round(possession)}
-                  {penaltyWinner && ` • Penaltılar: ${penaltyWinner === 'user' ? 'KAZANDIK' : 'KAYBETTİK'}`}
-                </div>
+                <div className="text-slate-400 text-xs mt-1">Şutlar: {shots.home}-{shots.away} • Korner: {corners.home}-{corners.away} • Top: %{Math.round(possession)} • xG: {xg.home.toFixed(2)}-{xg.away.toFixed(2)} {penaltyWinner && ` • Penaltılar: ${penaltyWinner === 'user' ? 'KAZANDIK' : 'KAYBETTİK'}`}</div>
               </div>
-
               {ratings.length > 0 && (
                 <div className="bg-slate-800/60 rounded-xl p-3 mb-3 max-h-44 overflow-y-auto">
-                  <div className="text-xs text-emerald-400 font-bold mb-2">📊 Oyuncu Reytingleri</div>
+                  <div className="text-xs text-emerald-400 font-bold mb-2">📊 Oyuncu Reytingleri • Gerçekçi xG katkısı</div>
                   {ratings.map((r, i) => (
                     <div key={r.playerId} className="flex items-center justify-between text-xs py-1 border-b border-slate-700/40 last:border-0">
-                      <span className="text-white truncate flex items-center gap-1">
-                        {i === 0 && <span title="Maçın adamı">⭐</span>}
-                        {r.name}
-                        <span className="text-slate-500">{ROLE_NAMES[r.role]}</span>
-                        {r.goals > 0 && <span className="text-emerald-400">⚽{r.goals}</span>}
-                        {r.assists > 0 && <span className="text-blue-400">🅰️{r.assists}</span>}
-                        {r.yellow && <span>🟨</span>}
-                        {r.red && <span>🟥</span>}
-                        {r.injured && <span>🏥</span>}
-                      </span>
+                      <span className="text-white truncate flex items-center gap-1">{i === 0 && <span>⭐</span>}{r.name} <span className="text-slate-500">{ROLE_NAMES[r.role]}</span> {r.goals > 0 && <span className="text-emerald-400">⚽{r.goals}</span>} {r.assists > 0 && <span className="text-blue-400">🅰️{r.assists}</span>} {r.yellow && <span>🟨</span>} {r.red && <span>🟥</span>} {r.injured && <span>🏥</span>}</span>
                       <span className={`font-black ${ratingColor(r.rating)}`}>{r.rating.toFixed(1)}</span>
                     </div>
                   ))}
                 </div>
               )}
-
               <div className="flex gap-4 justify-center">
-                <button
-                  onClick={handleFinishClick}
-                  className="px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold text-lg rounded-xl shadow-lg transition-all"
-                >
-                  ✓ Devam Et
-                </button>
+                <button onClick={handleFinishClick} className="px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white font-bold text-lg rounded-xl shadow-lg">✓ Devam Et</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Substitution Modal */}
         {showSubModal && (
           <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-10">
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
               <h3 className="text-xl font-bold text-white mb-1">Oyuncu Değişikliği</h3>
               <div className="mb-2 flex items-center gap-2 text-[11px] font-black text-sky-200 bg-sky-500/15 border border-sky-500/40 rounded-lg px-2 py-1.5">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-300 animate-pulse" />
-                ⏸️ SİMÜLASYON DONDURULDU — {String(minute).padStart(2, '0')}' sabit
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-300 animate-pulse" />⏸️ SİMÜLASYON DONDURULDU — {String(minute).padStart(2, '0')}' sabit
               </div>
-              <p className="text-slate-400 text-xs mb-3">Kalan hak: {5 - substitutions.length} • Değişikliği yapınca veya vazgeçince maç kaldığı yerden devam eder.</p>
-
+              <p className="text-slate-400 text-xs mb-3">Kalan hak: {5 - substitutions.length}</p>
               {!subOut ? (
                 <div>
                   <h4 className="text-sm text-red-400 mb-2">Çıkacak oyuncu seç</h4>
                   {activeLineup.filter(p => !sentOff.includes(p.id)).map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => setSubOut(p.id)}
-                      className="w-full text-left p-2 bg-slate-700/50 hover:bg-slate-600/50 rounded mb-1 text-sm flex justify-between"
-                    >
+                    <button key={p.id} onClick={() => setSubOut(p.id)} className="w-full text-left p-2 bg-slate-700/50 hover:bg-slate-600/50 rounded mb-1 text-sm flex justify-between">
                       <span className="text-white">{p.name}</span>
                       <span className="text-slate-400">{p.role} • {p.ovr}{effectiveOvr(p, subTeamAvg, subChem) < p.ovr - 0.5 ? `(~${Math.round(effectiveOvr(p, subTeamAvg, subChem))})` : ''} • ⚡{p.energy}% • 🧩{Math.round(adaptationPct(p) * 100)}%{p.injured ? ' 🏥' : ''}</span>
                     </button>
@@ -1354,11 +1504,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 <div>
                   <h4 className="text-sm text-emerald-400 mb-2">Girecek oyuncu seç</h4>
                   {activeBench.filter(p => !p.injured && !(p.suspension && p.suspension > 0)).map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => makeSubstitution(subOut, p.id)}
-                      className="w-full text-left p-2 bg-slate-700/50 hover:bg-emerald-600/30 rounded mb-1 text-sm flex justify-between"
-                    >
+                    <button key={p.id} onClick={() => makeSubstitution(subOut, p.id)} className="w-full text-left p-2 bg-slate-700/50 hover:bg-emerald-600/30 rounded mb-1 text-sm flex justify-between">
                       <span className="text-white">{p.name}</span>
                       <span className="text-slate-400">{p.role} • {p.ovr}{effectiveOvr(p, subTeamAvg, subChem) < p.ovr - 0.5 ? `(~${Math.round(effectiveOvr(p, subTeamAvg, subChem))})` : ''} • ⚡{p.energy}% • 🧩{Math.round(adaptationPct(p) * 100)}%</span>
                     </button>
@@ -1366,190 +1512,63 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                   <button onClick={() => setSubOut(null)} className="w-full mt-2 py-2 text-slate-400 text-sm">← Geri</button>
                 </div>
               )}
-
-              <button
-                onClick={() => { setShowSubModal(false); setSubOut(null); resumeSim(0); }}
-                className="w-full mt-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-xl"
-              >
-                ✕ Vazgeç — simülasyon devam etsin
-              </button>
+              <button onClick={() => { setShowSubModal(false); setSubOut(null); resumeSim(0); }} className="w-full mt-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-xl">✕ Vazgeç</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Gol coşkusu — hafif, sadece CSS */}
       {celebration && (
-        <div
-          key={celebration.key}
-          className={`absolute inset-0 z-[55] flex flex-col items-center justify-center pointer-events-none overflow-hidden ${
-            celebration.team === 'home'
-              ? 'bg-emerald-500/18 backdrop-blur-[2px]'
-              : 'bg-red-500/14 backdrop-blur-[2px]'
-          }`}
-          style={{ animation: 'goalFade 3400ms ease forwards' }}
-        >
+        <div key={celebration.key} className={`absolute inset-0 z-[55] flex flex-col items-center justify-center pointer-events-none overflow-hidden ${celebration.team === 'home' ? 'bg-emerald-500/18 backdrop-blur-[2px]' : 'bg-red-500/14 backdrop-blur-[2px]'}`} style={{ animation: 'goalFade 3400ms ease forwards' }}>
           <div className="text-center px-4">
-            <div
-              className={`text-5xl lg:text-7xl font-black tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] ${
-                celebration.team === 'home' ? 'text-white' : 'text-red-100'
-              }`}
-              style={{ animation: 'goalPop 600ms cubic-bezier(0.34,1.56,0.64,1) 80ms both, goalGlow 900ms ease 650ms 2 alternate' }}
-            >
-              {celebration.team === 'home' ? 'GOOOOL! ⚽' : 'GOL!'}
-            </div>
-            <div
-              className="mt-2 text-white font-black text-lg lg:text-2xl drop-shadow"
-              style={{ animation: 'goalSlide 500ms ease 200ms both' }}
-            >
-              {celebration.player ?? (celebration.team === 'home' ? gameState.teamName : opponent.name)}
-            </div>
-            <div
-              className={`mt-1 text-xs lg:text-sm font-bold ${celebration.team === 'home' ? 'text-emerald-200' : 'text-red-200'}`}
-              style={{ animation: 'goalSlide 500ms ease 300ms both' }}
-            >
-              {celebration.team === 'home' ? `${gameState.teamName} • ${String(minute).padStart(2,'0')}'` : `${opponent.name} — sessizlik...`}
-            </div>
-            {/* konfeti — saf CSS, çok hafif */}
+            <div className={`text-5xl lg:text-7xl font-black tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] ${celebration.team === 'home' ? 'text-white' : 'text-red-100'}`} style={{ animation: 'goalPop 600ms cubic-bezier(0.34,1.56,0.64,1) 80ms both, goalGlow 900ms ease 650ms 2 alternate' }}>{celebration.team === 'home' ? 'GOOOOL! ⚽' : 'GOL!'}</div>
+            <div className="mt-2 text-white font-black text-lg lg:text-2xl drop-shadow" style={{ animation: 'goalSlide 500ms ease 200ms both' }}>{celebration.player ?? (celebration.team === 'home' ? gameState.teamName : opponent.name)}</div>
+            <div className={`mt-1 text-xs lg:text-sm font-bold ${celebration.team === 'home' ? 'text-emerald-200' : 'text-red-200'}`} style={{ animation: 'goalSlide 500ms ease 300ms both' }}>{celebration.team === 'home' ? `${gameState.teamName} • ${String(minute).padStart(2,'0')}'` : `${opponent.name} — sessizlik...`}</div>
             <div className="mt-4 flex justify-center gap-1.5">
               {Array.from({ length: 7 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="text-xl"
-                  style={{
-                    display: 'inline-block',
-                    animation: `confetti 900ms ease ${i * 70}ms both`,
-                  }}
-                >
-                  {celebration.team === 'home' ? ['🎉','✨','🎊','⚽','🔥'][i%5] : ['😶','💨'][i%2]}
-                </span>
+                <span key={i} className="text-xl" style={{ display: 'inline-block', animation: `confetti 900ms ease ${i * 70}ms both` }}>{celebration.team === 'home' ? ['🎉','✨','🎊','⚽','🔥'][i%5] : ['😶','💨'][i%2]}</span>
               ))}
             </div>
           </div>
-          {/* Tribün dalgası — alt şerit, hafif */}
           <div className="absolute bottom-0 inset-x-0 h-14 flex items-end justify-center gap-[2px] px-2 opacity-90">
             {Array.from({ length: 28 }).map((_, i) => {
               const h = 10 + (Math.sin(i * 0.9) * 6 + Math.random() * 8);
               const delay = (i % 7) * 70;
-              return (
-                <div
-                  key={i}
-                  className={`flex-1 rounded-t-md ${celebration.team === 'home' ? 'bg-emerald-400/90' : 'bg-red-400/70'} border-t border-white/20`}
-                  style={{
-                    height: h + 12,
-                    maxWidth: 14,
-                    animation: `crowdJump 520ms ease ${delay}ms 3 alternate`,
-                  }}
-                />
-              );
+              return <div key={i} className={`flex-1 rounded-t-md ${celebration.team === 'home' ? 'bg-emerald-400/90' : 'bg-red-400/70'} border-t border-white/20`} style={{ height: h + 12, maxWidth: 14, animation: `crowdJump 520ms ease ${delay}ms 3 alternate` }} />;
             })}
           </div>
-          {/* Alt yazı */}
-          <div className="absolute bottom-16 text-[10px] tracking-widest font-bold text-white/70">
-            {celebration.team === 'home' ? 'TRİBÜNLER AYAKTA! 🎶' : 'DEPLASMAN SESSİZ...'}
-          </div>
+          <div className="absolute bottom-16 text-[10px] tracking-widest font-bold text-white/70">{celebration.team === 'home' ? 'TRİBÜNLER AYAKTA! 🎶' : 'DEPLASMAN SESSİZ...'}</div>
         </div>
       )}
 
-      {/* Yedek kulübesi — değişiklik tabelası, ısınma → koşarak girme */}
       {subBoard && (
-        <div
-          key={subBoard.key}
-          className="absolute inset-0 z-[54] flex flex-col items-center justify-center pointer-events-none"
-          style={{ animation: 'subFade 2800ms ease forwards' }}
-        >
+        <div key={subBoard.key} className="absolute inset-0 z-[54] flex flex-col items-center justify-center pointer-events-none" style={{ animation: 'subFade 2800ms ease forwards' }}>
           <div className="bg-slate-900/92 border border-emerald-500/30 rounded-2xl px-5 py-4 shadow-[0_12px_32px_rgba(0,0,0,0.55)] text-center min-w-[300px] max-w-[92%]" style={{ animation: 'subPop 420ms ease both' }}>
             <div className="text-[10px] tracking-[0.18em] font-black text-emerald-300 mb-2">🔄 OYUNCU DEĞİŞİKLİĞİ • {String(minute).padStart(2,'0')}'</div>
             <div className="flex items-center justify-center gap-3">
-              {/* çıkan */}
-              <div className="flex-1 text-right">
-                <div className="text-[10px] text-red-300 font-bold">ÇIKAN 🔴</div>
-                <div className="text-white font-black text-sm leading-tight">{subBoard.outName}</div>
-                <div className="text-[10px] text-slate-400">{subBoard.outRole} • {gameState.teamName}</div>
-              </div>
-              {/* tabela */}
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-16 h-10 rounded-lg bg-black border-2 border-amber-400 flex items-center justify-center relative overflow-hidden" style={{ animation: 'boardGlow 900ms ease infinite alternate' }}>
-                  <span className="text-amber-300 font-black text-lg">⇄</span>
-                  <div className="absolute inset-0 bg-amber-400/10" style={{ animation: 'boardShine 1.1s ease infinite' }} />
-                </div>
-                <div className="text-[9px] text-slate-400">4. hakem</div>
-              </div>
-              {/* giren */}
-              <div className="flex-1 text-left">
-                <div className="text-[10px] text-emerald-300 font-bold">GİREN 🟢</div>
-                <div className="text-white font-black text-sm leading-tight">{subBoard.inName}</div>
-                <div className="text-[10px] text-slate-400">{subBoard.inRole} • ısınıyordu → sahada!</div>
-              </div>
+              <div className="flex-1 text-right"><div className="text-[10px] text-red-300 font-bold">ÇIKAN 🔴</div><div className="text-white font-black text-sm leading-tight">{subBoard.outName}</div><div className="text-[10px] text-slate-400">{subBoard.outRole} • {gameState.teamName}</div></div>
+              <div className="flex flex-col items-center gap-1"><div className="w-16 h-10 rounded-lg bg-black border-2 border-amber-400 flex items-center justify-center relative overflow-hidden" style={{ animation: 'boardGlow 900ms ease infinite alternate' }}><span className="text-amber-300 font-black text-lg">⇄</span><div className="absolute inset-0 bg-amber-400/10" style={{ animation: 'boardShine 1.1s ease infinite' }} /></div><div className="text-[9px] text-slate-400">4. hakem</div></div>
+              <div className="flex-1 text-left"><div className="text-[10px] text-emerald-300 font-bold">GİREN 🟢</div><div className="text-white font-black text-sm leading-tight">{subBoard.inName}</div><div className="text-[10px] text-slate-400">{subBoard.inRole} • sahada!</div></div>
             </div>
-            {/* koşan adam */}
-            <div className="mt-3 flex items-center justify-center gap-2 text-[11px] font-bold text-sky-200">
-              <span style={{ animation: 'runIn 700ms ease 200ms both' }}>🏃</span>
-              <span style={{ animation: 'goalSlide 500ms ease 400ms both' }}>Koşarak giriyor…</span>
-              <span className="text-slate-400" style={{ animation: 'goalSlide 500ms ease 550ms both' }}>• kulübe alkışlıyor 👏</span>
-            </div>
-            {/* mini kulübe */}
-            <div className="mt-3 flex justify-center gap-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={`w-6 h-6 rounded-md flex items-center justify-center text-[11px] ${i===2 ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-300'}`} style={{ animation: `benchPop 400ms ease ${i*60}ms both` }}>
-                  {i===2 ? '●' : '○'}
-                </div>
-              ))}
-            </div>
+            <div className="mt-3 flex items-center justify-center gap-2 text-[11px] font-bold text-sky-200"><span style={{ animation: 'runIn 700ms ease 200ms both' }}>🏃</span><span style={{ animation: 'goalSlide 500ms ease 400ms both' }}>Koşarak giriyor…</span></div>
           </div>
         </div>
       )}
 
-      {/* VAR / Kart yakın çekim — hakem monitörü hissi */}
       {cardPop && (
         <div key={cardPop.key} className="absolute inset-0 z-[53] flex items-center justify-center pointer-events-none" style={{ animation: 'cardFade 2600ms ease forwards' }}>
           <div className="relative bg-slate-900/94 border-2 rounded-2xl px-6 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] text-center min-w-[280px] max-w-[90%]" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : cardPop.kind === 'second' ? '#f59e0b' : '#eab308', animation: 'cardPop 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-3 py-0.5 rounded-full border text-[10px] font-black tracking-widest" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : '#eab308', color: cardPop.kind === 'red' ? '#fca5a5' : '#fde68a' }}>
-              {cardPop.kind === 'red' ? '🟥 KIRMIZI KART' : cardPop.kind === 'second' ? '🟨🟥 ÇİFT SARI' : '🟨 SARI KART'} • {String(minute).padStart(2,"0")}' • VAR
-            </div>
-            {/* kart görseli */}
-            <div className="mx-auto mt-2 mb-3 relative w-16 h-24 rounded-lg shadow-lg flex items-center justify-center" style={{ background: cardPop.kind === 'red' ? '#dc2626' : cardPop.kind === 'second' ? 'linear-gradient(180deg,#eab308 50%,#dc2626 50%)' : '#eab308', transform: 'rotate(6deg)', animation: 'cardFlip 600ms ease 120ms both' }}>
-              <span className="text-2xl">{cardPop.kind === 'red' ? '🟥' : cardPop.kind === 'second' ? '🟨🟥' : '🟨'}</span>
-              <div className="absolute inset-0 rounded-lg border border-white/20" />
-            </div>
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-900 px-3 py-0.5 rounded-full border text-[10px] font-black tracking-widest" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : '#eab308', color: cardPop.kind === 'red' ? '#fca5a5' : '#fde68a' }}>{cardPop.kind === 'red' ? '🟥 KIRMIZI KART' : cardPop.kind === 'second' ? '🟨🟥 ÇİFT SARI' : '🟨 SARI KART'} • {String(minute).padStart(2,"0")}' • VAR</div>
+            <div className="mx-auto mt-2 mb-3 relative w-16 h-24 rounded-lg shadow-lg flex items-center justify-center" style={{ background: cardPop.kind === 'red' ? '#dc2626' : cardPop.kind === 'second' ? 'linear-gradient(180deg,#eab308 50%,#dc2626 50%)' : '#eab308', transform: 'rotate(6deg)', animation: 'cardFlip 600ms ease 120ms both' }}><span className="text-2xl">{cardPop.kind === 'red' ? '🟥' : cardPop.kind === 'second' ? '🟨🟥' : '🟨'}</span><div className="absolute inset-0 rounded-lg border border-white/20" /></div>
             <div className="text-white font-black text-base leading-tight">{cardPop.player}</div>
-            <div className="text-[11px] text-slate-400 mt-1">{cardPop.kind === 'red' ? 'Hakem tereddütsüz — direkt kırmızı!' : cardPop.kind === 'second' ? 'İkinci sarı — tribünler uğulduyor!' : 'Hakem uyarıyor — bir dahaki sarı atılır!'}</div>
-            <div className="mt-3 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500">
-              <span style={{ animation: 'goalSlide 400ms ease 300ms both' }}>🧑‍⚖️ Hakem</span>
-              <span className="w-1 h-1 bg-slate-600 rounded-full" />
-              <span style={{ animation: 'goalSlide 400ms ease 420ms both' }}>📺 VAR kontrol edildi</span>
-            </div>
-            {/* ışık efekti */}
-            <div className="absolute inset-0 rounded-2xl pointer-events-none" style={{ background: cardPop.kind === 'red' ? 'radial-gradient(400px circle at 50% 0%, rgba(239,68,68,0.18), transparent 70%)' : 'radial-gradient(400px circle at 50% 0%, rgba(234,179,8,0.15), transparent 70%)' }} />
+            <div className="text-[11px] text-slate-400 mt-1">{cardPop.kind === 'red' ? 'Hakem tereddütsüz — direkt kırmızı!' : cardPop.kind === 'second' ? 'İkinci sarı — tribünler uğulduyor!' : 'Hakem uyarıyor'}</div>
           </div>
         </div>
       )}
 
-      {/* In-match minigame overlay */}
-      {matchMinigame && (
-        <InGameMinigame context={matchMinigame} gameState={gameState} onComplete={handleMinigameComplete} />
-      )}
-
-      {/* Penalty shootout */}
-      {phase === 'pens' && (
-        <PenaltyShootout
-          userTeamName={gameState.teamName}
-          opponentName={opponent.name}
-          onFinish={(winner, u, o) => {
-            scoreRef.current = { u, o };
-            setUserScore(u);
-            setOppScore(o);
-            finishMatch(winner);
-          }}
-        />
-      )}
-
-      {/* Kart uyarıları */}
-      {cardCount.size > 0 && (
-        <div className="fixed bottom-3 right-3 bg-slate-900/90 border border-amber-500/40 rounded-xl p-2 text-[10px] text-amber-200 z-[60]">
-          🟨 Kart: {activeLineup.filter(p => cardCount.has(p.id)).map(p => `${p.name} (${cardCount.get(p.id)})`).join(', ')}
-        </div>
-      )}
+      {matchMinigame && <InGameMinigame context={matchMinigame} gameState={gameState} onComplete={handleMinigameComplete} />}
+      {phase === 'pens' && <PenaltyShootout userTeamName={gameState.teamName} opponentName={opponent.name} onFinish={(winner, u, o) => { scoreRef.current = { u, o }; setUserScore(u); setOppScore(o); finishMatch(winner); }} />}
+      {cardCount.size > 0 && <div className="fixed bottom-3 right-3 bg-slate-900/90 border border-amber-500/40 rounded-xl p-2 text-[10px] text-amber-200 z-[60]">🟨 Kart: {activeLineup.filter(p => cardCount.has(p.id)).map(p => `${p.name} (${cardCount.get(p.id)})`).join(', ')}</div>}
       <style>{`
         @keyframes goalFade { 0%{opacity:0} 10%{opacity:1} 82%{opacity:1} 100%{opacity:0; pointer-events:none} }
         @keyframes goalPop { 0%{transform:scale(0.6) translateY(14px); opacity:0} 100%{transform:scale(1) translateY(0); opacity:1} }
@@ -1564,7 +1583,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         @keyframes boardGlow { 0%{box-shadow:0 0 0 rgba(251,146,60,0)} 100%{box-shadow:0 0 18px rgba(251,146,60,0.45)} }
         @keyframes boardShine { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
         @keyframes runIn { 0%{transform:translateX(-16px)} 100%{transform:translateX(0)} }
-        @keyframes benchPop { 0%{transform:scale(0.7); opacity:0} 100%{transform:scale(1); opacity:1} }
         @keyframes cardFade { 0%{opacity:0} 10%{opacity:1} 85%{opacity:1} 100%{opacity:0} }
         @keyframes cardPop { 0%{transform:scale(0.85) translateY(12px); opacity:0} 100%{transform:scale(1) translateY(0); opacity:1} }
         @keyframes cardFlip { 0%{transform:rotate(18deg) scale(0.8); opacity:0} 100%{transform:rotate(6deg) scale(1); opacity:1} }
