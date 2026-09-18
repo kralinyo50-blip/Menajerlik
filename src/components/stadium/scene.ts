@@ -1200,13 +1200,37 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   {
     const facs: Record<string, number> = (opts.facilities as any) || {};
     /** Tesisten doğan nesneyi sahneye ekler + tesis kimliğiyle etiketler */
-    const addFacilityObj = <T extends THREE.Object3D>(obj: T, id: string, level: number, indoor = false): T => {
+    const addFacilityObj = <T extends THREE.Object3D>(obj: T, id: string, level: number, indoor = false, spot: 'plaza' | 'pitchside' = 'plaza'): T => {
       obj.userData.facility = id;
       obj.userData.facilityLevel = level;
       if (indoor) obj.userData.facilityIndoor = true;
+      // spot: 'plaza' = giriş meydanı (ön izleme halkası buraya çizilir),
+      //       'pitchside' = saha kenarı / kale arkası (maç kamerasından görünür)
+      obj.userData.facilitySpot = spot;
       (facilityGroups[id] ||= []).push(obj);
       group.add(obj);
       return obj;
+    };
+
+    /** Saha kenarı için küçük büfe kulübesi — maç kamerası sahaya baktığı için görünür */
+    const buildPitchKiosk = () => {
+      const g = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.2, 2.6), buffetMat);
+      base.position.y = 1.1;
+      base.castShadow = true;
+      const awning = new THREE.Mesh(new THREE.BoxGeometry(5.3, 0.26, 3.3), awnMat);
+      awning.position.y = 2.32;
+      awning.castShadow = true;
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.36, 0.55), counterMat);
+      counter.position.set(0, 1.05, 1.55);
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 0.16), new THREE.MeshStandardMaterial({
+        color: 0xfef3c7,
+        emissive: new THREE.Color(0xf59e0b),
+        emissiveIntensity: opts.night ? 1.0 : 0.25,
+      }));
+      sign.position.set(0, 1.72, 1.62);
+      g.add(base, awning, counter, sign);
+      return g;
     };
 
     const plazaFacMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
@@ -1290,7 +1314,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         mannequin.position.set(-2 + m * 2, 0.6, 2.8);
         shop.add(mannequin);
       }
-      addFacilityObj(shop, 'fanShop', facs.fanShop || 0);
+      addFacilityObj(shop, 'fanShop', facs.fanShop || 0, false, 'plaza');
     }
     // 🍽️ Restoran dış
     if ((facs.restaurant || 0) > 0) {
@@ -1375,6 +1399,44 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         }
       }
       addFacilityObj(parkGroup, 'parking', parkLvl);
+    }
+
+    /* ── SAHA KENARI BÜFELERİ — reklam panoları ile tribün arasındaki koridorda.
+       Maçtaki 3D kamera sahaya baktığı için bu kulübeler (özellikle karşı taraftakiler)
+       maç sırasında net görünür. ── */
+    if (buffetLvl > 0) {
+      const pitchside = new THREE.Group();
+      const band = PITCH_W / 2 + MARGIN - 2.4;   // pano (37) ile tribün (42) arası
+      const spots = [
+        { x: -26, z: band, rot: Math.PI },
+        { x: 26, z: band, rot: Math.PI },
+        { x: -26, z: -band, rot: 0 },
+        { x: 26, z: -band, rot: 0 },
+      ];
+      spots.slice(0, Math.min(4, buffetLvl)).forEach(sp => {
+        const kiosk = buildPitchKiosk();
+        kiosk.position.set(sp.x, 0, sp.z);
+        kiosk.rotation.y = sp.rot;
+        pitchside.add(kiosk);
+      });
+      addFacilityObj(pitchside, 'buffet', buffetLvl, false, 'pitchside');
+    }
+    // Kale arkası taraftar mağazası standı (kulüp renkleriyle)
+    if ((facs.fanShop || 0) > 0) {
+      const standGroup = new THREE.Group();
+      const shopBand = PITCH_L / 2 + MARGIN - 2.6;
+      const stall = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.4, 6), shopMat);
+      stall.position.y = 1.2;
+      stall.castShadow = true;
+      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 5), new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        emissive: new THREE.Color(design.seatColor),
+        emissiveIntensity: opts.night ? 0.9 : 0.25,
+      }));
+      mark.position.set(-1.7, 0.2, 0);
+      standGroup.add(stall, mark);
+      standGroup.position.set(shopBand, 0, 16);
+      addFacilityObj(standGroup, 'fanShop', facs.fanShop || 0, false, 'pitchside');
     }
 
     /* ── İÇ TESİSLER — tribün alt koridorlarında (maç sırasında içeriden görünür) ── */

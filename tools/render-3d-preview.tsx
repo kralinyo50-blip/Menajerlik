@@ -581,6 +581,8 @@ function renderMatchPreview(cfg: {
   sim: number;
   cam?: 'manager' | 'broadcast';
   event?: { type: string; team: 'home' | 'away' };
+  /** Ev sahibinin iç tesisleri (büfe vb) — maçta görünürlüğünü denetlemek için */
+  facilities?: Record<string, number>;
 }) {
   const shape = (name: string, mirror: boolean): ShapeSlot[] => {
     const f = FORMATIONS['4-3-3'];
@@ -606,7 +608,9 @@ function renderMatchPreview(cfg: {
     homeName: 'ANADOLU SPOR',
     awayName: 'KIZIL YILDIZ',
     sponsorText: 'MANAGER PRO 2026 • RESMİ SPONSOR • ',
-    logo: '🦁'
+    logo: '🦁',
+    // Ev sahibi maçında oyuncunun stadı: tesisler (büfe, mağaza…) sahneye girer
+    facilities: cfg.facilities
   });
   bundle.setCameraMode(cfg.cam ?? 'manager');
   const input: Match3DInput = {
@@ -657,8 +661,9 @@ if (process.env.MATCH_ONLY) {
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-gol.png', venue: homeV, weather: 'cloudy', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 58, phase: 'second', scoreHome: 2, scoreAway: 0, possession: 61, sim: 30, event: { type: 'goal', team: 'home' } }), label: 'gol sevinci' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-kart.png', venue: awayV, weather: 'sunny', kitHome: awayV.kit, kitAway: opponentKit('ANADOLU SPOR', 3, awayV.kit.shirt), minute: 41, phase: 'first', scoreHome: 0, scoreAway: 1, possession: 39, sim: 24, event: { type: 'card', team: 'away' } }), label: 'kart (deplasman)' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-deplasman.png', venue: awayV2, weather: 'snow', kitHome: awayV2.kit, kitAway: opponentKit('ANADOLU SPOR', 7, awayV2.kit.shirt), minute: 22, phase: 'first', scoreHome: 0, scoreAway: 0, possession: 52, sim: 30 }), label: 'deplasman • kar' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-tesisler.png', venue: homeNight, weather: 'sunny', kitHome: homeNight.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeNight.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26, cam: 'manager', facilities: { buffet: 4, fanShop: 3, restaurant: 2, bar: 2, parking: 2, toilets: 2, security: 3, ledScreen: 2, soundSystem: 2, museum: 0, kidsZone: 0, medicalRoom: 1 } }), label: '🍔 tesisler (büfe) • menajer kamerası' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-yayin.png', venue: homeV, weather: 'sunny', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26, cam: 'broadcast' }), label: '📺 yayın kamerası' });
-  console.log(`\n📄 ${composeSheet(tiles, 2, `${OUT_DIR}/preview-mac-tumu.png`)}`);
+  console.log(`\n📄 ${composeSheet(tiles, 3, `${OUT_DIR}/preview-mac-tumu.png`)}`);
   process.exit(0);
 }
 

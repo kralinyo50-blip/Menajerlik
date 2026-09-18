@@ -259,8 +259,9 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     const markers: { mesh: THREE.Mesh; baseOpacity: number; kind: 'ring' | 'beam' }[] = [];
     if (highlightFacility) {
       const all = bundle.facilities?.[highlightFacility] ?? [];
-      // İç (koridor) parçalar varsa yalnızca dıştakiler işaretlenir — halka meydanda kalsın
-      const outdoor = all.filter(o => !o.userData.facilityIndoor);
+      // Halka giriş meydanındaki yapıya çizilir: iç (koridor) ve saha kenarı parçaları
+      // sahne boyunca dağıldığı için işaret hesaplanırken dışarıda bırakılır.
+      const outdoor = all.filter(o => !o.userData.facilityIndoor && o.userData.facilitySpot !== 'pitchside');
       const use = outdoor.length ? outdoor : all;
       if (use.length) {
         const box = new THREE.Box3();
