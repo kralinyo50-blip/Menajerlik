@@ -16,6 +16,8 @@ export interface OrbitSceneLike {
     maxPhi?: number;
   };
   sky: string;
+  /** Opsiyonel gökyüzü gradyanı — verilirse düz renk yerine bu kullanılır */
+  skyTexture?: THREE.Texture | null;
   fog?: [string, number, number];
 }
 
@@ -73,7 +75,7 @@ export function useOrbitThree(
 
     const bundle = build();
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(bundle.sky);
+    scene.background = bundle.skyTexture ?? new THREE.Color(bundle.sky);
     if (bundle.fog) scene.fog = new THREE.Fog(new THREE.Color(bundle.fog[0]).getHex(), bundle.fog[1], bundle.fog[2]);
     scene.add(bundle.group);
 
@@ -196,6 +198,9 @@ export function useOrbitThree(
         if (Array.isArray(mat)) mat.forEach(m => m.dispose());
         else mat?.dispose();
       });
+      // Gökyüzü gradyanı dokusu da serbest bırakılır
+      const bg = scene.background as unknown as THREE.Texture | null;
+      if (bg && (bg as THREE.Texture).isTexture) (bg as THREE.Texture).dispose();
       bundle.group.clear();
       renderer.dispose();
       if (el.parentNode === host) host.removeChild(el);

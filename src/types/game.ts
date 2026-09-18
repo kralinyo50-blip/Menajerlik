@@ -39,6 +39,42 @@ export interface StadiumState {
   lastEventIncome?: number;
 }
 
+/* ══════════ ANTRENMAN KOMPLEKSİ (v4.6) — 3D tesisler ══════════ */
+export type FacilityModuleId = 'pitch' | 'gym' | 'recovery' | 'tactics' | 'youth';
+
+/** Haftalık antrenman raporu — tesislerin oyunculara etkisi */
+export interface FacilityReport {
+  season: number;
+  week: number;
+  /** Bu hafta tesiste gelişen oyuncu sayısı */
+  growth: number;
+  /** Gelişen oyuncuların isimleri (kısa liste) */
+  grownNames: string[];
+  /** Tesis kaynaklı toplam moral artışı */
+  morale: number;
+  /** Tesis kaynaklı toplam enerji yenilenmesi */
+  energy: number;
+  /** Rejenerasyon merkezinin önlediği tahmini sakatlık / hızlandırdığı iyileşme */
+  injuriesPrevented: number;
+  notes: string[];
+}
+
+/** 3D antrenman kompleksi modülleri (her biri 1-5 seviye) */
+export interface FacilityState {
+  /** Antrenman sahası — OVR gelişim hızı */
+  pitch: number;
+  /** Fitness & kondisyon salonu — enerji + moral */
+  gym: number;
+  /** Rejenerasyon merkezi — sakatlık önleme + iyileşme */
+  recovery: number;
+  /** Taktik & analiz merkezi — takım kimyası + maç bonusu */
+  tactics: number;
+  /** Altyapı sahası & gençlik merkezi — genç gelişimi */
+  youth: number;
+  /** Son haftalık tesis raporu (UI) */
+  lastReport?: FacilityReport | null;
+}
+
 /* ══════════ MENAJERİN KENDİ HAYATI (v4.0) ══════════ */
 export type LifeActivityId = 'gym' | 'games' | 'rest' | 'goOut' | 'vacation' | 'press';
 export type LifeSceneId = 'gym' | 'home' | 'city' | 'studio';
@@ -618,6 +654,8 @@ export interface GameState {
   outgoingLoans: OutgoingLoan[];
   // ── v3.3: Stadyum Stüdyosu (3D) ──
   stadium: StadiumState;
+  // ── v4.6: 3D Antrenman Kompleksi (tesisler) ──
+  facility: FacilityState;
   // ── v4.2: Kulüp Kimliği & Müze ──
   clubPhilosophy: ClubPhilosophy;
   ultrasHappiness: number; // 0-100

@@ -9,6 +9,23 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.6.0',
+    date: 'Eylül 2026',
+    tag: 'BÜYÜK',
+    title: '3D Antrenman Kompleksi: Tesisler Artık Stadyum Sekmesinde',
+    items: [
+      '🗂️ "Tesisler" sekmesi kaldırıldı — stadyumda zaten 3D görünüm vardı, tüm tesis yönetimi artık 🏟️ Stadyum sekmesinin altında',
+      '🏋️ 3D Antrenman Kompleksi: antrenman sahası, fitness salonu, rejenerasyon merkezi, taktik & analiz merkezi ve altyapı sahası',
+      '👁️ 3D ön izleme: modül kartının üzerine gel → bir üst seviyenin 3D görünümünü satın almadan gör',
+      '📈 Gerçek etki: antrenman sahası OVR gelişim şansını, fitness salonu enerji + moralini, rejenerasyon merkezi sakatlık riskini ve iyileşmeyi, taktik merkezi takım kimyası + maç gücünü, altyapı sahası genç gelişimini yükseltir',
+      '👥 Oyuncu etkisi tablosu: her oyuncunun haftalık gelişim şansı, morali ve enerjisi canlı görünür (ön izlemede fark amber renkte)',
+      '📋 Haftalık tesis raporu: gelişen oyuncular, moral/enerji kazancı ve önlenen sakatlıklar her maç sonrası raporlanır',
+      '🌱 Her modül 1-5 seviye — seviye yükseldikçe 3D binada kat, havuz, kubbe, projektör, mini saha ve tribün gerçekten büyür',
+      '👥 Personel ve 🎓 Akademi & Scout bölümleri de aynı sekmede (eski Tesisler içeriği taşındı, hiçbir özellik kaybolmadı)',
+      '🎬 Gece/gündüz + sinematik kamera ve ön izlemede vurgu halkası',
+    ],
+  },
+  {
     version: '4.1.0',
     date: 'Eylül 2026',
     tag: 'BÜYÜK',

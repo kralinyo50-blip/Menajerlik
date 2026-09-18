@@ -129,11 +129,11 @@ const QUICK_QUESTIONS: QuickQ[] = [
   {
     id: 'facilities',
     label: 'Tesisler ne işe yarar?',
-    icon: '🏗️',
-    q: 'Tesisler ve personel nasıl?',
+    icon: '🏋️',
+    q: 'Antrenman kompleksi ve tesisler nasıl?',
     category: 'Tesisler',
-    keywords: ['tesis', 'stadyum', 'antrenman', 'akademi', 'sağlık', 'personel'],
-    answer: `**🏗️ Tesisler & Personel**\n\n**Tesis seviyeleri (1-5):**\n• **Stadyum:** +5.000 kapasite, taraftar +5\n• **Antrenman:** tüm oyunculara +1 OVR\n• **Akademi:** genç keşif ve gelişim şansı ↑\n• **Sağlık:** sakatlık -1 hafta veya enerji +10\n\n**Personel ($):** Antrenör (+1 OVR tüm takıma), Scout (+1 scout lvl), Fizyoterapist, Analist (+3 maç gücü).\n\n**Genç keşfi:** Akademi → "Yetenek Ara" ($50K) → 16-18 yaş, 55-70 OVR, potansiyel gizli, A takıma yükseltilebilir.\n\n💡 **Sıra:** Erken Scout+Antrenman, ortada Sağlık, sonra Akademi.`
+    keywords: ['tesis', 'antrenman', 'kompleks', 'akademi', 'sağlık', 'personel', 'rejenerasyon', 'altyapı'],
+    answer: `**🏋️ 3D Antrenman Kompleksi & Personel**\n\nTesisler artık **Stadyum sekmesinin altında**: 🏋️ Antrenman Kompleksi (3D) • 👥 Personel • 🎓 Akademi & Scout.\n\n**5 modül (her biri 1-5 seviye, 3D sahnede büyür):**\n• 🌱 **Antrenman Sahası:** haftalık OVR gelişim şansı +%3/seviye (sv.5 → +%15)\n• 🏋️ **Fitness & Kondisyon:** haftalık +2 enerji & +1-2 moral (maç gücünü yükseltir)\n• 🧊 **Rejenerasyon Merkezi:** maç sakatlığı riski -%5/seviye, iyileşme +%10/seviye\n• 📊 **Taktik & Analiz:** haftalık takım kimyası +0.6/seviye ve maç gücü +0.8/seviye\n• 🎓 **Altyapı Sahası:** genç oyuncu gelişimi +%4/seviye, akademi kalitesi ↑\n\n**Ön izleme:** modül kartının üzerine gel → bir üst seviyenin hem 3D görünümünü hem oyunculara etkisini satın almadan gör.\n\n**Personel ($):** Antrenör (+1 OVR), Scout, Fizyoterapist, Analist (+3 maç gücü).\n\n**Genç keşfi:** Akademi & Scout → "Yetenek Ara" ($50K) veya bölgeye izci gönder.\n\n💡 **Sıra:** Önce 🌱 Antrenman Sahası + 🏋️ Fitness (genç kadro hızlı gelişir), sonra 🧊 Rejenerasyon, sakatlık çoksa.`
   },
 ];
 

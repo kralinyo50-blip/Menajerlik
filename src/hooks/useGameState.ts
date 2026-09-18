@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
 import {
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
-  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer, LifeActivityId
+  LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer, LifeActivityId,
+  FacilityModuleId, FacilityReport, FacilityState
 } from '../types/game';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
@@ -12,6 +13,9 @@ import { INITIAL_ACHIEVEMENTS, DIFFICULTY_CONFIG } from '../data/achievements';
 import { generateFixture, calculateAttendance, awayIncome } from '../utils/fixture';
 import { playerValue, playerWage, marketRefreshCost } from '../utils/pricing';
 import { defaultStadium } from '../data/stadium';
+import {
+  defaultFacility, normalizeFacility, facilityUpgradeCost, facilityEffects, FACILITY_MODULE_MAP, FACILITY_MAX_LEVEL
+} from '../data/facility';
 import {
   defaultLife, computeOutcome, lifeWeeklyReset, managerRecoveryBonus, fameIncomeMultiplier
 } from '../utils/life';
@@ -359,6 +363,7 @@ export const useGameState = () => {
       loanList: [],
       outgoingLoans: [],
       stadium: defaultStadium(),
+      facility: defaultFacility(),
       clubPhilosophy: null,
       ultrasHappiness: 65,
       ultrasRequests: [],
@@ -746,6 +751,8 @@ export const useGameState = () => {
     if (!(loaded as any).scoutMissions) (loaded as any).scoutMissions = [];
     if (!(loaded as any).scoutReports) (loaded as any).scoutReports = [];
     if ((loaded as any).pendingPress === undefined) (loaded as any).pendingPress = null;
+    if (!(loaded as any).facility) (loaded as any).facility = defaultFacility();
+    (loaded as any).facility = normalizeFacility((loaded as any).facility);
     if (!(loaded as any).stadium?.tribunes) {
       const baseStadium = (loaded as any).stadium || {};
       baseStadium.tribunes = { north: 1, south: 1, east: 1, west: 1 };
@@ -1073,6 +1080,9 @@ export const useGameState = () => {
         boardMessages: [...(prev.boardMessages || [])]
       };
 
+      /* — 3D antrenman kompleksi etkileri (tüm hafta boyunca kullanılır) — */
+      const facEff = facilityEffects(newState.facility);
+
       /* — Skor tablosu — */
       const userTeam = newState.league.find(t => t.isUser)!;
       newState.clubStats.totalGoals += userScore;
@@ -1235,8 +1245,13 @@ export const useGameState = () => {
       newState.team11 = newState.team11.map(applyCardEffects);
       newState.bench = newState.bench.map(applyCardEffects);
 
-      /* — Sakatlıklar (gerçekten uygulanır) — */
+      /* — Sakatlıklar (gerçekten uygulanır) — Rejenerasyon merkezi bir kısmını önler — */
+      let injuriesPrevented = 0;
       injuries.forEach(inj => {
+        if (facEff.injuryRiskMult < 1 && Math.random() > facEff.injuryRiskMult) {
+          injuriesPrevented += 1;
+          return; // havuz / buz banyosu / masaj sakatlığı önledi
+        }
         const patch = (p: Player): Player =>
           p.id === inj.playerId
             ? { ...p, injured: true, injuryWeeks: Math.max(1, inj.weeks), morale: Math.max(0, p.morale - 5) }
@@ -1248,6 +1263,9 @@ export const useGameState = () => {
           newState.news = [`🏥 ${victim.name} sakatlandı — ${inj.weeks} hafta yok!`, ...newState.news.slice(0, 4)];
         }
       });
+      if (injuriesPrevented > 0) {
+        newState.news = [`🧊 Rejenerasyon merkezi ${injuriesPrevented} sakatlığı önledi!`, ...newState.news.slice(0, 4)];
+      }
 
       /* — Oyuncu reytingleri & form — */
       const ratingMap = new Map(ratings.map(r => [r.playerId, r]));
@@ -1504,13 +1522,28 @@ export const useGameState = () => {
         }
       }
 
-      /* — İyileşme — */
+      /* — Haftalık tesis raporu (3D antrenman kompleksi) — */
+      const facilityReport: FacilityReport = {
+        season: newState.season,
+        week: newState.week,
+        growth: 0,
+        grownNames: [],
+        morale: 0,
+        energy: 0,
+        injuriesPrevented: injuriesPrevented + 0,
+        notes: [],
+      };
+
+      /* — İyileşme — Sağlık Ekibi yeteneği + rejenerasyon merkezi hızlandırır — */
       const medicalLvl = prev.skills?.medical ?? 0;
       const heal = (p: Player): Player => {
         if (p.injured && p.injuryWeeks > 0) {
-          // Sağlık Ekibi yeteneği iyileşmeyi hızlandırabilir
           let left = p.injuryWeeks - 1;
-          if (medicalLvl > 0 && left > 0 && Math.random() < skillInjuryReduction(medicalLvl) * 1.5) left -= 1;
+          const skillChance = medicalLvl > 0 ? skillInjuryReduction(medicalLvl) * 1.5 : 0;
+          if (left > 0 && Math.random() < skillChance + facEff.healChanceBonus) {
+            left -= 1;
+            facilityReport.injuriesPrevented += 1;
+          }
           return { ...p, injuryWeeks: left, injured: left > 0 };
         }
         return p;
@@ -1530,9 +1563,11 @@ export const useGameState = () => {
           (focus === 'youth' && p.age <= 23) ||
           focus === 'balanced';
         if (!roleMatch) return p;
-        const chance = (0.18 + newState.trainingLvl * 0.05 + skillYouthBonus(prev.skills?.youth ?? 0)) * youngFactor * (focus === 'balanced' ? 0.8 : 1.15);
+        const chance = (0.18 + newState.trainingLvl * 0.05 + skillYouthBonus(prev.skills?.youth ?? 0) + facEff.growthChance) * youngFactor * (focus === 'balanced' ? 0.8 : 1.15);
         if (p.ovr < p.potential && Math.random() < chance) {
           const ovr = Math.min(p.potential, p.ovr + 1);
+          facilityReport.growth += 1;
+          if (facilityReport.grownNames.length < 6) facilityReport.grownNames.push(p.name);
           return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
         }
         if (focus === 'fitness') return { ...p, energy: Math.min(100, p.energy + 4) };
@@ -1543,13 +1578,56 @@ export const useGameState = () => {
 
       /* — Akademi gelişimi — */
       newState.academyPlayers = newState.academyPlayers.map(p => {
-        const chance = 0.15 + newState.academyLevel * 0.08 + skillYouthBonus(prev.skills?.youth ?? 0);
+        const chance = 0.15 + newState.academyLevel * 0.08 + skillYouthBonus(prev.skills?.youth ?? 0) + facEff.youthGrowth;
         if (Math.random() < chance && p.ovr < p.potential) {
           const ovr = p.ovr + 1;
+          facilityReport.growth += 1;
+          if (facilityReport.grownNames.length < 6) facilityReport.grownNames.push(p.name);
           return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
         }
         return p;
       });
+
+      /* — Fitness & kondisyon salonu: enerji + moral — */
+      if (facEff.energyRegen > 0 || facEff.moraleRegen > 0) {
+        const gymBoost = (p: Player): Player => {
+          const energy = Math.min(100, p.energy + facEff.energyRegen);
+          const morale = Math.min(100, p.morale + facEff.moraleRegen);
+          facilityReport.energy += energy - p.energy;
+          facilityReport.morale += morale - p.morale;
+          return { ...p, energy, morale };
+        };
+        newState.team11 = newState.team11.map(gymBoost);
+        newState.bench = newState.bench.map(gymBoost);
+      }
+
+      /* — Taktik & analiz merkezi: takım kimyası — */
+      if (facEff.chemistryRegen > 0) {
+        newState.teamChemistry = Math.min(100, Math.round(((newState.teamChemistry || 55) + facEff.chemistryRegen) * 10) / 10);
+      }
+
+      /* — Haftalık tesis raporunu kaydet (Stadyum → Antrenman Kompleksi sekmesinde görünür) — */
+      {
+        const lv = normalizeFacility(newState.facility);
+        const notes: string[] = [];
+        if (lv.pitch > 1) notes.push(`🌱 Saha Sv.${lv.pitch} gelişim şansına +%${Math.round(facEff.growthChance * 100)} ekledi`);
+        if (facilityReport.growth > 0) notes.push(`📈 ${facilityReport.growth} oyuncu OVR geliştirdi`);
+        if (facEff.energyRegen > 0) notes.push(`🔋 Enerji yenilenmesi +${facilityReport.energy}`);
+        if (facilityReport.morale > 0) notes.push(`😊 Moral +${facilityReport.morale}`);
+        if (facilityReport.injuriesPrevented > 0) notes.push(`🧊 ${facilityReport.injuriesPrevented} sakatlık/iyileşme haftası kazanıldı`);
+        if (facEff.chemistryRegen > 0) notes.push(`📊 Takım kimyası +${facEff.chemistryRegen.toFixed(1)}`);
+        if (facEff.youthGrowth > 0) notes.push(`🎓 Altyapı gelişimi +%${Math.round(facEff.youthGrowth * 100)}`);
+        if (notes.length === 0) notes.push('Tesisler seviye 1 — Stadyum → Antrenman Kompleksi sekmesinden yükselt!');
+        facilityReport.notes = notes;
+        newState.facility = { ...lv, lastReport: facilityReport };
+
+        if (facilityReport.growth > 0) {
+          newState.news = [
+            `🏋️ Tesis antrenmanı: ${facilityReport.growth} oyuncu gelişti${facilityReport.grownNames.length ? ` (${facilityReport.grownNames.slice(0, 3).join(', ')})` : ''}`,
+            ...newState.news.slice(0, 4)
+          ];
+        }
+      }
 
       /* — Kulüpten ayrılmak isteyenler — */
       const markUnhappy = (p: Player): Player => {
@@ -1874,7 +1952,7 @@ export const useGameState = () => {
             }
             const report: any = { id: `rep-${Date.now()}-${Math.random().toString(36).slice(2,4)}`, regionId: m.regionId, regionName: m.regionName, players, generatedWeek: newState.week, generatedSeason: newState.season };
             reports.push(report);
-            newState.news = [`📬 İzci döndü (${m.regionName}): ${players.length} genç bulundu! Tesisler → Scout`, ...newState.news.slice(0,4)];
+            newState.news = [`📬 İzci döndü (${m.regionName}): ${players.length} genç bulundu! Stadyum → Akademi & Scout`, ...newState.news.slice(0,4)];
           } else {
             nextMissions.push({ ...m, weeksLeft: left });
           }
@@ -1997,6 +2075,61 @@ export const useGameState = () => {
         updates.bench = prev.bench.map(p =>
           p.injured ? { ...p, injuryWeeks: Math.max(1, p.injuryWeeks - 1) } : { ...p, energy: Math.min(100, p.energy + 10) }
         );
+      }
+
+      return { ...prev, ...updates };
+    });
+  }, []);
+
+  /* ══════════════ 3D ANTRENMAN KOMPLEKSİ ══════════════ */
+  /** Bir tesis modülünü yükselt — 3D sahnede bina/saha büyür, oyunculara anında + haftalık etki */
+  const upgradeFacilityModule = useCallback((id: FacilityModuleId) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const facility = normalizeFacility(prev.facility);
+      const level = facility[id];
+      if (level >= FACILITY_MAX_LEVEL) return prev;
+      const cost = facilityUpgradeCost(id, level);
+      if (prev.budget < cost) return prev;
+
+      const nextLevel = level + 1;
+      const nextFacility: FacilityState = { ...facility, [id]: nextLevel, lastReport: facility.lastReport ?? null };
+      const def = FACILITY_MODULE_MAP[id];
+      const updates: Partial<GameState> = {
+        budget: prev.budget - cost,
+        facility: nextFacility,
+        news: [`${def.icon} ${def.name} seviye ${nextLevel} oldu! ${def.effect(nextLevel)}`, ...prev.news.slice(0, 4)],
+      };
+
+      /* Anında hissedilen etkiler — tesis açılış bonusu */
+      if (id === 'pitch') {
+        // Saha kalitesi = takım antrenman verimi: tüm takıma +1 OVR + moral
+        updates.trainingLvl = Math.max(prev.trainingLvl || 1, nextLevel);
+        const lift = (p: Player) => {
+          const ovr = Math.min(99, p.ovr + 1);
+          return { ...p, ovr, value: calculatePlayerValue(ovr, p.age), morale: Math.min(100, p.morale + 3) };
+        };
+        updates.team11 = prev.team11.map(lift);
+        updates.bench = prev.bench.map(lift);
+      } else if (id === 'gym') {
+        // Fitness salonu açıldı: enerji + moral patlaması
+        const boost = (p: Player) => ({ ...p, energy: Math.min(100, p.energy + 15), morale: Math.min(100, p.morale + 5) });
+        updates.team11 = prev.team11.map(boost);
+        updates.bench = prev.bench.map(boost);
+      } else if (id === 'recovery') {
+        updates.healthLvl = Math.max(prev.healthLvl || 1, nextLevel);
+        const care = (p: Player) =>
+          p.injured ? { ...p, injuryWeeks: Math.max(1, p.injuryWeeks - 1) } : { ...p, energy: Math.min(100, p.energy + 12) };
+        updates.team11 = prev.team11.map(care);
+        updates.bench = prev.bench.map(care);
+      } else if (id === 'tactics') {
+        updates.teamChemistry = Math.min(100, Math.round(((prev.teamChemistry || 55) + 6 + nextLevel) * 10) / 10);
+      } else if (id === 'youth') {
+        updates.academyLevel = Math.max(prev.academyLevel || 1, nextLevel);
+        updates.academyPlayers = prev.academyPlayers.map(p => {
+          const ovr = Math.min(p.potential, p.ovr + 1);
+          return { ...p, ovr, value: calculatePlayerValue(ovr, p.age) };
+        });
       }
 
       return { ...prev, ...updates };
@@ -2610,7 +2743,7 @@ export const useGameState = () => {
       };
 
       const inTeam = prev.team11.find(p => p.id === playerId);
-      const injuredRisk = focus === 'fitness' ? 0.02 : 0.05;
+      const injuredRisk = (focus === 'fitness' ? 0.02 : 0.05) * facilityEffects(prev.facility).injuryRiskMult;
       const gotInjured = Math.random() < injuredRisk && !prev.team11.find(p => p.id === playerId)?.injured;
 
       let team11 = inTeam ? prev.team11.map(updatePlayerOvr) : prev.team11;
@@ -3273,6 +3406,7 @@ export const useGameState = () => {
     processMatchResult,
     hireStaff,
     upgradeFacility,
+    upgradeFacilityModule,
     discoverYouthPlayer,
     promoteYouthPlayer,
     buyInvestment,

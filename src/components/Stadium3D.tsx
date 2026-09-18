@@ -19,6 +19,8 @@ interface Stadium3DProps {
   crowdIntensity?: number;
   /** Yağmur yağıyor ve çatı korumuyor → zemin ıslak / parlak */
   wet?: boolean;
+  /** Kulüp adı — skorbord ve giriş tabelasında görünür */
+  teamName?: string;
 }
 
 /**
@@ -26,7 +28,7 @@ interface Stadium3DProps {
  * Kendi orbit kontrolü: sürükle = döndür, tekerlek/pinch = yakınlaştır, çift tık = sıfırla.
  */
 export const Stadium3D: React.FC<Stadium3DProps> = ({
-  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false
+  design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '', crowdIntensity = 50, wet = false, teamName = 'STADYUM'
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -153,8 +155,12 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
 
     /* ── Sahne ── */
-    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, night: nightRef.current, wet: wetRef.current });
+    let bundle = buildStadiumGroup(design, { capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current });
     scene.add(bundle.group);
+    // Gökyüzü: prosedürel gradyan dokusu (yoksa düz renk)
+    scene.background = bundle.skyTexture ?? new THREE.Color(bundle.sky);
+    // Sis rengini gökyüzünün ufuk tonuna eşitle → ufukta dikiş görünmez
+    scene.fog = new THREE.Fog(nightRef.current ? 0x22314e : 0xd9eaf7, baseRadius * 1.35, baseRadius * 3.4);
     setReady(true);
 
     const onResize = () => {
@@ -228,12 +234,14 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
         else mat?.dispose();
       });
       bundle.group.clear();
+      // Sahne arka planı olarak kullanılan gökyüzü dokusunu da serbest bırak
+      bundle.skyTexture?.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       void bundle;
       setReady(false);
     };
-  }, [design, capacity, logo, sponsorText, height, night, wet]);
+  }, [design, capacity, logo, sponsorText, teamName, height, night, wet]);
 
   if (failed) {
     return (

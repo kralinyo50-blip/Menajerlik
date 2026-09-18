@@ -42,6 +42,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({ gameState, onTrainPlay
               </h2>
               <p className="text-slate-400 mt-1">
                 Oyuncularınızı bireysel olarak geliştirin. Tesis Seviyesi: {gameState.trainingLvl}
+                <span className="text-amber-300"> • 🏟️ Stadyum → 🏋️ Antrenman Kompleksi'nden yükselt</span>
               </p>
             </div>
             <div className="bg-slate-800/50 px-4 py-2 rounded-2xl">
@@ -55,8 +56,9 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({ gameState, onTrainPlay
         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-start gap-3">
           <span className="text-2xl">💡</span>
           <div className="text-sm text-emerald-200">
-            <strong>İpucu:</strong> Genç oyuncular (&lt;23 yaş) antrenmanlardan daha fazla fayda görür. 
-            Antrenman tesislerini geliştirmek tüm antrenmanların etkisini artırır.
+            <strong>İpucu:</strong> Genç oyuncular (&lt;23 yaş) antrenmanlardan daha fazla fayda görür.
+            🏟️ Stadyum → 🏋️ Antrenman Kompleksi'nde <b>Antrenman Sahası</b> (gelişim +%3/seviye), <b>Fitness Salonu</b> (enerji &amp; moral) ve
+            <b>Rejenerasyon Merkezi</b> (sakatlık riski ↓) modüllerini yükselt — bireysel antrenmanın etkisi ve tüm haftalık gelişim artar.
           </div>
         </div>
 
