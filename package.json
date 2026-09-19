@@ -13,7 +13,8 @@
     "serve": "node server/index.mjs",
     "share": "node tools/share-online.mjs",
     "test:online": "node --test tools/test-online.mjs tools/test-share.mjs",
-    "test:modes": "esbuild tools/test-modes.mts --bundle --format=esm --platform=node --outfile=.test-results/mode-tests.mjs --log-level=error && node --test .test-results/mode-tests.mjs"
+    "test:modes": "esbuild tools/test-modes.mts --bundle --format=esm --platform=node --outfile=.test-results/mode-tests.mjs --log-level=error && node --test .test-results/mode-tests.mjs",
+    "test:sim": "node --test tools/test-sim.mjs"
   },
   "dependencies": {
     "@types/three": "^0.186.0",
