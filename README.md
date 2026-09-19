@@ -28,7 +28,30 @@ npm run dev -- --host 0.0.0.0 --port 5173
 |--------|----------|
 | `npm run dev` | Geliştirme sunucusu (localhost) |
 | `npm run build` | Üretim derlemesi |
-| `npm run preview` | Derlenmiş sürümü önizle |
+| `npm run preview` | Derlenmiş sürüm + online API önizlemesi |
+| `npm run serve` | Üretim arayüzü + online lig sunucusu |
+| `npm run test:online` | Ortak lig ve senkronizasyon testleri |
+| `npm run test:modes` | Mod yönlendirme ve kayıt ayrımı testleri |
+
+## 🎮 Online / Offline seçimi
+
+Oyun açılışında iki ayrı mod vardır:
+
+- **Offline Oyna:** mevcut kariyerini yükle veya yeni kariyer aç. Transfer, kupa, tesis ve tek kişilik maçlar burada. Online lige bağlanılmaz.
+- **Online Oyna:** ayrı online takımını oluştur; **Lig & Canlı Maç** bölümünden oda kur/kodla katıl, **Kadro & Taktik** bölümünden hazırlan. Offline kariyer açmak gerekmez.
+
+**Mod seçimi** düğmesiyle ana menüye dönebilirsin. Online takımın `ManagerPro2026_OnlineClub_v1` anahtarında, offline kariyerin mevcut kayıt slotlarında tutulur; birbirlerini değiştirmezler. Online oturum kayıtlıysa bu moda döndüğünde aynı lige bağlanırsın. Davet bağlantıları doğrudan online modu açar.
+
+## 🌐 Kodla Online Lig
+
+**Online Oyna → Lig & Canlı Maç** bölümünde oda oluştur ve 8 karakterli senkronizasyon kodunu paylaş. Aynı sunucu adresinde kodu giren 2–10 menajer, kendi takımlarıyla aynı ligde oynar. Boş yerler botlarla dolar. Herkes “Hazırım” dediğinde yaklaşık 5 dakikalık **canlı maçlar** başlar. Aynı dakika, skor, olaylar, top ve oyuncu konumları sunucudan saniyede iki kez gönderilir. Ortak 3D/2D sahada maçı izlerken taktik ve oyuncu değişikliği yapabilir, iki tarafta da saati durduran kısa mola alabilirsin.
+
+Online lig tek kişilik kariyerden ayrıdır; kariyer haftası ve bütçe ortaklaştırılmaz. Online maçların kendi senkronize 3D/2D sahası vardır; yerel kariyer maç motoru kullanılmaz. **Tüm oyuncuların aynı çalışan Node sunucusuna bağlanması gerekir** — yalnız HTML dosyası veya statik site yeterli değildir.
+
+- Geliştirme: `npm run dev` (arayüz + online API aynı portta).
+- Üretim: `npm run build` ardından `npm run serve`.
+- Kalıcı lig kayıtları: `data/online-rooms.json` (Git dışında, yedeklenmeli).
+- [Kullanım, bağlantı ve yayınlama rehberi →](docs/ONLINE_LIG.md)
 
 ## Özellikler
 

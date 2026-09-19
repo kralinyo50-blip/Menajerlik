@@ -9,6 +9,45 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.12.0',
+    date: '19 Eyl 2026',
+    tag: 'YENİ',
+    title: '🎮 Online / Offline: İki Ayrı Oyun Modu',
+    items: [
+      '🚪 Açılışta Online Oyna veya Offline Oyna seç. İki modun ekranları ve kayıtları artık birbirinden ayrı.',
+      '👤 Offline mod: mevcut tek kişilik kariyer, transferler, kupa, tesisler ve kariyer maçları. Online sunucusuna bağlanmaz.',
+      '🌐 Online mod: doğrudan online takımını oluştur, lig kur veya kodla katıl. Yalnızca Lig & Canlı Maç ile Kadro & Taktik bölümleri bulunur.',
+      '💾 Online takım ayrı bir kayıt alanında tutulur; offline kariyer slotları değişmez. Eski online oturumların takım kaydı ilk girişte güvenli şekilde kopyalanır.',
+      '↩ Mod seçimi düğmesiyle geri dön. Online moda döndüğünde mevcut ligine bağlanırsın; davet bağlantıları doğrudan online modu açar.',
+    ],
+  },
+  {
+    version: '4.11.0',
+    date: '19 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '📡 Canlı Online Maç: Aynı Dakika, Skor ve 3D Saha',
+    items: [
+      '⚽ Hazır olunca sonuç artık anında hesaplanmaz: sunucuda yaklaşık 5 dakikalık canlı maç başlar. Karşılaşan menajerlere aynı dakika, goller, kartlar ve saha kareleri gönderilir.',
+      '🎥 Ortak 3D/2D saha: top ve oyuncu konumları sunucudan saniyede iki kez gelir. Kamera tercihi yereldir; cihaz zorlanırsa aynı maç 2D olarak gösterilir.',
+      '📋 Maç sırasında oyun stili ve diziliş değiştir; 5 oyuncu değişikliği hakkını kullan. Komutlar yalnız kendi takımını etkiler ve rakibe de görünür.',
+      '⏸ İki menajerde birden duran 20 saniyelik ortak mola (kişi başına iki hak), ortak devre arası ve otomatik devam.',
+      '🔄 Bağlantı kesilince maç sunucuda devam eder. Yenileyince mevcut dakikaya, kadroya ve skora dönülür; sonuç puan tablosuna yalnız bir kez işlenir.',
+    ],
+  },
+  {
+    version: '4.10.0',
+    date: '19 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🌐 Online Lig: Senkronizasyon Koduyla Arkadaşlarınla Oyna',
+    items: [
+      '🔗 Online Lig sekmesinde oda oluştur, 8 karakterli kodu veya davet bağlantısını paylaş; aynı sunucuya bağlı arkadaşların kendi takımlarıyla lige katılsın.',
+      '🏆 2–10 menajer, boş yerlerde botlar, ortak 18 haftalık fikstür ve puan tablosu. Herkes hazır olduğunda maçlar sunucuda bir kez hesaplanır.',
+      '🔄 Yaklaşık 2 saniyede bir otomatik eşitleme, tarayıcı yenilenince oturuma dönüş ve sunucuda kalıcı lig kayıtları.',
+      '🤖 Ayrılan takım bota devredilir. Bağlantısı 60 saniyeden uzun süre kesilen oda sahibinin yönetimi devralınabilir.',
+      '💾 Online lig tek kişilik kariyerden ayrıdır; mevcut kayıtların, bütçen ve haftan değişmez. Ortak sunucu gerekir; yalnız HTML dosyasıyla online oynanmaz.',
+    ],
+  },
+  {
     version: '4.9.0',
     date: '19 Eyl 2026',
     tag: 'BÜYÜK',
@@ -284,4 +323,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '4.1.0';
+export const CURRENT_VERSION = '4.12.0';
