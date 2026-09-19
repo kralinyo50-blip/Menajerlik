@@ -189,7 +189,7 @@ if errorlevel 1 goto :sunucu_calistir
 start "" /b powershell -NoProfile -WindowStyle Hidden -Command "$p=!PORT!; for($i=0;$i -lt 120;$i++){ try{ $c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',$p); $c.Close(); Start-Process ('http://localhost:'+$p); break } catch { Start-Sleep -Milliseconds 700 } }"
 
 :sunucu_calistir
-call npm.cmd run dev -- --host 127.0.0.1 --port !PORT!
+call npm.cmd run dev -- --host 0.0.0.0 --port !PORT!
 
 echo.
 echo    Sunucu durdu.

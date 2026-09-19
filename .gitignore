@@ -5,3 +5,7 @@ dist
 .vite
 .arena
 .cache
+
+# Server-side online league saves (contain session hashes)
+data/
+.test-results/

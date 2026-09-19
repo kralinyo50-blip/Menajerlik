@@ -7,6 +7,7 @@ import { Difficulty } from '../types/game';
 interface SetupScreenProps {
   onStart: (teamName: string, teamLogo: string, difficulty: Difficulty) => void;
   onLoad: () => boolean;
+  onBack: () => void;
 }
 
 const TAG_STYLE: Record<string, string> = {
@@ -16,7 +17,7 @@ const TAG_STYLE: Record<string, string> = {
   'BÜYÜK': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
 };
 
-export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => {
+export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad, onBack }) => {
   const [teamName, setTeamName] = useState('');
   const [selectedLogo, setSelectedLogo] = useState(LOGO_POOL[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
@@ -150,6 +151,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
         isAnimating ? 'opacity-0' : 'opacity-100'
       }`}
     >
+      <button type="button" onClick={onBack} disabled={isAnimating} className="fixed top-4 right-4 z-30 rounded-xl border border-slate-600 bg-slate-900/95 px-4 py-2 text-sm text-white disabled:opacity-50">← Mod seçimi</button>
       {/* Animated background — premium */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/40" />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -188,7 +190,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
       )}
 
       {/* Main layout */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-3 sm:p-6">
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-3 sm:p-6 pt-20 sm:pt-20">
         <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr] gap-4 lg:gap-6 items-stretch">
           {/* LEFT — Update Log (desktop) */}
           <div className="hidden lg:block self-center">
@@ -232,6 +234,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad }) => 
                     ☀️ BÜTÜN YAZ BOYUNCA GELİŞTİRİLDİ
                   </span>
                 </div>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                👤 Offline kariyer · Kendi kulübünü yönet, botlara karşı oyna. Mevcut kariyer kayıtların burada.
               </div>
 
               {/* Rotating tip */}
