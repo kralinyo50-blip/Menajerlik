@@ -5,6 +5,7 @@ import {
   buildFootballer, Footballer, poseRun, poseIdle, poseKick, poseCelebrate, poseLying,
   poseDive, poseGroundSave, poseSeated, poseCard, poseCoach, makeCardMesh
 } from './actors';
+import type { SimSnapshot } from '../../../server/match-sim.mjs';
 
 export const PITCH_L = 105;
 export const PITCH_W = 68;
@@ -66,6 +67,11 @@ export interface Match3DInput {
   awayOnPitch: number;
   energy: number;
   event?: Match3DEvent | null;
+  /**
+   * Saha motoru karesi — verilirse 3D saha oyuncuları ve topu bu kareden sürülür:
+   * pas, şut, kurtarış, ofsayt ve diziliş maçın kendisi olur (süsleme değil).
+   */
+  sim?: SimSnapshot | null;
 }
 
 export interface Match3DBundle {
@@ -83,6 +89,17 @@ export interface Match3DBundle {
 }
 
 type ActorMode = 'play' | 'idle' | 'celebrate' | 'down' | 'walkoff' | 'off' | 'dive' | 'bench' | 'kick' | 'card';
+
+/** Saha motoru karesinden gelen oyuncu verisi (3D aktörü bu veriyle sürülür). */
+interface SimActorState {
+  x: number;
+  z: number;
+  vx: number;
+  vy: number;
+  speed: number;
+  action: string;
+  sentOff: boolean;
+}
 
 interface Actor {
   f: Footballer;
@@ -106,6 +123,8 @@ interface Actor {
   /** Kaleci uçuşu: hedef z ve tutup tutmayacağı */
   diveZ: number;
   diveCatch: boolean;
+  /** Saha motoru sürüyorsa oyuncunun gerçek konumu/hızı (yoksa sahne kendi oynatır) */
+  sim?: SimActorState;
 }
 
 // ShapeSlot.t takımın kendi hücum yönündeki yerleşimidir. Aşağıdaki iki
@@ -294,6 +313,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
 
   const home = homeShape.map((s, i) => addActor('home', s, opts.homeKit, roleOf(s, i)));
   const away = awayShape.map((s, i) => addActor('away', s, opts.awayKit, roleOf(s, i)));
+  home.forEach((a, i) => { a.f.root.name = `actor-home-${i}`; });
+  away.forEach((a, i) => { a.f.root.name = `actor-away-${i}`; });
   const homeGk = home[0];
   const awayGk = away[0];
 
@@ -483,6 +504,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     new THREE.MeshStandardMaterial({ color: 0xffffff, map: ballTex ?? undefined, roughness: 0.42 })
   );
   ballMesh.position.set(0, 0.115, 0);
+  ballMesh.name = 'match-ball';
   group.add(ballMesh);
   const ballShadowTex = (() => {
     const c = typeof document !== 'undefined' ? document.createElement('canvas') : null;
@@ -1190,7 +1212,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       a.f.root.visible = true;
       a.f.shadow.visible = true;
 
-      if (!a.staff && a.mode === 'play' && !seq) {
+      if (!a.staff && a.mode === 'play' && !seq && !a.sim) {
         // Açık oyun: takım bloğu topla kayar, yakın oyuncular prese gider
         const attackX = a.team === 'home' ? 1 : -1;
         const shiftX = clamp(ball.pos.x * 0.42, -22, 22);
@@ -1225,8 +1247,22 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
 
       // Hareket. Kaleci uçuşu sırasında normal hedefe yürüme ile dalışın
       // yatay hareketini aynı anda uygulama; bu çakışma kaleciyi sıçratıyordu.
+      // Motor sürüyorsa: konum/hız motorun kendi fiziğinden gelir, sahne yalnızca çizer.
+      if (a.sim && !seq && a.mode !== 'dive') {
+        a.pos.x = a.sim.x;
+        a.pos.z = a.sim.z;
+        a.speed = a.sim.speed;
+        if (a.sim.speed > 0.8) {
+          const want = Math.atan2(a.sim.vx, a.sim.vy);
+          let diff = want - a.facing;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          a.facing += diff * damp(12, dt);
+        }
+      }
+
       let desired = 0;
-      if (a.mode !== 'dive') {
+      if (a.mode !== 'dive' && !a.sim) {
         const dx = a.target.x - a.pos.x;
         const dz = a.target.z - a.pos.z;
         const dist = Math.hypot(dx, dz);
@@ -1243,7 +1279,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           a.facing += diff * damp(9, dt);
         }
       }
-      a.speed = lerp(a.speed, desired, damp(8, dt));
+      if (!a.sim) a.speed = lerp(a.speed, desired, damp(8, dt));
 
       a.f.root.position.set(a.pos.x, 0, a.pos.z);
       a.f.root.rotation.y = a.facing;
@@ -1399,15 +1435,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         }
       }
     }
-    ballMesh.position.copy(ball.pos);
-    ballShadow.position.set(ball.pos.x, 0.05, ball.pos.z);
-    const sc = clamp(1 - ball.pos.y * 0.06, 0.5, 1);
-    ballShadow.scale.setScalar(sc);
-    (ballShadow.material as THREE.MeshBasicMaterial).opacity = 0.5 * sc;
-    // Top döner
-    const roll = ball.holder ? 1.6 : ball.vel.length() * 0.9;
-    ballMesh.rotation.x += roll * dt * 0.9;
-    ballMesh.rotation.z += roll * dt * 0.35;
+    syncBallVisual(dt);
   };
 
   /* ══════════ ORTAM / DETAYLAR ══════════ */
@@ -1509,6 +1537,78 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     beginPhaseSequence(ph);
   };
 
+  /* ══════════ SAHA MOTORU (gerçek maç) ══════════ */
+  // Sunucudaki/kariyerdeki futbol motoru 0-100 koordinat kullanır: x = ev sahibinin
+  // hücum yönü, y = kenardan kenara. Dünya ekseni de ev sahibinin +X'e hücum ettiği
+  // düzendir, bu yüzden eşleme tek adımdır.
+  const simToWorldX = (x: number) => ((x - 50) / 50) * (HL - 1);
+  const simToWorldZ = (y: number) => ((y - 50) / 50) * (HW - 1);
+  const simBallZ = (z: number) => Math.max(0.115, z);
+
+  /** Motor karesini sahneye uygular: konumlar, duruş modları ve top. */
+  /** Topu ve gölgesini sahneye yansıtır (motor sürerken de aynı görsel kod çalışır). */
+  const syncBallVisual = (dt: number) => {
+    ballMesh.position.copy(ball.pos);
+    ballShadow.position.set(ball.pos.x, 0.05, ball.pos.z);
+    const sc = clamp(1 - ball.pos.y * 0.06, 0.5, 1);
+    ballShadow.scale.setScalar(sc);
+    (ballShadow.material as THREE.MeshBasicMaterial).opacity = 0.5 * sc;
+    const roll = ball.holder ? 1.6 : ball.vel.length() * 0.9;
+    ballMesh.rotation.x += roll * dt * 0.9;
+    ballMesh.rotation.z += roll * dt * 0.35;
+  };
+
+  const applySimFrame = (frame: SimSnapshot) => {
+    const ballWorldX = simToWorldX(frame.ball.x);
+    const ballWorldZ = simToWorldZ(frame.ball.y);
+    ball.pos.set(ballWorldX, simBallZ(frame.ball.z), ballWorldZ);
+    ball.vel.set(frame.ball.vx, frame.ball.vz, frame.ball.vy);
+    ball.holder = null;
+    ball.receiver = null;
+    syncBallVisual(0.016);
+
+    (['home', 'away'] as Side[]).forEach(side => {
+      const list = side === 'home' ? home : away;
+      const players = frame.players.filter(p => p.side === side);
+      list.forEach((a, i) => {
+        const p = players[i];
+        if (!p) { a.sim = undefined; return; }
+        if (p.sentOff) {
+          // Kırmızı kart: oyuncu sahadan çıkar (motor konumu artık kullanılmaz).
+          a.sim = undefined;
+          if (a.mode !== 'walkoff' && a.mode !== 'off') {
+            a.mode = 'walkoff';
+            a.target.set(a.pos.x * 0.3, 0, -(HW + 6));
+          }
+          return;
+        }
+        a.sim = {
+          x: simToWorldX(p.x), z: simToWorldZ(p.y),
+          vx: p.vx, vy: p.vy,
+          speed: Math.hypot(p.vx, p.vy),
+          action: p.action,
+          sentOff: false,
+        };
+
+        // Duruş modları motordan: kaleci dalışı, şut vuruşu, gol sevinci.
+        if (p.action === 'celebrate') {
+          if (a.mode !== 'celebrate') { a.mode = 'celebrate'; a.modeT = 0; }
+          return;
+        }
+        if (a.mode === 'celebrate') a.mode = 'play';
+        if (p.action === 'dive' && a.gk && a.mode !== 'dive') {
+          a.mode = 'dive'; a.modeT = 0;
+          a.diveZ = Math.max(-GOAL_HALF - 1.4, Math.min(GOAL_HALF + 1.4, ballWorldZ));
+          a.diveCatch = frame.ball.z < 1.6 && Math.abs(ballWorldZ - a.pos.z) < 4;
+          return;
+        }
+        if (a.mode === 'play' && a.modeT > 0.6 && (p.action === 'kick' || p.action === 'pass' || p.action === 'control')) {
+          a.mode = 'kick'; a.modeT = 0;
+        }
+      });
+    });
+  };
+
   const bundle: Match3DBundle = {
     group,
     sky: opts.night ? 0x0a102a : 0x7fb2e5,
@@ -1526,7 +1626,10 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       // Önce fazı güncelle: ilk düdükteki kickoff, aynı karede gelen ilk olayı
       // yanlışlıkla üzerine yazmasın.
       updatePhase(input);
-      if (input.event && input.event.key !== lastEventKey) {
+      // Saha motoru sürüyorsa maç olaylarının sinematikleri kapanır: gol/kurtarış/şut
+      // zaten sahada gerçekten oluyor, ayrıca senaryo oynatmak maçı ikiye böler.
+      const simFrame = input.sim ?? null;
+      if (!simFrame && input.event && input.event.key !== lastEventKey) {
         lastEventKey = input.event.key;
         if (seq || pendingPhase) queueEvent(input.event);
         else handleEvent(input.event);
@@ -1553,9 +1656,10 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
         handleEvent(nextEvent);
       }
       if (seq) stepSeq(sdt);
+      else if (simFrame) applySimFrame(simFrame);
       else stepOpenPlay(sdt, input);
       moveActors(sdt, input);
-      updateBall(sdt);
+      if (!simFrame) updateBall(sdt);
       updateProps(t, sdt, input);
       updateCamera(sdt, input);
     },

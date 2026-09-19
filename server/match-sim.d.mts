@@ -91,7 +91,7 @@ export interface MatchSimState {
   celebrationUntil: number;
   [key: string]: unknown;
 }
-export declare function createMatchSim(options: { home: SimTeamInput; away: SimTeamInput; seed?: number; homeAdvantage?: number }): MatchSimState;
+export declare function createMatchSim(options: { home: SimTeamInput; away: SimTeamInput; seed?: number; homeAdvantage?: number; autoScore?: boolean }): MatchSimState;
 export declare function stepSim(sim: MatchSimState, dtMs: number): void;
 export declare function simSnapshot(sim: MatchSimState): SimSnapshot;
 export declare function simStats(sim: MatchSimState): { possessionHome: number; home: SimStats; away: SimStats };

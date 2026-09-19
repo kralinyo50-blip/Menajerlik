@@ -82,7 +82,8 @@ export function createCareerSim({ gameState, opponent, userIsHome, lineup, oppon
   };
   const home = userIsHome ? user : rival;
   const away = userIsHome ? rival : user;
-  const sim = createMatchSim({ home, away, seed: seedFrom('kariyer', seedKey, gameState.teamName, opponent.name), homeAdvantage: 0.06 });
+  // autoScore: kariyer skoru maç olay motoruna aittir; saha yalnızca oynatır.
+  const sim = createMatchSim({ home, away, seed: seedFrom('kariyer', seedKey, gameState.teamName, opponent.name), homeAdvantage: 0.06, autoScore: false });
   return sim;
 }
 

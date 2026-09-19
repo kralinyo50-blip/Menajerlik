@@ -1121,11 +1121,15 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     return () => cancelAnimationFrame(raf);
   }, [matchRunning, speed, slowMo]);
 
-  /** Olay motoru sonucu belirlediyse saha onu oynar (gol, kurtarış, ıska, direk). */
+  /**
+   * Maç olay motoru sonucu belirlediyse saha onu oynar: gol, kurtarış, ıska.
+   * 20 saniyelik simülasyon penceresi (≈6 saniye gerçek zaman) içinde o taraf
+   * kaleye yaklaşıp sonucu oynatır.
+   */
   const scriptSim = useCallback((side: 'user' | 'opp', outcome: SimOutcome) => {
     const sim = simRef.current;
     if (!sim) return;
-    scriptOutcome(sim, side === 'user' ? userSide : oppSide, outcome, 9);
+    scriptOutcome(sim, side === 'user' ? userSide : oppSide, outcome, 20);
   }, [userSide, oppSide]);
 
   const startMatch = () => {
