@@ -112,6 +112,7 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
             <p>• Her hafta herkes “Hazırım” der; sunucu canlı maçları başlatır. Ortak dakika, skor ve saha konumları saniyede iki kez iletilir.</p>
             <p>• Online maçlar ortak 3D/2D sahada canlı oynanır; taktik ve değişiklikler rakibe de yansır. Tek kişilik kariyerden ayrıdır. Offline kariyerin ve kayıtların bu moddan tamamen ayrıdır.</p>
             <p className="text-amber-300">Kod tek başına sunucu açmaz: farklı cihazlarda ortak bir sunucu adresi gerekir. “Kod bulunamadı” hatasının sebebi genelde budur — kodu değil, davet bağlantısını paylaşın.</p>
+            <p>• Farklı evlerdeyseniz: bir kişi <span className="font-mono text-cyan-300">paylas.bat</span> (Mac/Linux: <span className="font-mono text-cyan-300">./paylas.sh</span>) ile oyunu internete açsın, herkes çıkan linkten girsin. Hesap/port ayarı gerekmez.</p>
           </section>
         </>}
 

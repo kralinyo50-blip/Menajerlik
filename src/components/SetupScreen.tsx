@@ -189,9 +189,9 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad, onBac
         </div>
       )}
 
-      {/* Main layout */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-3 sm:p-6 pt-20 sm:pt-20">
-        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr] gap-4 lg:gap-6 items-stretch">
+      {/* Main layout — sayfa kaymaz (body overflow hidden), kartın kendisi kayar */}
+      <div className="relative z-10 h-screen overflow-y-auto custom-scroll flex p-3 sm:p-6 pt-20 pb-10">
+        <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_1fr] xl:grid-cols-[360px_1fr] gap-4 lg:gap-6 items-stretch m-auto">
           {/* LEFT — Update Log (desktop) */}
           <div className="hidden lg:block self-center">
             <UpdateLogPanel className="h-full min-h-[520px]" />
@@ -343,7 +343,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad, onBac
                   <h2 className="text-xl font-black text-white text-center mb-1">Zorluk Seviyesi</h2>
                   <p className="text-slate-400 text-sm text-center mb-5">Kariyerini nasıl şekillendirmek istersin?</p>
 
-                  <div className="space-y-2.5 mb-6">
+                  <div className="space-y-2.5 mb-6 max-h-[38vh] overflow-y-auto custom-scroll pr-1">
                     {(Object.keys(DIFFICULTY_CONFIG) as Difficulty[]).map((key) => {
                       const cfg = DIFFICULTY_CONFIG[key];
                       const selected = difficulty === key;

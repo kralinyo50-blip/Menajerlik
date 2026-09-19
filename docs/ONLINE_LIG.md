@@ -18,7 +18,7 @@ Bu hatanın sebebi neredeyse her zaman **farklı sunucuda olmak**, yanlış kod 
 2. **Adresleri karşılaştırın.** Oyunun online ekranında yazan sunucu adresi herkeste birebir aynı olmalı. Biri `localhost`, diğeri başka bir adres açmışsa kodlar birbirinde görünmez.
 3. **Tek sunucu çalıştırın.** Aynı Wi-Fi'de oynuyorsanız sunucuyu **yalnızca bir kişi** başlatır (`baslat.bat` / `./start.sh` / `npm run dev`); diğerleri o bilgisayarın ağ adresini açar (`http://SUNUCU_YEREL_IP:5173`). Herkes kendi bilgisayarında sunucu çalıştırırsa her kod yalnız kendi bilgisayarında görünür.
 4. **Kodu kopyalayın, elle yazmayın.** Kodlar 8 karakterdir ve içinde `0`, `O`, `1`, `I` harfleri hiç kullanılmaz — bunlar birbirine karışır. Küçük/büyük harf fark etmez.
-5. Farklı evlerde (farklı internetlerde) oynuyorsanız aynı Wi-Fi yöntemi çalışmaz; oyunun internete açık ortak bir adrese yayınlanması gerekir (aşağıda “İnternete yayınlama / üretim”).
+5. Farklı evlerde (farklı internetlerde) oynuyorsanız aynı Wi-Fi yöntemi çalışmaz; bir kişi `paylas.bat` / `./paylas.sh` / `npm run share` ile oyunu internete açsın, herkes çıkan linkten girsin (aşağıda “İnternete yayınlama / üretim”).
 
 ### Neler ortak, neler yerel?
 
@@ -72,6 +72,16 @@ Windows: `baslat.bat`. Mac/Linux: `./start.sh`.
 Arayüz ve online API aynı portta çalışır (varsayılan **5173**). Aynı Wi-Fi üzerindeki arkadaşların sunucu bilgisayarının yerel ağ adresini açabilir: `http://SUNUCU_YEREL_IP:5173`. Güvenlik duvarında bu porta izin vermek gerekebilir. `localhost`, başka bir oyuncu için sunucu bilgisayarını ifade etmez.
 
 ### İnternete yayınlama / üretim
+
+**En kolayı — tek tıkla paylaşım (farklı Wi-Fi'lar, hesap gerekmez):**
+
+Windows'da `paylas.bat` dosyasına çift tıkla (Mac/Linux: `./paylas.sh`, veya `npm run share`). Oyun derlenip sunucu başlatılır, bilgisayarın ücretsiz güvenli bir tünelle internete açılır ve ekrana herkese-açık bir link yazılır (`https://....trycloudflare.com`). Bu linki arkadaşlarına gönder; **herkes (sen dahil) o linki açıp** Online Oyna desin, sonra kodla aynı lige girsin. Davet bağlantılarının doğru çalışması için senin de internet linkinden oynaman gerekir (localhost'tan oynarsan kopyaladığın davet linki arkadaşlarında çalışmaz).
+
+- Pencere açık kalmalı; kapatırsan oyun herkese kapanır (Ctrl+C ile durdur).
+- Link her başlatışta değişir ama lig kayıtları `data/online-rooms.json` dosyasında durur; paylaşımı kapatıp yeniden açınca eski oda kodları aynen çalışır — arkadaşların yeni link + eski kodla katılmaya devam eder (katılım lobisi hâlâ açıksa).
+- İlk açılışta tünel programı bir kez indirilir (~40 MB). Güvenlik duvarın/okul ağın tüneli engellerse aynı Wi-Fi yöntemini dene.
+
+**Kalıcı yayın (kendi sunucun varsa):**
 
 ```bash
 npm ci

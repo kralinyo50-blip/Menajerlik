@@ -25,7 +25,7 @@ set "NEED=0"
 set "PORT="
 set "EKSIK="
 set "DEPCHECK="
-set "PAKLIST=three @types\three react react-dom clsx tailwind-merge vite typescript tailwindcss @tailwindcss\vite @types\node @types\react @types\react-dom @vitejs\plugin-react vite-plugin-singlefile"
+set "PAKLIST=three @types\three react react-dom clsx tailwind-merge vite typescript tailwindcss @tailwindcss\vite @types\node @types\react @types\react-dom @vitejs\plugin-react vite-plugin-singlefile cloudflared"
 
 echo.
 echo ============================================

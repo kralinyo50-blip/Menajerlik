@@ -1,10 +1,10 @@
 import { CURRENT_VERSION } from '../data/updateLog';
 
 export function ModeSelection({ onSelect }: { onSelect: (mode: 'online' | 'offline') => void }) {
-  return <main className="min-h-screen bg-slate-950 text-white relative overflow-hidden flex items-center justify-center p-5 sm:p-10">
+  return <main className="h-screen bg-slate-950 text-white relative overflow-y-auto overflow-x-hidden custom-scroll flex p-5 sm:p-10">
     <div className="pointer-events-none absolute -top-40 -left-28 h-[34rem] w-[34rem] rounded-full bg-cyan-500/10 blur-3xl" />
     <div className="pointer-events-none absolute -bottom-40 -right-28 h-[34rem] w-[34rem] rounded-full bg-amber-500/10 blur-3xl" />
-    <div className="relative w-full max-w-5xl">
+    <div className="relative w-full max-w-5xl m-auto">
       <header className="text-center mb-10 sm:mb-14">
         <div className="inline-flex gap-2 items-center text-xs font-bold tracking-widest text-slate-400 border border-slate-700 bg-slate-900 rounded-full px-4 py-2 mb-7">⚽ MANAGER PRO 2026 <span className="text-slate-600">/</span> v{CURRENT_VERSION}</div>
         <h1 className="text-3xl sm:text-5xl font-black tracking-tight">Nasıl oynamak istersin?</h1>

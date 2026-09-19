@@ -11,7 +11,8 @@
     "preview:3d": "esbuild tools/render-3d-preview.tsx --bundle --format=esm --platform=node --jsx=automatic --outfile=.tmp-preview.mjs --log-level=error --external:react --external:react-dom --external:@napi-rs/canvas && node .tmp-preview.mjs && rm -f .tmp-preview.mjs",
     "test:match": "esbuild tools/test-match-scene.mts --bundle --format=esm --platform=node --jsx=automatic --outfile=.tmp-match-test.mjs --log-level=error --external:@napi-rs/canvas && node .tmp-match-test.mjs && rm -f .tmp-match-test.mjs",
     "serve": "node server/index.mjs",
-    "test:online": "node --test tools/test-online.mjs",
+    "share": "node tools/share-online.mjs",
+    "test:online": "node --test tools/test-online.mjs tools/test-share.mjs",
     "test:modes": "esbuild tools/test-modes.mts --bundle --format=esm --platform=node --outfile=.test-results/mode-tests.mjs --log-level=error && node --test .test-results/mode-tests.mjs"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.1",
+    "cloudflared": "0.7.3",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
     "vite": "7.3.2",
