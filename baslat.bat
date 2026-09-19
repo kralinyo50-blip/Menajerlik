@@ -25,7 +25,7 @@ set "NEED=0"
 set "PORT="
 set "EKSIK="
 set "DEPCHECK="
-set "PAKLIST=three @types\three react react-dom clsx tailwind-merge vite typescript tailwindcss @tailwindcss\vite @types\node @types\react @types\react-dom @vitejs\plugin-react vite-plugin-singlefile"
+set "PAKLIST=three @types\three react react-dom clsx tailwind-merge vite typescript tailwindcss @tailwindcss\vite @types\node @types\react @types\react-dom @vitejs\plugin-react vite-plugin-singlefile cloudflared"
 
 echo.
 echo ============================================
@@ -179,6 +179,11 @@ if not defined PORT set "PORT=5180"
 
 echo.
 echo    Sunucu adresi : http://localhost:!PORT!
+echo    Ayni Wi-Fi'deki arkadaslarin icin:
+where powershell >nul 2>&1
+if not errorlevel 1 powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -ExpandProperty IPAddress | ForEach-Object { '      http://' + $_ + ':!PORT!' }"
+echo    (Arkadaslarin bu adreslerden birini acmali. Herkes kendi
+echo     bilgisayarinda sunucu calistirirsa kodlar birbirinde gorunmez.)
 echo    Durdurmak icin: bu pencerede Ctrl+C
 echo    Tarayici kendiliginden acilmazsa adresi elle yaz.
 echo ============================================

@@ -24,7 +24,13 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo "  [..] Geliştirme sunucusu başlatılıyor..."
-echo "  [..] http://localhost:5173"
+echo "  [..] Bu bilgisayar: http://localhost:5173"
+echo "  [..] Aynı Wi-Fi'deki arkadaşların için:"
+hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | while read -r ip; do
+  echo "       http://$ip:5173"
+done
+echo "  (Arkadaşların bu adreslerden birini açmalı; herkes kendi"
+echo "   bilgisayarında sunucu çalıştırırsa kodlar birbirinde görünmez.)"
 echo "  Durdurmak için Ctrl+C"
 echo "  ============================================"
 echo ""

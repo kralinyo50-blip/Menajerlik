@@ -30,6 +30,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 | `npm run build` | Üretim derlemesi |
 | `npm run preview` | Derlenmiş sürüm + online API önizlemesi |
 | `npm run serve` | Üretim arayüzü + online lig sunucusu |
+| `npm run share` | İnternet paylaşımı: oyunu linkle arkadaşlarına aç (farklı Wi-Fi) |
 | `npm run test:online` | Ortak lig ve senkronizasyon testleri |
 | `npm run test:modes` | Mod yönlendirme ve kayıt ayrımı testleri |
 
@@ -52,6 +53,10 @@ Online lig tek kişilik kariyerden ayrıdır; kariyer haftası ve bütçe ortakl
 - Üretim: `npm run build` ardından `npm run serve`.
 - Kalıcı lig kayıtları: `data/online-rooms.json` (Git dışında, yedeklenmeli).
 - [Kullanım, bağlantı ve yayınlama rehberi →](docs/ONLINE_LIG.md)
+
+### 🌍 Farklı Wi-Fi'dan oyna (internet paylaşımı)
+
+Aynı evde değilseniz: bir kişi **`paylas.bat`** dosyasına çift tıklasın (Mac/Linux: `./paylas.sh`, veya `npm run share`). Ekrana çıkan internet linkini (örn. `https://....trycloudflare.com`) arkadaşlarına göndersin; **herkes o linki açıp** Online Oyna desin. Hesap açmak, port yönlendirmek, IP bulmak gerekmez. Paylaşım penceresi açık kalmalı; link her başlatışta değişir.
 
 ## Özellikler
 

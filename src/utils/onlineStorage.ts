@@ -1,4 +1,5 @@
 import type { GameState } from '../types/game';
+import { ONLINE_CODE_PATTERN } from './onlineCode';
 import { migrateState } from './save';
 
 export const ONLINE_CLUB_KEY = 'ManagerPro2026_OnlineClub_v1';
@@ -28,7 +29,7 @@ export function loadOnlineClub(storage?: StoreReader): GameState | null {
     // Before mode separation an online session used the offline club. Copy it once
     // only when a genuine saved online session exists, without modifying that save.
     const session = JSON.parse(target.getItem(ONLINE_SESSION_KEY) || 'null');
-    if (!session || !/^[A-Z2-9]{8}$/.test(session.code) || !/^[a-f0-9]{64}$/.test(session.token) || typeof session.memberId !== 'string') return null;
+    if (!session || !ONLINE_CODE_PATTERN.test(session.code) || !/^[a-f0-9]{64}$/.test(session.token) || typeof session.memberId !== 'string') return null;
     return decodeClub(JSON.parse(target.getItem('ManagerPro2026_Save') || 'null'));
   } catch { return null; }
 }
