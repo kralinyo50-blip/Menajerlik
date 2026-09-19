@@ -396,8 +396,11 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
         const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
         if (Array.isArray(mat)) mat.forEach(m => m.dispose());
         else mat?.dispose();
-        const spriteMap = (obj as THREE.Sprite).material?.map;
-        if (spriteMap) spriteMap.dispose();
+        if ((obj as THREE.Sprite).isSprite) {
+          const spriteMat = (obj as THREE.Sprite).material as THREE.SpriteMaterial | undefined;
+          const spriteMap = spriteMat?.map;
+          if (spriteMap && typeof spriteMap.dispose === 'function') spriteMap.dispose();
+        }
       });
       bundle.group.clear();
       // Sahne arka planı olarak kullanılan gökyüzü dokusunu da serbest bırak
