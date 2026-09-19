@@ -4,8 +4,43 @@ import { migrateState } from './save';
 
 export const ONLINE_CLUB_KEY = 'ManagerPro2026_OnlineClub_v1';
 export const ONLINE_SESSION_KEY = 'ManagerPro2026_OnlineSession_v1';
+export const ONLINE_TAB_KEY = 'ManagerPro2026_OnlineTab_v1';
 type StoreReader = Pick<Storage, 'getItem'>;
 type StoreWriter = Pick<Storage, 'setItem'>;
+type TabStore = Pick<Storage, 'getItem' | 'setItem'>;
+
+const TAB_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+// Depolama kapalıysa (gizli pencere kısıtı) sekme kimliği en azından bu sayfa boyunca sabit kalsın.
+let fallbackTabId = '';
+
+function randomTabId(): string {
+  try {
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    return `t${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+  } catch {
+    return `t${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`.slice(0, 26);
+  }
+}
+
+/**
+ * Bu sekmenin kimliği (sayfa yenilemeleri arasında sabit, sessionStorage'da tutulur).
+ * Sunucu bu kimlikle aynı sekmenin kopmuş (zombi) canlı bağlantısını devralır; böylece
+ * yenilenen sayfa eski bağlantının arkasında beklemek zorunda kalmaz ve zombi akışlar birikmez.
+ */
+export function loadOnlineTabId(storage?: TabStore): string {
+  try {
+    const target = storage ?? sessionStorage;
+    const saved = target.getItem(ONLINE_TAB_KEY);
+    if (saved && TAB_ID_PATTERN.test(saved)) return saved;
+    const id = randomTabId();
+    target.setItem(ONLINE_TAB_KEY, id);
+    return id;
+  } catch {
+    fallbackTabId ||= randomTabId();
+    return fallbackTabId;
+  }
+}
 
 function decodeClub(value: unknown): GameState | null {
   if (!value || typeof value !== 'object') return null;

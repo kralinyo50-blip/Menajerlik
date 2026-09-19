@@ -14,6 +14,10 @@ import { fixLineup } from '../utils/lineup';
 import { adaptationPct, effectiveOvr } from '../utils/adaptation';
 import { isSoftwareWebGL } from '../utils/webgl';
 import { setBackgroundRenderPaused } from '../utils/renderGate';
+import {
+  createCareerSim, stepSim, simSnapshot, scriptOutcome, syncCareerLineup, userSimSide,
+  type MatchSim, type SimOutcome, type SimSnapshot,
+} from '../utils/matchSim';
 
 export interface MatchExtras {
   cards: { playerId: number; type: 'yellow' | 'red' }[];
@@ -188,6 +192,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const slowMoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phaseRef = useRef<Phase>('pre');
+  // Saha motoru: 3D/2D sahadaki futbolun tek kaynağı (skoru yine maç olay motoru belirler).
+  const simRef = useRef<MatchSim | null>(null);
+  const simFrameRef = useRef<SimSnapshot | null>(null);
+  const userSide = userSimSide(isHome);
+  const oppSide: 'home' | 'away' = isHome ? 'away' : 'home';
 
   // Taktik zincir durumu — gerçek maç akışı için
   const possessionChainRef = useRef<{ team: 'home' | 'away'; phase: 'build' | 'mid' | 'final'; passes: number }>({ team: 'home', phase: 'build', passes: 0 });
@@ -478,6 +487,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     setCelebration({ team: 'home', player: player?.name, key: Date.now() });
     setTimeout(() => setCelebration(null), 3400);
     addEvent({ minute: minuteRef.current, type: 'goal', team: 'home', player: player?.name, description, xg: xgVal });
+    scriptSim('user', 'goal');
     momentumRef.current.home = Math.min(5, momentumRef.current.home + 1.5);
     momentumRef.current.away = Math.max(-3, momentumRef.current.away - 0.8);
   }, [addEvent, play]);
@@ -756,6 +766,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           ? `${player.name} uzaktan denedi — kaleci uzandı kurtardı!`
           : `${player.name} şut çekti ama kaleci kurtardı! (xG ${xgVal.toFixed(2)})`;
         addEvent({ minute: currentMinute, type: 'save', team: 'home', player: player.name, description: saveDesc, xg: xgVal });
+        scriptSim('user', 'save');
         momentumRef.current.home = Math.min(3, momentumRef.current.home + 0.2);
       } else if (roll < goalProb + 0.42) {
         addEvent({
@@ -763,6 +774,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           description: `${getRandomPlayer(true).name} pozisyonu harcadı — ${shotType === 'header' ? 'kafa auta' : shotType === 'long' ? 'top üstten auta' : 'şut yandan auta'}! (xG ${xgVal.toFixed(2)})`,
           xg: xgVal
         });
+        scriptSim('user', 'miss');
       } else {
         // Bloklandı / korner
         if (Math.random() < 0.35) {
@@ -799,14 +811,17 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           description: `❌ ${opponent.name} gol buldu! ${isCross ? 'Orta kafa golü' : isThroughBall ? 'Ara pası golü' : 'Organize atak'} (xG ${xgVal.toFixed(2)})`,
           xg: xgVal
         });
+        scriptSim('opp', 'goal');
         momentumRef.current.away = Math.min(4, momentumRef.current.away + 1.2);
         momentumRef.current.home = Math.max(-3, momentumRef.current.home - 0.6);
         possessionChainRef.current = { team: 'home', phase: 'build', passes: 0 };
       } else if (roll < goalProb + 0.25) {
         addEvent({ minute: currentMinute, type: 'chance', team: 'away', description: `${opponent.name} tehlikeli geldi — xG ${xgVal.toFixed(2)} ama sonuç yok!`, xg: xgVal });
+        scriptSim('opp', 'miss');
         momentumRef.current.away = Math.min(2, momentumRef.current.away + 0.15);
       } else if (roll < goalProb + 0.42) {
         addEvent({ minute: currentMinute, type: 'save', team: 'home', description: `🧤 Kalecimiz ${opponent.name} ${shotType === 'header' ? 'kafa vuruşunu' : 'şutunu'} kurtardı! (xG ${xgVal.toFixed(2)})`, xg: xgVal });
+        scriptSim('opp', 'save');
       } else {
         if (Math.random() < 0.32) {
           setCorners(c => ({ ...c, away: c.away + 1 }));
@@ -1065,7 +1080,60 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   useEffect(() => () => stopTimer(), []);
 
+  /** Kadro (sakatlık, kart, değişiklik) değiştiğinde sahadaki oyuncular güncellenir. */
+  useEffect(() => {
+    const sim = simRef.current;
+    if (sim) syncCareerLineup(sim, isHome, activeLineup, sentOff);
+  }, [activeLineup, sentOff, isHome]);
+
+  /** Maç dakikası başına saha motoru süresi (90 dakika ≈ 420 sn futbol). */
+  const SIM_MS_PER_MATCH_MINUTE = 4667;
+
+  /** Kariyer maçı için saha motoru: aynı tohum, aynı maç; skor dışarıdan yönetilir. */
+  const startSim = useCallback(() => {
+    simRef.current = createCareerSim({
+      gameState, opponent, userIsHome: isHome, lineup: activeLineup,
+      opponentStrength: oppOvr, seedKey: `${gameState.season ?? 1}-${gameState.week ?? 1}-${opponent.name}`,
+    });
+    simFrameRef.current = simSnapshot(simRef.current);
+  }, [gameState, opponent, isHome, activeLineup, oppOvr]);
+
+  /**
+   * Saha motoru maç saatine göre ilerler: bir maç dakikası = 3 saniyelik maç zamanı.
+   * Böylece 3D saha gerçek futbol hızında oynar, saat ise maç temposunda akar.
+   */
+  useEffect(() => {
+    if (!matchRunning) return;
+    let raf = 0;
+    let last = performance.now();
+    const tickMs = (1333 / speed) * (slowMo ? 3.2 : 1);
+    const loop = (now: number) => {
+      const dt = Math.min(240, now - last);
+      last = now;
+      const sim = simRef.current;
+      if (sim && !pausedRef.current && !finishedRef.current) {
+        stepSim(sim, Math.min(260, (dt * SIM_MS_PER_MATCH_MINUTE) / tickMs));
+        simFrameRef.current = simSnapshot(sim);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [matchRunning, speed, slowMo]);
+
+  /**
+   * Maç olay motoru sonucu belirlediyse saha onu oynar: gol, kurtarış, ıska.
+   * 20 saniyelik simülasyon penceresi (≈6 saniye gerçek zaman) içinde o taraf
+   * kaleye yaklaşıp sonucu oynatır.
+   */
+  const scriptSim = useCallback((side: 'user' | 'opp', outcome: SimOutcome) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    scriptOutcome(sim, side === 'user' ? userSide : oppSide, outcome, 20);
+  }, [userSide, oppSide]);
+
   const startMatch = () => {
+    startSim();
     setPhase('first');
     pausedRef.current = false;
     playedRef.current = new Set(gameState.team11.map(p => p.id));
@@ -1370,6 +1438,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 slowMo={slowMo}
                 lowPerf={!!gameState.life?.lowPerf}
                 onFallback={() => setView3d(false)}
+                simRef={simFrameRef}
                 className="h-[46vh] min-h-[300px] max-h-[520px]"
               />
             ) : (
@@ -1393,6 +1462,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                   paused={freeze !== null}
                   slowMo={slowMo}
                   tactics={gameState.tactics}
+                  simRef={simFrameRef}
                 />
               </>
             )}

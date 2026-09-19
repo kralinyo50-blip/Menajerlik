@@ -1,6 +1,11 @@
-import { randomInt } from 'node:crypto';
+import {
+  createMatchSim, stepSim, simSnapshot, simStats, drainEvents,
+  setTeamTactics, substitutePlayer, seedFrom,
+} from './match-sim.mjs';
 
 export const STEP_MS = 500;
+/** Her tik'te ilerletilen simülasyon süresi: maç başına ~420 sn futbol (90 dakika). */
+export const SIM_MS_PER_TICK = 780;
 export const MINUTE_MS = 3000;
 export const BREAK_MS = 20_000;
 const STYLES = ['balanced', 'attack', 'defense', 'possession'];
@@ -11,7 +16,6 @@ const FORMATIONS = {
   '3-5-2': [[8,50],[23,27],[20,50],[23,73],[48,12],[42,32],[39,50],[42,68],[48,88],[71,37],[71,63]],
 };
 const fail = (message, status = 409) => { throw Object.assign(new Error(message), { status }); };
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const rounded = n => Math.round(n * 100) / 100;
 
 /** Import only football data, never trust an entire career object or client scores. */
@@ -33,12 +37,6 @@ export function squadInput(input, strength, name) {
   return squad;
 }
 
-function random(match) {
-  let x = match.rng | 0;
-  x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-  match.rng = x >>> 0;
-  return match.rng / 4294967296;
-}
 function event(match, type, text, team = null, playerId = null) {
   match.eventSeq++;
   match.events.push({ id: match.eventSeq, minute: match.minute, type, text, team, playerId });
@@ -51,7 +49,85 @@ function side(member) {
     memberId: member.id, name: member.name, logo: member.logo, style: member.style,
     formation: member.formation || '4-4-2', lineup: squad.starters.map(player), bench: squad.bench.map(player),
     substituted: [], substitutions: 0, pauses: 0, score: 0,
-    stats: { shots: 0, onTarget: 0, corners: 0, fouls: 0 },
+    stats: { shots: 0, onTarget: 0, corners: 0, fouls: 0, saves: 0, offsides: 0, passes: 0, yellow: 0, red: 0 },
+  };
+}
+
+/**
+ * Saha olayları yorum akışına çevrilir. Motorun ürettiği her olay yayınlanmaz;
+ * maç akışını anlatan olaylar (gol, kurtarış, kart, korner, faul…) yayınlanır.
+ */
+const COMMENTARY = new Set([
+  'goal', 'save', 'woodwork', 'block', 'penalty', 'offside', 'foul', 'yellow', 'red',
+  'corner', 'through', 'cross', 'header', 'shot', 'chance', 'kickoff',
+]);
+const EVENT_LABELS = {
+  woodwork: 'post', chance: 'shot', heading: 'tackle', cutback: 'cross', header: 'shot',
+  freekick: 'freekick', interception: 'tackle', 'throw-in': 'throwin', 'goal-kick': 'goalkick',
+};
+
+/** Motorun olaylarını istemciye yorum olarak aktarır. */
+function syncEvents(match) {
+  for (const raw of drainEvents(match.sim)) {
+    if (!COMMENTARY.has(raw.type)) continue;
+    event(match, EVENT_LABELS[raw.type] ?? raw.type, raw.text, raw.side, raw.playerId);
+  }
+}
+
+/** Skor, istatistik ve kart bilgisi motordan okunur (tek doğruluk kaynağı saha). */
+function syncTeams(match) {
+  const stats = simStats(match.sim);
+  for (const key of ['home', 'away']) {
+    const team = match[key];
+    const simSide = match.sim[key];
+    const s = stats[key];
+    team.score = match.sim.score[key];
+    team.stats = {
+      shots: s.shots, onTarget: s.onTarget, corners: s.corners, fouls: s.fouls,
+      saves: s.saves, offsides: s.offsides, passes: s.passes, yellow: 0, red: 0,
+      possession: key === 'home' ? stats.possessionHome : 100 - stats.possessionHome,
+      blocks: s.blocks ?? 0, woodwork: s.woodwork ?? 0,
+    };
+    const byId = new Map(simSide.players.map(p => [p.id, p]));
+    for (const player of [...team.lineup, ...team.bench]) {
+      const live = byId.get(player.id);
+      if (!live) continue;
+      player.yellow = live.yellow;
+      player.sentOff = live.sentOff;
+      player.energy = Math.round(live.energy);
+      if (live.sentOff || live.yellow) team.stats[live.sentOff ? 'red' : 'yellow']++;
+    }
+  }
+}
+
+/**
+ * Saha karesi: 2D ve 3D izleyiciler aynı sunucu karesini çizer.
+ * Oyuncu listesi slotları numarayla eşleşir, böylece oyuncu değişikliklerinde
+ * görsel aktör yerinde kalır.
+ */
+function publishFrame(match) {
+  const snap = simSnapshot(match.sim);
+  match.players = snap.players.map(p => ({
+    id: p.id, side: p.side, number: p.number, x: p.x, y: p.y,
+    vx: p.vx, vy: p.vy, action: p.action, facing: p.facing,
+    energy: p.energy, yellow: p.yellow, sentOff: p.sentOff,
+  }));
+  match.ball = {
+    x: snap.ball.x, y: snap.ball.y, z: snap.ball.z,
+    vx: snap.ball.vx, vy: snap.ball.vy, vz: snap.ball.vz,
+    owner: snap.ball.owner, shot: snap.ball.shot, crossing: snap.ball.crossing,
+  };
+  match.carrierId = snap.carrierId;
+  match.celebrating = snap.celebrating;
+  match.restart = snap.restart;
+  match.possession = snap.possession;
+}
+
+/** Motor tarafı: kadro, taktik ve tohum sunucudan; istemci asla simülasyon yapmaz. */
+function engineTeam(team) {
+  return {
+    id: team.memberId, name: team.name, logo: team.logo, style: team.style, formation: team.formation,
+    players: team.lineup.map(p => ({ id: p.id, name: p.name, role: p.role, ovr: p.ovr, energy: p.energy })),
   };
 }
 
@@ -60,93 +136,28 @@ export function startLiveRound(room, now) {
   room.live = {
     week: room.week, season: room.season, settled: false,
     matches: room.matches.filter(m => m.week === room.week).map(fixture => {
+      const home = side(room.members.find(m => m.id === fixture.homeId));
+      const away = side(room.members.find(m => m.id === fixture.awayId));
       const match = {
         id: `${room.season}:${room.week}:${fixture.homeId}`, week: room.week,
-        homeId: fixture.homeId, awayId: fixture.awayId, home: side(room.members.find(m => m.id === fixture.homeId)), away: side(room.members.find(m => m.id === fixture.awayId)),
+        homeId: fixture.homeId, awayId: fixture.awayId, home, away,
         phase: 'first', minute: 0, elapsedMs: 0, lastTickAt: now, frame: 0,
         phaseEndsAt: null, pausedBy: null, resumePhase: null, possession: 50,
-        rng: randomInt(1, 0x7fffffff), eventSeq: 0, events: [], commands: [],
-        players: [], ball: { x: 50, y: 50, z: 0 },
+        eventSeq: 0, events: [], commands: [],
+        players: [], ball: { x: 50, y: 50, z: 0 }, carrierId: null, celebrating: false, restart: null,
+        // Tek doğruluk kaynağı: tohum sunucudan, maç sahadaki motor tarafından oynanır.
+        sim: createMatchSim({
+          home: engineTeam(home), away: engineTeam(away),
+          seed: seedFrom(room.code ?? 'oda', `${room.season}`, `${room.week}`, fixture.homeId, fixture.awayId),
+          homeAdvantage: 0.06,
+        }),
       };
       event(match, 'kickoff', 'İlk düdük! Ortak canlı maç başladı.');
-      positions(match);
+      publishFrame(match);
       return match;
     }),
   };
   return true;
-}
-
-const power = team => {
-  const active = team.lineup.filter(p => !p.sentOff);
-  return active.reduce((sum, p) => sum + p.ovr * (0.75 + p.energy / 400), 0) / 11;
-};
-
-function simulateMinute(match) {
-  const homePower = power(match.home), awayPower = power(match.away);
-  match.possession = Math.round(clamp(50 + (homePower - awayPower) / 2 + (match.home.style === 'possession' ? 8 : 0) - (match.away.style === 'possession' ? 8 : 0), 25, 75));
-  for (const key of ['home', 'away']) {
-    const team = match[key], other = match[key === 'home' ? 'away' : 'home'];
-    const available = team.lineup.filter(p => !p.sentOff);
-    for (const p of available) p.energy = rounded(Math.max(20, p.energy - (team.style === 'attack' ? 0.48 : 0.35)));
-    const player = available[1 + Math.floor(random(match) * Math.max(1, available.length - 1))] || available[0];
-    const chance = 0.13 + (team.style === 'attack' ? 0.04 : team.style === 'defense' ? -0.035 : 0) + (key === 'home' ? 0.015 : 0) + (power(team) - power(other)) / 2000;
-    if (random(match) < chance && player) {
-      team.stats.shots++;
-      if (random(match) < 0.55) {
-        team.stats.onTarget++;
-        const conversion = clamp(0.27 + (power(team) - power(other)) / 160 + (other.style === 'attack' ? 0.07 : other.style === 'defense' ? -0.06 : 0), 0.08, 0.65);
-        if (random(match) < conversion) {
-          team.score++;
-          event(match, 'goal', `GOL! ${team.name} — ${player.name}`, key, player.id);
-        } else event(match, 'save', `${player.name} kaleyi buldu, kaleci kurtardı!`, key, player.id);
-      } else if (random(match) < 0.35) {
-        team.stats.corners++;
-        event(match, 'corner', `${team.name} korner kazanıyor.`, key, player.id);
-      } else event(match, 'shot', `${player.name} şutunu çekti, top dışarıda.`, key, player.id);
-    }
-    if (player && random(match) < 0.045) {
-      team.stats.fouls++;
-      if (random(match) < 0.45) {
-        player.yellow++;
-        if (player.yellow >= 2 && available.length > 7) {
-          player.sentOff = true;
-          event(match, 'red', `${player.name} ikinci sarıdan kırmızı kart!`, key, player.id);
-        } else event(match, 'yellow', `${player.name} sarı kart görüyor.`, key, player.id);
-      } else event(match, 'foul', `${player.name} faul yaptı.`, key, player.id);
-    }
-  }
-}
-
-/** One authoritative world frame, shared by the 2D and 3D viewers. No client simulation. */
-function positions(match) {
-  const t = match.elapsedMs / 1000;
-  const recent = match.events[match.events.length - 1];
-  const shot = recent && ['goal', 'shot', 'save', 'corner'].includes(recent.type) && match.minute - recent.minute < 1;
-  const possessionHome = Math.sin(t * 0.28) * 35 + 50 < match.possession;
-  let ballX = 50 + Math.sin(t * 0.43) * 26;
-  let ballY = 50 + Math.sin(t * 0.71 + 1.2) * 29;
-  let z = Math.max(0, Math.sin(t * 2.1)) * 0.7;
-  if (shot) {
-    ballX = recent.team === 'home' ? 95 : 5;
-    ballY = 50 + Math.sin(t * 0.9) * 5;
-    z = recent.type === 'goal' ? 0.2 : 1.4;
-  }
-  if (match.phase === 'halftime' || match.phase === 'finished') { ballX = 50; ballY = 50; z = 0; }
-  match.ball = { x: rounded(ballX), y: rounded(ballY), z: rounded(z) };
-  match.players = [];
-  for (const key of ['home', 'away']) {
-    const team = match[key];
-    const anchors = FORMATIONS[team.formation];
-    const forward = team.style === 'attack' ? 5 : team.style === 'defense' ? -6 : 0;
-    team.lineup.forEach((player, i) => {
-      if (player.sentOff) return;
-      const [baseX, baseY] = anchors[i];
-      const offset = i === 0 ? 0 : forward + (possessionHome === (key === 'home') ? 4 : -3);
-      const x = clamp(baseX + offset + (i === 0 ? 0 : Math.sin(t * 0.7 + i * 1.7) * 4) + (ballX - 50) * 0.07, 5, 92);
-      const y = clamp(baseY + Math.cos(t * 0.55 + i * 1.9) * (i === 0 ? 2 : 4), 5, 95);
-      match.players.push({ id: player.id, side: key, number: i + 1, x: rounded(key === 'home' ? x : 100 - x), y: rounded(y) });
-    });
-  }
 }
 
 function finish(match) {
@@ -173,16 +184,19 @@ export function advanceLiveRound(room, now) {
         continue;
       }
       match.elapsedMs += STEP_MS;
+      // Saha motoru: aynı adım uzunluğu, gerçek futbol akışı (duran top, faul, ofsayt, şut).
+      stepSim(match.sim, SIM_MS_PER_TICK);
+      syncEvents(match);
+      syncTeams(match);
+      publishFrame(match);
       const minute = Math.floor(match.elapsedMs / MINUTE_MS);
       if (minute > match.minute) {
         match.minute = minute;
-        simulateMinute(match);
         if (minute === 45) {
           match.phase = 'halftime'; match.phaseEndsAt = match.lastTickAt + BREAK_MS;
           event(match, 'halftime', 'Devre arası. Taktik ve değişiklik için 20 saniye.');
         } else if (minute >= 90) finish(match);
       }
-      positions(match);
     }
   }
   if (room.live.matches.every(m => m.phase === 'finished')) {
@@ -219,6 +233,8 @@ export function liveCommand(room, member, body, now) {
   if (body.command === 'tactic') {
     if (!STYLES.includes(body.style) || !Object.hasOwn(FORMATIONS, body.formation)) fail('Geçersiz maç taktiği.', 400);
     team.style = body.style; team.formation = body.formation;
+    // Taktik sahaya da yansır: blok yüksekliği, baskı ve şut isteği değişir.
+    setTeamTactics(match.sim, sideKey, { style: body.style, formation: body.formation });
     event(match, 'tactic', `${team.name} taktiğini değiştirdi: ${body.formation}.`, sideKey);
   } else if (body.command === 'substitute') {
     if (team.substitutions >= 5) fail('Beş oyuncu değişikliği hakkın doldu.');
@@ -230,6 +246,7 @@ export function liveCommand(room, member, body, now) {
     const after = team.bench.splice(incoming, 1)[0];
     team.lineup[out] = after;
     team.substituted.push(before); team.substitutions++;
+    substitutePlayer(match.sim, sideKey, before.id, after);
     event(match, 'substitution', `${team.name}: ${before.name} çıktı, ${after.name} girdi.`, sideKey, after.id);
   } else if (body.command === 'pause') {
     if (!['first', 'second'].includes(match.phase)) fail('Maç zaten durmuş.');
@@ -246,7 +263,8 @@ export function liveCommand(room, member, body, now) {
   match.commands.push(key);
   if (match.commands.length > 200) match.commands.shift();
   match.frame++;
-  positions(match);
+  syncTeams(match);
+  publishFrame(match);
 }
 
 export function publicLiveRound(live, viewerId) {
@@ -254,7 +272,7 @@ export function publicLiveRound(live, viewerId) {
   return {
     week: live.week, season: live.season, settled: live.settled,
     // Only stream the viewer's field; other matches need a small live scoreboard.
-    matches: live.matches.map(({ rng: _rng, commands: _commands, ...match }) => {
+    matches: live.matches.map(({ sim: _sim, commands: _commands, ...match }) => {
       if ([match.homeId, match.awayId].includes(viewerId)) return match;
       return { id: match.id, homeId: match.homeId, awayId: match.awayId, minute: match.minute, phase: match.phase, homeScore: match.home.score, awayScore: match.away.score };
     }),

@@ -6,8 +6,23 @@ import { squadInput, startLiveRound, advanceLiveRound, liveCommand, publicLiveRo
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
 const ROOM_TTL = 30 * 24 * 60 * 60 * 1000;
+const RATE_WINDOW = 60_000;
+const REQUEST_LIMIT = 900;            // aynı IP'nin dakikada yapabileceği normal istek
+const STREAM_LIMIT = 4;               // bir menajerin eşzamanlı canlı bağlantısı (sekme başına bir tane)
+const STREAM_OPEN_LIMIT = 30;         // bir menajerin dakikada açabileceği canlı bağlantı denemesi
+const STREAM_STALL_MS = 30_000;       // yazılanlar boşalmıyorsa (okuyucusu yok) akış bu süre sonra düşürülür
+const STREAM_BUFFER_LIMIT = 512_000;  // tek akışta birikmesine izin verilen en fazla yazılmamış veri
+const STREAM_TOTAL_LIMIT = 2000;      // sunucudaki toplam canlı akış sınırı
+const TAB_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 const hash = token => createHash('sha256').update(token).digest('hex');
-const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
+const fail = (status, message, retryAfter) => { throw Object.assign(new Error(message), { status, retryAfter }); };
+/** Kayan pencere sayacı: aynı anahtar pencerede `limit` kezden fazla görülürse true döner. */
+const overLimit = (map, key, time, limit) => {
+  if (map.size > 2000) for (const [entry, rate] of map) if (time - rate.since > RATE_WINDOW) map.delete(entry);
+  const rate = map.get(key);
+  if (!rate || time - rate.since > RATE_WINDOW) { map.set(key, { since: time, count: 1 }); return false; }
+  return ++rate.count > limit;
+};
 const emptyStats = () => ({ played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, points: 0 });
 
 function clubInput(input) {
@@ -56,7 +71,9 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
   const presence = new Map();
   const startedAt = now();
   const rates = new Map();
+  const streamOpens = new Map();
   const streams = new Map();
+  const rateKey = (room, member) => `${room.code}:${member.id}`;
   if (existsSync(dataFile)) {
     // Do not silently discard a corrupt save. An operator must restore its backup.
     const data = JSON.parse(readFileSync(dataFile, 'utf8'));
@@ -100,14 +117,44 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
     presence.set(seenKey(room, member), now());
     return member;
   };
+  /**
+   * Akışı kapat ve slotunu hemen bırak. Kopan istemcinin (veya kapanmayan tünel/proxy
+   * soketinin) menajerin bütün sekme hakkını süresiz tutması burada engellenir.
+   */
+  const dropStream = (client, reason, notify = true) => {
+    const clients = streams.get(client.code);
+    if (clients) { clients.delete(client); if (!clients.size) streams.delete(client.code); }
+    if (client.closed) return;
+    client.closed = true;
+    client.reason = reason;
+    const { res } = client;
+    if (res.destroyed || res.writableEnded) return;
+    // İstemci neden düştüğünü bilsin: `limit`/`tab` ise başka bir sekme devraldı,
+    // `stall` ise bağlantı yalnızca boşa düştü ve yeniden bağlanmak doğru olan.
+    if (notify) { try { res.write(`event: superseded\ndata: ${JSON.stringify({ reason })}\n\n`); } catch { /* soket zaten gitmiş */ } }
+    res.end();
+  };
+  /** Yazma kuyruğa alındı mı ve gerçekten boşaldı mı? Boşalmayan akış ölü kabul edilir. */
+  const writeStream = (client, text) => {
+    const { res } = client;
+    if (client.closed || res.destroyed || res.writableEnded) return false;
+    if (client.pendingSince === null) client.pendingSince = now();
+    try {
+      res.write(text, () => { client.pendingSince = null; });
+    } catch { dropStream(client, 'stall', false); return false; }
+    return true;
+  };
   const sendStream = (client, room) => {
-    if (client.res.destroyed) return;
-    if (client.res.writableLength > 1_000_000) { client.res.destroy(); return; }
+    if (client.closed || client.res.destroyed) return;
+    if (client.res.writableLength > STREAM_BUFFER_LIMIT || (client.pendingSince !== null && now() - client.pendingSince > STREAM_STALL_MS)) {
+      dropStream(client, 'stall'); return;
+    }
     const member = room?.members.find(m => m.id === client.memberId && !m.departed);
     if (!room || !member) {
-      client.res.write(`event: expired\ndata: {}\n\n`); client.res.end(); return;
+      if (writeStream(client, `event: expired\ndata: {}\n\n`)) client.res.end();
+      return;
     }
-    client.res.write(`data: ${JSON.stringify({ room: view(room, client.memberId), serverTime: now() })}\n\n`);
+    writeStream(client, `data: ${JSON.stringify({ room: view(room, client.memberId), serverTime: now() })}\n\n`);
   };
   const broadcast = room => {
     for (const client of streams.get(room.code) || []) sendStream(client, rooms.get(room.code));
@@ -149,7 +196,8 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
         for (const room of changed) broadcast(room);
       }
       if (now() - lastHeartbeat >= 5000) {
-        for (const [code, clients] of streams) for (const client of clients) sendStream(client, rooms.get(code));
+        // Kalp atışı hem bağlantıyı canlı tutar hem de okuyucusu kalmamış akışları düşürür.
+        for (const clients of streams.values()) for (const client of [...clients]) sendStream(client, rooms.get(client.code));
         lastHeartbeat = now();
       }
     } catch (error) { console.error('Canlı maç kaydı:', error); }
@@ -159,8 +207,8 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
   const api = async function onlineApi(req, res, next = () => { res.statusCode = 404; res.end(); }) {
     const url = new URL(req.url || '/', 'http://server');
     if (!url.pathname.startsWith('/api/online/')) return next();
-    const send = (status, body) => {
-      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    const send = (status, body, headers = {}) => {
+      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers });
       res.end(JSON.stringify(body));
     };
     // Roll back mutations if validation or durable storage fails.
@@ -174,10 +222,7 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
       }
       const ip = req.socket.remoteAddress || 'unknown';
       const time = now();
-      if (rates.size > 2000) for (const [key, rate] of rates) if (time - rate.since > 60_000) rates.delete(key);
-      const rate = rates.get(ip);
-      if (!rate || time - rate.since > 60_000) rates.set(ip, { since: time, count: 1 });
-      else if (++rate.count > 900) fail(429, 'Çok fazla istek. Bir dakika bekle.');
+      if (overLimit(rates, ip, time, REQUEST_LIMIT)) fail(429, 'Çok fazla istek. Bir dakika bekle.', 30);
 
       if (url.pathname === '/api/online/health' && req.method === 'GET') return send(200, { ok: true });
       // Kodu geniş eşleştirip sonra doğrula: küçük harf de kabul edilir,
@@ -221,13 +266,30 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
       // Advance is already durable; a rejected command must not rewind the clock.
       if (req.method === 'POST') backup = JSON.stringify([...rooms]);
       if (req.method === 'GET' && action === 'stream') {
+        // Açılış hızı sınırı: kopan bağlantılar slotu tutsa bile yeniden bağlanma
+        // kalıcı 429'a dönüşmemeli; ama saniyede birkaç kez deneyen istemci de sınırsız değil.
+        if (overLimit(streamOpens, rateKey(room, member), time, STREAM_OPEN_LIMIT)) {
+          res.setHeader('Retry-After', '30');
+          fail(429, 'Canlı bağlantı çok sık denendi. Otuz saniye sonra yeniden bağlanılacak.');
+        }
+        if (streams.size >= STREAM_TOTAL_LIMIT) fail(503, 'Sunucuda çok fazla canlı bağlantı var. Biraz sonra tekrar dene.', 15);
         const clients = streams.get(code) || new Set();
-        if ([...clients].filter(c => c.memberId === member.id).length >= 4) fail(429, 'Aynı oturumda en fazla dört canlı sekme açılabilir.');
+        const rawTab = req.headers['x-tab-id'];
+        const tabId = typeof rawTab === 'string' && TAB_PATTERN.test(rawTab) ? rawTab : null;
         res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
         res.flushHeaders?.();
-        const client = { res, memberId: member.id };
+        const client = { code, res, memberId: member.id, tabId, openedAt: now(), pendingSince: null, closed: false, reason: null };
         clients.add(client); streams.set(code, clients);
-        res.on('close', () => { clients.delete(client); if (!clients.size) streams.delete(code); });
+        res.on('close', () => { clients.delete(client); if (!clients.size) streams.delete(code); client.closed = true; });
+        res.on('error', () => { clients.delete(client); if (!clients.size) streams.delete(code); client.closed = true; });
+        // Yeni bağlantı her zaman kazanır: aynı sekmenin zombi bağlantısı ve sınırı aşan
+        // en eski sekmeler düşürülür. Böylece "dört zombi soket" yeniden bağlanmayı kilitleyemez.
+        const own = [...clients].filter(c => c !== client && c.memberId === member.id);
+        const replaced = own.filter(c => tabId && c.tabId === tabId);
+        const remaining = own.filter(c => !replaced.includes(c)).sort((a, b) => a.openedAt - b.openedAt);
+        const overflow = remaining.slice(0, Math.max(0, remaining.length - STREAM_LIMIT + 1));
+        for (const old of replaced) dropStream(old, 'tab');
+        for (const old of overflow) dropStream(old, 'limit');
         sendStream(client, room);
         return;
       }
@@ -304,12 +366,12 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
     } catch (error) {
       if (backup) rooms = new Map(JSON.parse(backup));
       if (!error.status) console.error('Online API:', error);
-      if (!res.headersSent && !res.destroyed) send(error.status || 500, { error: error.status ? error.message : 'Sunucu kaydı yapılamadı. Lütfen yeniden dene.' });
+      if (!res.headersSent && !res.destroyed) send(error.status || 500, { error: error.status ? error.message : 'Sunucu kaydı yapılamadı. Lütfen yeniden dene.' }, error.retryAfter ? { 'Retry-After': String(error.retryAfter) } : {});
     }
   };
   api.close = () => {
     if (timer) clearInterval(timer);
-    for (const clients of streams.values()) for (const client of clients) client.res.end();
+    for (const clients of streams.values()) for (const client of [...clients]) dropStream(client, 'closed', false);
     streams.clear();
   };
   return api;

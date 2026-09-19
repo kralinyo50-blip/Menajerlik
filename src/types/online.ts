@@ -32,6 +32,20 @@ export interface OnlineMatch {
   awayScore: number | null;
 }
 export type LivePhase = 'first' | 'halftime' | 'second' | 'paused' | 'finished';
+export interface LiveTeamStats {
+  shots: number;
+  onTarget: number;
+  corners: number;
+  fouls: number;
+  saves: number;
+  offsides: number;
+  passes: number;
+  yellow: number;
+  red: number;
+  possession: number;
+  blocks: number;
+  woodwork: number;
+}
 export interface LiveTeam {
   memberId: string;
   name: string;
@@ -44,7 +58,7 @@ export interface LiveTeam {
   substitutions: number;
   pauses: number;
   score: number;
-  stats: { shots: number; onTarget: number; corners: number; fouls: number };
+  stats: LiveTeamStats;
 }
 export interface LiveEvent {
   id: number;
@@ -54,10 +68,36 @@ export interface LiveEvent {
   team: 'home' | 'away' | null;
   playerId: string | null;
 }
+/** Saha karesindeki oyuncu: konum, hız, yön ve anlık hareket (şut, kayarak kurtarış…). */
 export interface LivePosition {
   id: string;
   side: 'home' | 'away';
   number: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  action: string;
+  facing: number;
+  energy: number;
+  yellow: number;
+  sentOff: boolean;
+}
+/** Top: yükseklik (z), hız bileşenleri, sahibi ve şut/orta durumu. */
+export interface LiveBall {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  owner: string | null;
+  shot: { side: 'home' | 'away'; shooterId: string } | null;
+  crossing: boolean;
+}
+export interface LiveRestart {
+  type: string;
+  side: 'home' | 'away';
   x: number;
   y: number;
 }
@@ -89,7 +129,11 @@ export interface LiveMatch {
   eventSeq: number;
   events: LiveEvent[];
   players: LivePosition[];
-  ball: { x: number; y: number; z: number };
+  ball: LiveBall;
+  /** Sahanın şu anki sahibi (varsa): görsel katman onu işaretler. */
+  carrierId: string | null;
+  celebrating: boolean;
+  restart: LiveRestart | null;
 }
 export interface OnlineRoom {
   code: string;

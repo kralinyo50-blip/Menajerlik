@@ -32,6 +32,8 @@ export interface Match3DProps {
   lowPerf?: boolean;
   /** WebGL açılamazsa 2D sahaya dön */
   onFallback?: () => void;
+  /** Saha motoru karesi: 3D saha oyuncuları/topu bu kareden sürülür. */
+  simRef?: React.RefObject<import('../utils/matchSim').SimSnapshot | null>;
   className?: string;
 }
 
@@ -86,13 +88,15 @@ function shapeFromFormation(key: string): ShapeSlot[] {
 export const Match3D: React.FC<Match3DProps> = ({
   gameState, opponent, userIsHome, weather, minute, possession, phase,
   scoreUser, scoreOpp, lineup, userOnPitch, oppOnPitch, events,
-  paused, slowMo, lowPerf = false, onFallback, className = ''
+  paused, slowMo, lowPerf = false, onFallback, simRef, className = ''
 }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [camMode, setCamMode] = useState<MatchCameraMode>('manager');
   const [hud, setHud] = useState({ min: 0, sh: 0, sa: 0, poss: 50 });
+  const [goalBanner, setGoalBanner] = useState<{ side: 'home' | 'away'; key: number } | null>(null);
+  const scoreSeenRef = useRef<{ sh: number; sa: number } | null>(null);
   const camModeRef = useRef<MatchCameraMode>(camMode);
   camModeRef.current = camMode;
   const lookRef = useRef({ yaw: 0, pitch: 0, zoom: 1 });
@@ -157,6 +161,18 @@ export const Match3D: React.FC<Match3DProps> = ({
     phase: 'pre', minute: 0, possession: 50, timeScale: 0, scoreHome: 0, scoreAway: 0,
     homeOnPitch: 11, awayOnPitch: 11, energy: 80, event: null
   });
+
+  // Skor değişti → sahada gol anonsu (motor golü oynatırken skor da aynı anda döner)
+  useEffect(() => {
+    const seen = scoreSeenRef.current;
+    scoreSeenRef.current = { sh: scoreUser, sa: scoreOpp };
+    if (!seen) return;
+    if (scoreUser === seen.sh && scoreOpp === seen.sa) return;
+    const scoredSide: Side = scoreUser !== seen.sh ? (userIsHome ? 'home' : 'away') : (userIsHome ? 'away' : 'home');
+    setGoalBanner({ side: scoredSide, key: Date.now() });
+    const id = setTimeout(() => setGoalBanner(null), 3400);
+    return () => clearTimeout(id);
+  }, [scoreUser, scoreOpp, userIsHome]);
 
   const sceneSideUser: Side = userIsHome ? 'home' : 'away';
   const sceneSideOpp: Side = userIsHome ? 'away' : 'home';
@@ -351,6 +367,10 @@ export const Match3D: React.FC<Match3DProps> = ({
       prev = now;
       if (document.hidden) return;            // sekme arka planda → GPU'yu yorma
 
+      // Saha motoru karesi her animasyon karesinde taze okunur (React render'ını beklemez).
+      const simSnap = simRef?.current ?? null;
+      if (inputRef.current.sim !== simSnap) inputRef.current.sim = simSnap;
+
       bundle.setCameraMode(camModeRef.current);
       bundle.update(now / 1000, dt, inputRef.current);
 
@@ -451,6 +471,22 @@ export const Match3D: React.FC<Match3DProps> = ({
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 text-slate-300 text-xs font-bold">
           <span className="animate-pulse">🏟️ Stadyum hazırlanıyor…</span>
+        </div>
+      )}
+
+      {/* ⚽ GOL anonsu — motor golü sahada oynarken skor değişince büyük bant */}
+      {goalBanner && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20" key={goalBanner.key}>
+          <div className={`animate-goal-flash px-6 py-3 rounded-2xl border-2 backdrop-blur-sm shadow-2xl ${
+            goalBanner.side === sceneSideUser
+              ? 'bg-emerald-500/85 border-emerald-200 text-slate-950'
+              : 'bg-red-600/85 border-red-200 text-white'
+          }`}>
+            <div className="text-3xl font-black tracking-tighter leading-none">{goalBanner.side === sceneSideUser ? 'GOL!' : 'YEDİK!'}</div>
+            <div className="text-[11px] font-bold opacity-90 mt-0.5">
+              {hud.sh} - {hud.sa} • {goalBanner.side === sceneSideUser ? homeName : awayName}
+            </div>
+          </div>
         </div>
       )}
 
