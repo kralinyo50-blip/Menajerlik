@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OnlineClub, OnlineRoom, OnlineSession } from '../types/online';
 import { normalizeOnlineCode, ONLINE_CODE_PATTERN } from '../utils/onlineCode';
-import { ONLINE_SESSION_KEY } from '../utils/onlineStorage';
+import { ONLINE_SESSION_KEY, loadOnlineTabId } from '../utils/onlineStorage';
+import { startOnlineConnection } from '../utils/onlineConnection';
+import { retryAfterMs } from '../utils/onlineReconnect';
 
 const SESSION_KEY = ONLINE_SESSION_KEY;
 function savedSession(): OnlineSession | null {
@@ -12,7 +14,7 @@ function savedSession(): OnlineSession | null {
 }
 
 class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public waitMs = 0) { super(message); }
 }
 async function request(path: string, session: OnlineSession | null, body?: unknown) {
   const controller = new AbortController();
@@ -27,7 +29,7 @@ async function request(path: string, session: OnlineSession | null, body?: unkno
     });
     if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Online sunucu bulunamadı. Oyunu ortak sunucu adresinden aç.');
     const result = await response.json();
-    if (!response.ok) throw new ApiError(result.error || 'İşlem tamamlanamadı.', response.status);
+    if (!response.ok) throw new ApiError(result.error || 'İşlem tamamlanamadı.', response.status, retryAfterMs(response));
     return result as { room: OnlineRoom; token?: string; memberId?: string; serverTime?: number };
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -42,6 +44,8 @@ export function useOnlineLeague() {
   const sessionRef = useRef(session);
   const [room, setRoom] = useState<OnlineRoom | null>(null);
   const [connection, setConnection] = useState<'disconnected' | 'connecting' | 'connected' | 'reconnecting'>(session ? 'connecting' : 'disconnected');
+  const [transport, setTransport] = useState<'stream' | 'poll'>('stream');
+  const [issue, setIssue] = useState('');
   const [error, setError] = useState('');
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,79 +66,27 @@ export function useOnlineLeague() {
 
   const applyRoom = useCallback((next: OnlineRoom, time?: number) => {
     setRoom(previous => !previous || previous.code !== next.code || next.revision >= previous.revision ? next : previous);
-    setConnection('connected');
     setLastSynced(Date.now());
     if (time) setServerTime(previous => Math.max(previous, time));
   }, []);
 
   useEffect(() => {
     if (!session) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    let controller: AbortController;
-    let retries = 0;
-    const listen = async () => {
-      if (cancelled) return;
-      if (!navigator.onLine) { setConnection('reconnecting'); return; }
-      const attempt = new AbortController();
-      controller = attempt;
-      let watchdog: ReturnType<typeof setTimeout> | undefined;
-      const alive = () => { clearTimeout(watchdog); watchdog = setTimeout(() => attempt.abort(), 15_000); };
-      alive();
-      try {
-        const response = await fetch(`/api/online/rooms/${session.code}/stream`, {
-          headers: { 'X-Member-Token': session.token, Accept: 'text/event-stream' },
-          signal: attempt.signal, cache: 'no-store',
-        });
-        if (!response.ok) {
-          const data = await response.json();
-          throw new ApiError(data.error || 'Canlı bağlantı kurulamadı.', response.status);
-        }
-        if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) throw new Error('Canlı maç sunucusu bulunamadı.');
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (!cancelled) {
-          const { done, value } = await reader.read();
-          if (done) throw new Error('Canlı bağlantı kapandı.');
-          alive();
-          buffer += decoder.decode(value, { stream: true });
-          if (buffer.length > 1_000_000) throw new Error('Geçersiz canlı veri.');
-          let end;
-          while ((end = buffer.indexOf('\n\n')) >= 0) {
-            const packet = buffer.slice(0, end); buffer = buffer.slice(end + 2);
-            if (packet.includes('event: expired')) throw new ApiError('Bu ligdeki oturumun sona erdi.', 401);
-            const line = packet.split('\n').find(l => l.startsWith('data: '));
-            if (line && !cancelled && !attempt.signal.aborted && navigator.onLine && sessionRef.current?.token === session.token) {
-              const data = JSON.parse(line.slice(6)) as { room: OnlineRoom; serverTime: number };
-              applyRoom(data.room, data.serverTime);
-              retries = 0;
-            }
-          }
-        }
-      } catch (cause) {
-        if (cancelled || sessionRef.current?.token !== session.token) return;
-        if (cause instanceof ApiError && [401, 404].includes(cause.status)) {
-          storeSession(null); setRoom(null); setConnection('disconnected'); setError(cause.message);
-          return;
-        }
-        setConnection('reconnecting');
-        clearTimeout(timer);
-        if (navigator.onLine) timer = setTimeout(listen, Math.min(5000, 500 * 2 ** retries++));
-      } finally {
-        clearTimeout(watchdog);
-        attempt.abort();
-      }
-    };
-    const offline = () => { controller?.abort(); clearTimeout(timer); setConnection('reconnecting'); };
-    const online = () => { clearTimeout(timer); timer = setTimeout(listen, 50); };
-    window.addEventListener('offline', offline);
+    // Bağlantı makinesi çerçeveden bağımsızdır (src/utils/onlineConnection.ts): akış (SSE)
+    // birincil, veri gelmezse yoklama yedeği. Kanca yalnızca durumu arayüze taşır.
+    const connection = startOnlineConnection({
+      session,
+      tabId: loadOnlineTabId(),
+      onRoom: applyRoom,
+      onState: ({ connection: state, transport: next, issue: nextIssue }) => {
+        setConnection(state); setTransport(next); setIssue(nextIssue);
+      },
+      onExpired: message => { storeSession(null); setRoom(null); setError(message); },
+    });
+    // Ağ geri geldiğinde beklemeden dene; kopmada akış zaten kendi hatasıyla düşer.
+    const online = () => connection.retryNow();
     window.addEventListener('online', online);
-    void listen();
-    return () => {
-      cancelled = true; clearTimeout(timer); controller?.abort();
-      window.removeEventListener('offline', offline); window.removeEventListener('online', online);
-    };
+    return () => { window.removeEventListener('online', online); connection.stop(); };
   }, [session, applyRoom, storeSession]);
 
   const connect = async (club: OnlineClub, code?: string) => {
@@ -150,6 +102,7 @@ export function useOnlineLeague() {
       const result = await request(clean ? `rooms/${clean}/join` : 'rooms', null, { club });
       if (!result.token || !result.memberId) throw new Error('Oturum oluşturulamadı.');
       storeSession({ code: result.room.code, token: result.token, memberId: result.memberId });
+      setConnection('connected'); setIssue('');
       applyRoom(result.room, result.serverTime);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Bağlanılamadı.');
@@ -167,14 +120,14 @@ export function useOnlineLeague() {
       if (sessionRef.current?.token !== current.token) return;
       if (name === 'leave') {
         storeSession(null); setRoom(null); setConnection('disconnected'); setLastSynced(null);
-      } else applyRoom(result.room, result.serverTime);
+      } else { setConnection('connected'); setIssue(''); applyRoom(result.room, result.serverTime); }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'İşlem başarısız.');
       setErrorStatus(cause instanceof ApiError ? cause.status : null);
     } finally { inFlight.current = false; setBusy(false); }
   };
 
-  return { session, room, connection, error, errorStatus, busy, lastSynced, serverTime, connect, action };
+  return { session, room, connection, transport, issue, error, errorStatus, busy, lastSynced, serverTime, connect, action };
 }
 
 export type OnlineLeagueController = ReturnType<typeof useOnlineLeague>;

@@ -11,7 +11,7 @@ const panel = 'rounded-2xl border border-slate-700/60 bg-slate-800/50 p-5';
 const styles = { balanced: 'Dengeli', attack: 'Hücum', defense: 'Savunma', possession: 'Topa sahip olma' };
 
 export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; online: OnlineLeagueController }) {
-  const { room, session, connection, busy, error, errorStatus, lastSynced, connect, action } = online;
+  const { room, session, connection, transport, issue, busy, error, errorStatus, lastSynced, connect, action } = online;
   const [code, setCode] = useState(() => normalizeOnlineCode(new URLSearchParams(window.location.search).get('lig') || ''));
   const serverOrigin = window.location.origin;
   const onFileOrLocalhost = window.location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
@@ -61,7 +61,7 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
             <p className="text-sm text-slate-400 mt-2">Arkadaşlarını davet et, kendi takımınla ortak sezonda yarış.</p>
           </div>
           <span role="status" className={`text-xs rounded-full border px-3 py-2 ${connected ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' : 'text-amber-300 border-amber-500/30 bg-amber-500/10'}`}>
-            {connected ? '● Senkronize' : connection === 'connecting' ? '◌ Bağlanıyor…' : connection === 'reconnecting' ? '◌ Yeniden bağlanıyor…' : '○ Lige bağlı değilsin'}
+            {connected ? (transport === 'poll' ? '● Yoklamayla senkronize' : '● Senkronize') : connection === 'connecting' ? '◌ Bağlanıyor…' : connection === 'reconnecting' ? '◌ Yeniden bağlanıyor…' : '○ Lige bağlı değilsin'}
           </span>
         </header>
 
@@ -73,8 +73,15 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
             <li><strong>Kodu kopyala:</strong> elle yazma; kodlarda 0, O, 1, I harfleri yoktur, bunlar birbirine karışır.</li>
           </ol>}
         </div>}
-        {connection === 'reconnecting' && <div role="alert" className="rounded-xl p-4 text-sm bg-amber-500/10 text-amber-200">Sunucu bağlantısı kesildi. Son kayıt gösteriliyor; işlemler geçici olarak kapalı. Bağlantı otomatik olarak yeniden deneniyor.</div>}
-        {session && !room && <div className={panel}><p className="text-slate-300">{session.code} kodlu ligdeki oturumun geri yükleniyor… Aynı sunucu adresini kullandığından emin ol.</p></div>}
+        {connection === 'reconnecting' && <div role="alert" className="rounded-xl p-4 text-sm bg-amber-500/10 text-amber-200">
+          <p>{issue || 'Sunucu bağlantısı kesildi.'} {room ? 'Son kayıt gösteriliyor; işlemler geçici olarak kapalı.' : ''}</p>
+          <p className="mt-1 text-xs text-amber-200/80">{transport === 'poll'
+            ? 'Bağlantı yoklanarak sürdürülüyor: tablo ve saha birkaç saniye gecikmeyle güncellenir.'
+            : 'Bağlantı otomatik olarak yeniden deneniyor.'}</p>
+        </div>}
+        {session && !room && <div className={panel}><p className="text-slate-300">{session.code} kodlu ligdeki oturumun geri yükleniyor… Aynı sunucu adresini kullandığından emin ol.</p>
+          {issue && <p className="mt-2 text-sm text-amber-200">{issue}</p>}
+        </div>}
 
         {!squadReady && <p role="alert" className="text-sm text-amber-300">Online kadro için bir kaleci ve 10 sağlıklı, cezasız saha oyuncusu gerekli. Kadronu kontrol et.</p>}
 
