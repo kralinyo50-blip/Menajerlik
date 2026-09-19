@@ -3,6 +3,7 @@ import { GameState, Team, Weather } from '../types/game';
 import { WEATHER_INFO, ROLE_NAMES } from '../data/constants';
 import { TIER_INFO } from '../data/stars';
 import { Stadium3D } from './Stadium3D';
+import { BUFFET_SPONSOR_MAP } from '../data/buffet';
 import { stadiumCapacity } from '../utils/stadium';
 import { lineupWarnings } from '../utils/lineup';
 import { adaptationInfo } from '../utils/adaptation';
@@ -23,6 +24,13 @@ interface PreMatchScreenProps {
 export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
   gameState, opponent, isHome, isCup, weather, onStart, onClose, onOpenTactics
 }) => {
+  /** 🍔 Ev sahibinin büfe marka sponsoru (sözleşme sürüyorsa) — 3D turda tabelalarda görünür */
+  const homeBuffetBrand = (() => {
+    const buffet = gameState.stadium?.buffet;
+    if (!buffet?.sponsorId || (buffet.sponsorWeeksLeft ?? 0) <= 0) return null;
+    const b = BUFFET_SPONSOR_MAP[buffet.sponsorId];
+    return b ? { name: b.name, color: b.color, ink: b.ink, icon: b.icon } : null;
+  })();
   const weatherInfo = WEATHER_INFO[weather] || WEATHER_INFO.cloudy;
   const warnings = lineupWarnings(gameState);
   const pmAvg = gameState.team11.reduce((a, p) => a + p.ovr, 0) / Math.max(1, gameState.team11.length);
@@ -161,6 +169,8 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
                       night={gameState.weather !== 'sunny'}
                       cinematic
                       height={220}
+                      facilities={(gameState.stadium as any)?.facilities || {}}
+                      buffetBrand={homeBuffetBrand}
                     />
                   </div>
                 )}

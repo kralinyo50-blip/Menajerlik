@@ -126,6 +126,13 @@ function App() {
     upgradeStadiumLevel,
     upgradeTribune,
     hostStadiumEvent,
+    // ⚠️ Stadyum iç tesisleri (büfe, mağaza, otopark…): bu satır eksikti,
+    // bu yüzden "Seviye Yükselt" tuşları hiçbir şey yapmıyordu.
+    upgradeStadiumFacility,
+    signBuffetSponsor,
+    cancelBuffetSponsor,
+    buyBuffetMenuItem,
+    setBuffetPriceLevel,
     setTacticsSlider,
     buyDevice,
     setActiveDevice,
@@ -193,10 +200,14 @@ function App() {
     const el = tabsRef.current;
     if (!el) return;
     const { scrollLeft, scrollWidth, clientWidth } = el;
-    setTabsScrollFade({
+    const next = {
       left: scrollLeft > 8,
       right: scrollLeft + clientWidth < scrollWidth - 8
-    });
+    };
+    // ⚠️ Değer değişmediyse state'i güncelleme: bu fonksiyon 800 ms'de bir çalışıyor,
+    // her çağrıda yeni nesne yazmak tüm oyunu (maç sahnesi dahil) gereksiz yeniden
+    // çiziyor ve maç sırasında mikro takılmalar yaratıyordu.
+    setTabsScrollFade(prev => (prev.left === next.left && prev.right === next.right ? prev : next));
   }, []);
   useEffect(() => {
     const el = tabsRef.current;
@@ -1210,6 +1221,11 @@ function App() {
                 onUpgradeStadiumLevel={upgradeStadiumLevel}
                 onUpgradeTribune={upgradeTribune}
                 onHostEvent={hostStadiumEvent}
+                onUpgradeStadiumFacility={upgradeStadiumFacility}
+                onSignBuffetSponsor={signBuffetSponsor}
+                onCancelBuffetSponsor={cancelBuffetSponsor}
+                onBuyBuffetMenuItem={buyBuffetMenuItem}
+                onSetBuffetPriceLevel={setBuffetPriceLevel}
                 onUpgradeFacilityModule={upgradeFacilityModule}
                 onHireStaff={hireStaff}
                 onDiscoverYouth={discoverYouthPlayer}

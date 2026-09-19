@@ -1,5 +1,8 @@
-import { GameState, StadiumDesign, StadiumState, StadiumFacilities } from '../types/game';
+import { BuffetState, GameState, StadiumDesign, StadiumState, StadiumFacilities } from '../types/game';
 import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES, STADIUM_FACILITY_MAP, STADIUM_FACILITY_DEFS } from '../data/stadium';
+import {
+  BUFFET_PRICE_MAP, BUFFET_SPONSOR_MAP, buffetMenuHappiness, buffetMenuIncome, normalizeBuffetState,
+} from '../data/buffet';
 
 /** Toplam stadyum kapasitesi */
 export function stadiumCapacity(state: { stadiumLvl: number; stadium?: StadiumState }): number {
@@ -116,6 +119,69 @@ export function facilityIncomePerFan(state: GameState): number {
   return income;
 }
 
+/** Büfe işletme durumu (eski kayıtlar için normalize edilmiş) */
+export function getBuffetState(state: GameState): BuffetState {
+  return normalizeBuffetState(state.stadium?.buffet);
+}
+
+/** Büfeyi markalayan sponsor (yoksa null) */
+export function activeBuffetSponsor(state: GameState) {
+  const id = state.stadium?.buffet?.sponsorId;
+  if (!id) return null;
+  const weeksLeft = state.stadium?.buffet?.sponsorWeeksLeft ?? 0;
+  if (weeksLeft <= 0) return null;
+  return BUFFET_SPONSOR_MAP[id] ?? null;
+}
+
+/**
+ * Büfe detayının taraftar başına EK geliri (menü ürünleri + fiyat politikası +
+ * sponsor marka primi). `facilityIncomePerFan` zaten taban büfe gelirini eklediği
+ * için burada yalnızca farkı döndürürüz — çift sayım olmaz.
+ */
+export function buffetDetailPerFan(state: GameState): number {
+  const level = state.stadium?.facilities?.buffet ?? 0;
+  if (level <= 0) return 0;
+  const buffet = getBuffetState(state);
+  const base = STADIUM_FACILITY_MAP.buffet.incomePerFan * level;
+  const menu = buffetMenuIncome(buffet.menu ?? []);
+  const mult = BUFFET_PRICE_MAP[buffet.priceLevel]?.incomeMult ?? 1;
+  const sponsor = activeBuffetSponsor(state)?.perFan ?? 0;
+  const gross = (base + menu) * mult;
+  return gross - base + sponsor;
+}
+
+/** Büfe detayının taraftar memnuniyeti katkısı (menü + fiyat + sponsor) */
+export function buffetHappinessBonus(state: GameState): number {
+  const level = state.stadium?.facilities?.buffet ?? 0;
+  if (level <= 0) return 0;
+  const buffet = getBuffetState(state);
+  const menu = buffetMenuHappiness(buffet.menu ?? []);
+  const price = BUFFET_PRICE_MAP[buffet.priceLevel]?.happiness ?? 0;
+  const sponsor = activeBuffetSponsor(state)?.happiness ?? 0;
+  return menu + price + sponsor;
+}
+
+/** UI için büfe gelir dağılımı (maç başına, tahmini seyirciye göre) */
+export function buffetBreakdown(state: GameState, attendance: number) {
+  const level = state.stadium?.facilities?.buffet ?? 0;
+  const buffet = getBuffetState(state);
+  const sponsor = activeBuffetSponsor(state);
+  const base = STADIUM_FACILITY_MAP.buffet.incomePerFan * level;
+  const menu = buffetMenuIncome(buffet.menu ?? []);
+  const mult = BUFFET_PRICE_MAP[buffet.priceLevel]?.incomeMult ?? 1;
+  const baseIncome = base * mult * attendance;
+  const menuIncome = menu * mult * attendance;
+  const sponsorIncome = (sponsor?.perFan ?? 0) * attendance;
+  return {
+    level,
+    baseIncome,
+    menuIncome,
+    sponsorIncome,
+    perFan: (base + menu) * mult + (sponsor?.perFan ?? 0),
+    total: baseIncome + menuIncome + sponsorIncome,
+  };
+}
+
 export function facilityHappinessBonus(state: GameState): number {
   const facs = getStadiumFacilities(state);
   let happy = 0;
@@ -124,6 +190,8 @@ export function facilityHappinessBonus(state: GameState): number {
     const def = STADIUM_FACILITY_MAP[k as any];
     if (def && lvl > 0) happy += def.happiness * lvl * 0.3;
   });
+  // Büfe detayı: menü çeşitliliği + fiyat politikası + sponsor marka
+  happy += buffetHappinessBonus(state) * 0.35;
   return Math.min(15, happy);
 }
 
@@ -150,6 +218,8 @@ export function fanSpendingPerFan(state: GameState): number {
   if ((state.stadium?.design?.roof ?? 'none') !== 'none') perFan += 2;
   perFan += starBonuses(state).perFan;
   perFan += facilityIncomePerFan(state);
+  // Büfe işletmesi: menü ürünleri, fiyat politikası ve marka sponsor primi
+  perFan += buffetDetailPerFan(state);
   return perFan;
 }
 

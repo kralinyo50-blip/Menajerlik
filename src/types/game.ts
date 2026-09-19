@@ -64,6 +64,29 @@ export interface StadiumFacilities {
   medicalRoom: number;
 }
 
+/** Büfe fiyat politikası */
+export type BuffetPriceLevel = 'uygun' | 'normal' | 'premium';
+
+/**
+ * Büfe işletmesi (Stadyum → İç Tesisler → Büfe):
+ * marka sponsorluğu + menü + fiyat politikası. Marka sözleşmesi bitince
+ * (sponsorWeeksLeft = 0) büfe kulübün kendi büfesi olarak devam eder.
+ */
+export interface BuffetState {
+  /** Büfeyi markalayan sponsor marka kimliği (data/buffet.ts) */
+  sponsorId: string | null;
+  /** Kalan sözleşme haftası */
+  sponsorWeeksLeft: number;
+  /** Sponsorluktan toplam kazanılan (imza parası dahil) */
+  sponsorEarned: number;
+  /** Bu büfenin toplam ekstra geliri (istatistik) */
+  revenueTotal: number;
+  /** Açılan menü ürünleri (data/buffet.ts id listesi) */
+  menu: string[];
+  /** Fiyat politikası */
+  priceLevel: BuffetPriceLevel;
+}
+
 export interface StadiumState {
   design: StadiumDesign;
   /** Satın alınan ek koltuklar */
@@ -80,6 +103,8 @@ export interface StadiumState {
   lastEventIncome?: number;
   /** Stadyum içi tesisler (büfe, mağaza, otopark vs) — her biri 0-5 seviye */
   facilities?: StadiumFacilities;
+  /** Büfe işletmesi: marka sponsorluğu, menü, fiyat politikası */
+  buffet?: BuffetState;
   /** Tesislerden toplam birikmiş gelir */
   facilityIncomeTotal?: number;
   /** Son tesis geliri */

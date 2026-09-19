@@ -581,6 +581,10 @@ function renderMatchPreview(cfg: {
   sim: number;
   cam?: 'manager' | 'broadcast';
   event?: { type: string; team: 'home' | 'away' };
+  /** Ev sahibinin iç tesisleri (büfe vb) — maçta görünürlüğünü denetlemek için */
+  facilities?: Record<string, number>;
+  /** 🍔 Büfe marka sponsoru — saha kenarı tabelaları markanın olur */
+  buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
 }) {
   const shape = (name: string, mirror: boolean): ShapeSlot[] => {
     const f = FORMATIONS['4-3-3'];
@@ -606,7 +610,10 @@ function renderMatchPreview(cfg: {
     homeName: 'ANADOLU SPOR',
     awayName: 'KIZIL YILDIZ',
     sponsorText: 'MANAGER PRO 2026 • RESMİ SPONSOR • ',
-    logo: '🦁'
+    logo: '🦁',
+    // Ev sahibi maçında oyuncunun stadı: tesisler (büfe, mağaza…) sahneye girer
+    facilities: cfg.facilities,
+    buffetBrand: cfg.buffetBrand ?? null
   });
   bundle.setCameraMode(cfg.cam ?? 'manager');
   const input: Match3DInput = {
@@ -657,16 +664,19 @@ if (process.env.MATCH_ONLY) {
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-gol.png', venue: homeV, weather: 'cloudy', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 58, phase: 'second', scoreHome: 2, scoreAway: 0, possession: 61, sim: 30, event: { type: 'goal', team: 'home' } }), label: 'gol sevinci' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-kart.png', venue: awayV, weather: 'sunny', kitHome: awayV.kit, kitAway: opponentKit('ANADOLU SPOR', 3, awayV.kit.shirt), minute: 41, phase: 'first', scoreHome: 0, scoreAway: 1, possession: 39, sim: 24, event: { type: 'card', team: 'away' } }), label: 'kart (deplasman)' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-deplasman.png', venue: awayV2, weather: 'snow', kitHome: awayV2.kit, kitAway: opponentKit('ANADOLU SPOR', 7, awayV2.kit.shirt), minute: 22, phase: 'first', scoreHome: 0, scoreAway: 0, possession: 52, sim: 30 }), label: 'deplasman • kar' });
+  tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-tesisler.png', venue: homeNight, weather: 'sunny', kitHome: homeNight.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeNight.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26, cam: 'manager', facilities: { buffet: 4, fanShop: 3, restaurant: 2, bar: 2, parking: 2, toilets: 2, security: 3, ledScreen: 2, soundSystem: 2, museum: 0, kidsZone: 0, medicalRoom: 1 }, buffetBrand: { name: 'Coca-Cola', color: '#e11d48', ink: '#ffffff', icon: '🥤' }, cam: 'broadcast' }), label: '🍔 büfe + marka tabelası • yayın kamerası' });
   tiles.push({ buf: renderMatchPreview({ name: 'preview-mac-yayin.png', venue: homeV, weather: 'sunny', kitHome: homeV.kit, kitAway: opponentKit('KIZIL YILDIZ', 3, homeV.kit.shirt), minute: 34, phase: 'first', scoreHome: 1, scoreAway: 0, possession: 58, sim: 26, cam: 'broadcast' }), label: '📺 yayın kamerası' });
-  console.log(`\n📄 ${composeSheet(tiles, 2, `${OUT_DIR}/preview-mac-tumu.png`)}`);
+  console.log(`\n📄 ${composeSheet(tiles, 3, `${OUT_DIR}/preview-mac-tumu.png`)}`);
   process.exit(0);
 }
 
 /* ── Önizlemeler ── */
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const clubColor = '#1d4ed8';
+/** STADIUM_ONLY=1 → yalnızca stadyum kareleri (tesis 3D denetimi için hızlı mod) */
+const STADIUM_ONLY = !!process.env.STADIUM_ONLY;
 
-const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number }[] = [
+const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; night: boolean; dPhi: number; dTheta: number; zoom: number; facilities?: Record<string, number>; buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null; focus?: { x: number; y: number; z: number; radius: number } }[] = [
   { name: 'preview-stadyum-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 17000, night: false, dPhi: 0, dTheta: 0, zoom: 1 },
   { name: 'preview-stadyum-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'full', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 40000, night: true, dPhi: 0, dTheta: 0.25, zoom: 1.05 },
   // Tasarım seçenekleri galerisi: her kare farklı bir özelleştirme seçimini gösterir
@@ -677,16 +687,24 @@ const stadiumPreviews: { name: string; design: StadiumDesign; capacity: number; 
   { name: 'preview-stadyum-tasarim-canopy.png', design: { seatColor: '#16a34a', accentColor: '#facc15', roof: 'canopy', stands: 'stepped', pitchPattern: 'plain', flags: true, logoOnPitch: true, floodlights: true }, capacity: 17000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-cam-cati.png', design: { seatColor: '#7c3aed', accentColor: '#e5e7eb', roof: 'glass', stands: 'double', pitchPattern: 'rings', flags: true, logoOnPitch: true, floodlights: true }, capacity: 26000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
   { name: 'preview-stadyum-tasarim-bowl.png', design: { seatColor: '#dc2626', accentColor: '#111827', roof: 'full', stands: 'bowl', pitchPattern: 'stripes', flags: false, logoOnPitch: false, floodlights: true }, capacity: 34000, night: false, dPhi: 0.06, dTheta: -0.18, zoom: 1.02 },
+  // ── İç tesisler (büfe, mağaza, restoran…) — 3D'de görünürlük denetimi ──
+  // theta ≈ -0.85 → kamera giriş meydanının (büfe çarşısı) karşısına gelir
+  { name: 'preview-stadyum-tesisler-gunduz.png', design: { ...defaultStadium().design, roof: 'canopy', flags: true }, capacity: 34000, night: false, dPhi: 0.04, dTheta: -0.15, zoom: 1, focus: { x: 0, y: 2, z: 104.55, radius: 162 }, facilities: { buffet: 5, fanShop: 4, restaurant: 3, bar: 3, parking: 3, toilets: 3, security: 4, ledScreen: 2, soundSystem: 3, museum: 2, kidsZone: 3, medicalRoom: 2 } },
+  { name: 'preview-stadyum-tesisler-gece.png', design: { seatColor: '#dc2626', accentColor: '#facc15', roof: 'glass', stands: 'double', pitchPattern: 'stripes', flags: true, logoOnPitch: false, floodlights: true }, capacity: 46000, night: true, dPhi: 0.04, dTheta: -0.15, zoom: 1, focus: { x: 0, y: 2, z: 116.95, radius: 186 }, facilities: { buffet: 5, fanShop: 5, restaurant: 4, bar: 5, parking: 4, toilets: 4, security: 5, ledScreen: 4, soundSystem: 4, museum: 3, kidsZone: 4, medicalRoom: 3 } },
+  // 🍔 Büfe marka sponsorluğu: çarşıdaki kulübeler ve marka panosu sponsorun renginde/adında
+  { name: 'preview-stadyum-bufe-marka-yakin.png', design: { seatColor: '#0f172a', accentColor: '#f43f5e', roof: 'canopy', stands: 'stepped', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 34000, night: true, dPhi: -0.16, dTheta: -0.16, zoom: 1, focus: { x: -30, y: 4, z: 126, radius: 26 }, facilities: { buffet: 5, fanShop: 2, restaurant: 2, bar: 2, parking: 2, toilets: 2, security: 2, ledScreen: 1, soundSystem: 1, museum: 0, kidsZone: 0, medicalRoom: 0 }, buffetBrand: { name: 'Burger King', color: '#0f766e', ink: '#fbbf24', icon: '🍔' } },
+  { name: 'preview-stadyum-bufe-marka.png', design: { seatColor: '#0f172a', accentColor: '#f43f5e', roof: 'canopy', stands: 'stepped', pitchPattern: 'stripes', flags: true, logoOnPitch: true, floodlights: true }, capacity: 34000, night: false, dPhi: -0.34, dTheta: -0.34, zoom: 1, focus: { x: -12, y: 3.4, z: 125, radius: 54 }, facilities: { buffet: 5, fanShop: 3, restaurant: 3, bar: 3, parking: 2, toilets: 3, security: 3, ledScreen: 2, soundSystem: 2, museum: 0, kidsZone: 0, medicalRoom: 1 }, buffetBrand: { name: 'Coca-Cola', color: '#e11d48', ink: '#ffffff', icon: '🥤' } },
 ];
 
 const stadiumTiles: { buf: Uint8Array; label: string }[] = [];
 stadiumPreviews.forEach(p => {
-  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night });
+  const bundle = buildStadiumGroup(p.design, { capacity: p.capacity, logo: '🦁', sponsorText: 'SPONSOR •', teamName: 'ANADOLU SPOR', night: p.night, facilities: p.facilities, buffetBrand: p.buffetBrand });
   const rows = Math.max(4, Math.min(30, Math.round(p.capacity / 1600)));
   const baseRadius = Math.max(165, (105 + rows * 4.6) * 1.3);
   const buffer = renderToBuffer(bundle.group, {
-    radius: baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
-    targetY: Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
+    radius: p.focus ? p.focus.radius : baseRadius * p.zoom, phi: 0.98 + p.dPhi, theta: 0.85 + p.dTheta,
+    targetX: p.focus?.x, targetZ: p.focus?.z,
+    targetY: p.focus ? p.focus.y : Math.max(6, rows * 1.1) + (p.name.includes('kahraman') ? 2 : 0), fov: 46,
   }, {
     sky: p.night ? '#0b1026' : '#7ab0e0',
     night: p.night,
@@ -703,6 +721,11 @@ stadiumPreviews.forEach(p => {
   }
   console.log(`🏟️  ${p.name} üretildi`);
 });
+
+if (STADIUM_ONLY) {
+  console.log(`\n🏟️  Stadyum kareleri hazır: ${stadiumPreviews.map(p => p.name).join(', ')}`);
+  process.exit(0);
+}
 
 const lifeScenes: { activity: LifeActivityId; variant: string; time: number; name: string }[] = [
   { activity: 'gym', variant: 'run', time: 0.4, name: 'preview-hayat-spor-kosu.png' },

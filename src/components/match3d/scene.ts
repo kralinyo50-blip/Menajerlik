@@ -41,6 +41,8 @@ export interface BuildMatchOpts {
   sponsorText?: string;
   logo?: string;
   facilities?: Record<string, number>;
+  /** 🍔 Büfe marka sponsoru — sahadaki büfe tabelaları bu markanın olur */
+  buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
 }
 
 export interface Match3DEvent {
@@ -175,7 +177,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     teamName: opts.homeName,
     night: opts.night,
     wet: ['rain', 'storm', 'snow'].includes(opts.weather),
-    facilities: opts.facilities
+    facilities: opts.facilities,
+    buffetBrand: opts.buffetBrand ?? null
   });
   group.add(stadium.group);
 

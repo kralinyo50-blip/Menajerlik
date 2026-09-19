@@ -64,7 +64,8 @@ export function useOrbitThree(
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(host.clientWidth || 640, height, false);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // ⚠️ PCFSoftShadowMap r186'da kaldırıldı → PCFShadowMap (konsol uyarısı yok)
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.domElement.style.width = '100%';
@@ -166,14 +167,19 @@ export function useOrbitThree(
 
     setReady(true);
     let raf = 0;
-    const clock = new THREE.Clock();
+    // ⚠️ THREE.Clock r183'te kaldırıldı (konsola deprecation uyarısı basıyor) → THREE.Timer
+    const timer = new THREE.Timer();
+    if (typeof document !== 'undefined') timer.connect(document);
+    timer.reset();
     const loop = () => {
       raf = requestAnimationFrame(loop);
+      timer.update();
       // 🏟️ Maç ekranı açıkken (veya sekme arkadayken) bu sahne görünmez:
       // GPU'yu boşuna yorma — kareyi atla, rAF'u canlı tut.
+      // (Zamanlayıcı yine güncellenir; duraklama sonrası dt sıçraması olmaz.)
       if (isBackgroundRenderPaused() || document.hidden) return;
-      const dt = Math.min(0.05, clock.getDelta());
-      const t = clock.getElapsedTime();
+      const dt = Math.min(0.05, timer.getDelta());
+      const t = timer.getElapsed();
       if (cinematicRef.current && !dragging) {
         spherical.theta += dt * 0.16;
         applyCamera();
@@ -185,6 +191,7 @@ export function useOrbitThree(
 
     return () => {
       cancelAnimationFrame(raf);
+      timer.dispose();
       window.removeEventListener('resize', onResize);
       observer?.disconnect();
       el.removeEventListener('pointerdown', onDown);

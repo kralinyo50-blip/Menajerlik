@@ -1,13 +1,16 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign, StadiumState } from '../../types/game';
-import { Stadium3D } from '../Stadium3D';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign, StadiumFacilities, StadiumFacilityId, StadiumState } from '../../types/game';
+import { Stadium3D, StadiumViewerApi } from '../Stadium3D';
+import { BuffetSection } from './BuffetSection';
+import { BUFFET_SPONSOR_MAP, normalizeBuffetState } from '../../data/buffet';
+import type { BuffetPriceLevel } from '../../types/game';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
   ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked, TRIBUNES, STADIUM_EVENTS,
-  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost, defaultFacilities
+  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost
 } from '../../data/stadium';
 import { formatMoney } from '../../utils/pricing';
-import { previewHomeMatch, stadiumCapacity } from '../../utils/stadium';
+import { fanSpendingPerFan, getStadiumFacilities, previewHomeMatch, stadiumCapacity } from '../../utils/stadium';
 import { TrainingComplexSection } from './TrainingComplexSection';
 import { StaffSection, YouthScoutSection } from './facilitySections';
 
@@ -21,6 +24,11 @@ interface StadiumTabProps {
   onUpgradeTribune?: (side: 'north'|'south'|'east'|'west') => void;
   onHostEvent?: (eventId: 'concert'|'fair') => void;
   onUpgradeStadiumFacility?: (id: import('../../types/game').StadiumFacilityId) => void;
+  /* ── 🍔 Büfe işletmesi: marka sponsorluğu, menü, fiyat politikası ── */
+  onSignBuffetSponsor?: (brandId: string) => void;
+  onCancelBuffetSponsor?: () => void;
+  onBuyBuffetMenuItem?: (itemId: string) => void;
+  onSetBuffetPriceLevel?: (level: BuffetPriceLevel) => void;
   /* ── 3D Antrenman Kompleksi & tesis yönetimi (eski Tesisler sekmesi buraya taşındı) ── */
   onUpgradeFacilityModule?: (id: FacilityModuleId) => void;
   onHireStaff?: (type: Staff['type'], cost: number) => void;
@@ -137,12 +145,26 @@ const OptionCard: React.FC<OptionCardProps> = ({
 
 export const StadiumTab: React.FC<StadiumTabProps> = ({
   gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent, onUpgradeStadiumFacility,
+  onSignBuffetSponsor, onCancelBuffetSponsor, onBuyBuffetMenuItem, onSetBuffetPriceLevel,
   onUpgradeFacilityModule, onHireStaff, onDiscoverYouth, onPromoteYouth,
   onSendScout, onClaimScoutReport, onDismissScoutReport, onCancelScoutMission
 }) => {
   const [sub, setSub] = useState<SubTab>('design');
   const [night, setNight] = useState(true);
   const [cinematic, setCinematic] = useState(false);
+  /** Tam ekran 3D görünümü (CSS overlay — iframe içinde de çalışır) */
+  const [sceneFull, setSceneFull] = useState(false);
+  const [viewportH, setViewportH] = useState(() => (typeof window === 'undefined' ? 900 : window.innerHeight));
+  useEffect(() => {
+    if (!sceneFull) return;
+    const onResize = () => setViewportH(window.innerHeight);
+    onResize();
+    window.addEventListener('resize', onResize);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSceneFull(false); };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('resize', onResize); window.removeEventListener('keydown', onKey); };
+  }, [sceneFull]);
+  const sceneHeight = sceneFull ? Math.max(360, viewportH - 120) : 400;
 
   /* ══════════ ÖN İZLEME SİSTEMİ ══════════
      Her seçeneğin yanında "👁️ Ön İzle" tuşu var: basınca değişiklik satın alınmadan
@@ -153,11 +175,21 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
   const [previewVip, setPreviewVip] = useState<boolean | null>(null);
   const [previewTribunes, setPreviewTribunes] = useState<StadiumState['tribunes'] | null>(null);
   const [previewLevel, setPreviewLevel] = useState<number | null>(null);
+  /** Ön izlenen iç tesisler (büfe, mağaza, otopark…) — 3D sahnede gösterilir */
+  const [previewFacilities, setPreviewFacilities] = useState<StadiumFacilities | null>(null);
+  /** 3D'de halka ile işaretlenen tesis: satın alma sonrası kısa süreli vurgu */
+  const [flashFacility, setFlashFacility] = useState<StadiumFacilityId | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
   /** Aktif ön izlemenin kimliği + etiketi + (varsa) tek tıkla uygulama aksiyonu */
-  const [previewInfo, setPreviewInfo] = useState<{ id: string; label: string; applyLabel?: string; onApply?: () => void } | null>(null);
+  const [previewInfo, setPreviewInfo] = useState<{ id: string; label: string; facility?: StadiumFacilityId; applyLabel?: string; onApply?: () => void } | null>(null);
+  /** 🍔 3D'de ön izlenen marka tabelası (null → gerçek sponsor) */
+  const [previewBrandId, setPreviewBrandId] = useState<string | null>(null);
+  /** Büfe Stüdyosu paneli açık mı */
+  const [buffetOpen, setBuffetOpen] = useState(false);
   /** Tuşla sabitlenmiş ön izleme — hover'lar bunu bozamaz */
   const pinned = previewInfo !== null;
-  const isPreview = pinned || previewDesign !== null || previewBonus !== null || previewVip !== null || previewTribunes !== null || previewLevel !== null;
+  const isPreview = pinned || previewDesign !== null || previewBonus !== null || previewVip !== null || previewTribunes !== null || previewLevel !== null || previewFacilities !== null;
 
   const stadium = gameState.stadium;
   const design = stadium.design;
@@ -165,19 +197,34 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
   const displayBonus = previewBonus ?? stadium.capacityBonus;
   const displayVip = previewVip ?? stadium.vip;
   const displayLevel = previewLevel ?? gameState.stadiumLvl;
+  /** Gerçek tesis seviyeleri (eski kayıtlarda eksik alan olabilir → helper tamamlar) */
+  const realFacilities = getStadiumFacilities(gameState);
+  /** İç tesis seviyeleri: ön izleme varsa o, yoksa gerçek durum (3D sahne bunu kullanır) */
+  const displayFacilities = previewFacilities ?? realFacilities;
+  /** 🍔 Büfe işletmesi durumu (marka, menü, fiyat politikası) */
+  const buffetState = normalizeBuffetState(stadium.buffet);
+  /** 3D'de tabelası görünecek marka: ön izleme varsa o, yoksa sözleşmesi süren sponsor */
+  const activeBrand = buffetState.sponsorId && (buffetState.sponsorWeeksLeft ?? 0) > 0 ? BUFFET_SPONSOR_MAP[buffetState.sponsorId] : null;
+  const shownBrand = previewBrandId ? BUFFET_SPONSOR_MAP[previewBrandId] : activeBrand;
   const displayStadium = {
     ...stadium,
     design: displayDesign,
     capacityBonus: displayBonus,
     vip: displayVip,
+    facilities: displayFacilities,
     tribunes: previewTribunes ?? stadium.tribunes
   } as GameState['stadium'];
+  /** 3D'de işaretlenecek tesis: ön izleme varsa o, yoksa satın alma sonrası geçici vurgu */
+  const highlightFacility: StadiumFacilityId | null = previewFacilities ? (previewInfo?.facility ?? null) : flashFacility;
 
   const capacity = stadiumCapacity(gameState);
   const displayCapacity = stadiumCapacity({ ...gameState, stadiumLvl: displayLevel, stadium: displayStadium } as GameState);
   const baseCapacity = gameState.stadiumLvl * 5000 + 2000;
   const fillRate = Math.min(100, Math.round(((gameState.clubStats.totalAttendance || 0) / Math.max(1, (gameState.clubStats.totalWins || 1) * capacity)) * 100));
   const preview = useMemo(() => previewHomeMatch({ ...gameState, stadiumLvl: displayLevel, stadium: displayStadium } as GameState, 3, 'sunny'), [gameState, displayStadium, displayLevel]);
+  /** Tesis özet göstergeleri (İç Tesisler sekmesi başlığı) */
+  const totalFacilityLevels = Object.values(realFacilities).reduce((a, b) => a + (b || 0), 0);
+  const spendPerFan = fanSpendingPerFan({ ...gameState, stadium: displayStadium } as GameState);
   const upgradeLevelCost = 1200000 * gameState.stadiumLvl;
   const bestTotal = Math.max(...TICKET_STRATEGIES.map(st =>
     previewHomeMatch({ ...gameState, stadium: { ...stadium, ticketMultiplier: st.multiplier } }, 3, 'sunny').total
@@ -185,6 +232,9 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
 
   /** 3D sahne görünürde değilse ön izleme başlayınca oraya kaydır */
   const sceneRef = useRef<HTMLDivElement | null>(null);
+  /** 3D izleyici kumandası (kamera ön ayarları: Genel / Çarşı / Saha) */
+  const viewerApi = useRef<StadiumViewerApi | null>(null);
+  const [sceneView, setSceneView] = useState<'overview' | 'plaza' | 'pitch'>('overview');
   const focusScene = () => {
     const el = sceneRef.current;
     if (!el) return;
@@ -200,6 +250,10 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
     vip?: boolean;
     tribunes?: StadiumState['tribunes'];
     level?: number;
+    /** İç tesis seviyeleri (büfe, mağaza…) — 3D sahnede gösterilir */
+    facilities?: StadiumFacilities;
+    /** 3D'de işaretlenecek tesis kimliği */
+    facility?: StadiumFacilityId;
     applyLabel?: string;
     onApply?: () => void;
   }
@@ -210,11 +264,12 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
     if (p.vip !== undefined) setPreviewVip(p.vip);
     if (p.tribunes !== undefined) setPreviewTribunes(p.tribunes);
     if (p.level !== undefined) setPreviewLevel(p.level);
+    if (p.facilities !== undefined) setPreviewFacilities(p.facilities);
   };
 
   const resetPreviewValues = () => {
     setPreviewDesign(null); setPreviewBonus(null); setPreviewVip(null);
-    setPreviewTribunes(null); setPreviewLevel(null);
+    setPreviewTribunes(null); setPreviewLevel(null); setPreviewFacilities(null);
   };
 
   const clearPreview = () => { resetPreviewValues(); setPreviewInfo(null); };
@@ -224,9 +279,42 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
     if (previewInfo?.id === p.id) { clearPreview(); return; }
     resetPreviewValues();
     applyPatch(p);
-    setPreviewInfo({ id: p.id, label: p.label, applyLabel: p.applyLabel, onApply: p.onApply });
+    setPreviewInfo({ id: p.id, label: p.label, facility: p.facility, applyLabel: p.applyLabel, onApply: p.onApply });
     focusScene();
   };
+
+  /** Tesis satın alınınca: 3D sahne tazelenir, yeni yapı bir süre halka ile işaretlenir */
+  const buyFacility = (id: StadiumFacilityId) => {
+    onUpgradeStadiumFacility?.(id);
+    setFlashFacility(id);
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlashFacility(null), 12000);
+    focusScene();
+  };
+
+  /** Bir tesisi bir üst seviyede 3D'de ön izle (satın almadan) */
+  const facilityPreviewPatch = (id: StadiumFacilityId): PreviewPatch => {
+    const lvl = displayFacilities[id] ?? 0;
+    const nextLvl = Math.min(5, lvl + 1);
+    const def = STADIUM_FACILITY_MAP[id];
+    const cost = facilityUpgradeCost(id, lvl);
+    const affordable = lvl < 5 && gameState.budget >= cost;
+    return {
+      id: `preview:facility:${id}`,
+      label: `${def?.icon ?? '🏗️'} ${def?.name ?? id} • Seviye ${nextLvl}/5`,
+      facilities: { ...displayFacilities, [id]: nextLvl } as StadiumFacilities,
+      facility: id,
+      applyLabel: affordable ? `⬆️ Yükselt — ${formatMoney(cost)}` : undefined,
+      onApply: affordable ? () => buyFacility(id) : undefined
+    };
+  };
+
+  /** Büfe stüdyosu sekmeye geçince kamera meydana (büfe çarşısı) baksın */
+  useEffect(() => {
+    if (!buffetOpen) return;
+    setSceneView('plaza');
+    viewerApi.current?.focusPreset('plaza');
+  }, [buffetOpen]);
 
   /** Fare üzerine gelince ön izleme — yalnızca sabitlenmiş bir ön izleme yoksa */
   const hoverPreview = (p: PreviewPatch) => { if (!pinned) applyPatch(p); };
@@ -264,8 +352,14 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
           </div>
         </div>
 
-        {/* 3D sahne — 👁️ Ön İzle tuşuna basınca burası gösterilir */}
-        <div className="relative scroll-mt-3" ref={sceneRef}>
+        {/* 3D sahne — 👁️ Ön İzle tuşuna basınca burası gösterilir.
+            📺 Tam ekran: sahne neredeyse tüm pencereyi kaplar (ESC veya ✕ ile çıkılır). */}
+        <div
+          className={sceneFull
+            ? 'fixed inset-0 z-[70] bg-slate-950/95 backdrop-blur p-2 sm:p-4 overflow-y-auto'
+            : 'relative scroll-mt-3'}
+          ref={sceneRef}
+        >
           <Stadium3D
             design={displayDesign}
             capacity={displayCapacity}
@@ -274,10 +368,21 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             night={night}
             teamName={gameState.teamName}
             cinematic={cinematic}
-            height={400}
+            height={sceneHeight}
             crowdIntensity={fillRate}
             wet={isRainy && !roofProtects}
-            facilities={(gameState.stadium as any)?.facilities || {}}
+            facilities={displayFacilities as unknown as Record<string, number>}
+            initialView={sceneView}
+            viewerApi={viewerApi}
+            buffetBrand={shownBrand ? { name: shownBrand.name, color: shownBrand.color, ink: shownBrand.ink, icon: shownBrand.icon } : null}
+            highlightFacility={highlightFacility}
+            previewLabel={
+              previewFacilities && previewInfo?.facility
+                ? `${STADIUM_FACILITY_MAP[previewInfo.facility]?.icon ?? '🏗️'} ${STADIUM_FACILITY_MAP[previewInfo.facility]?.name ?? ''} • Seviye ${displayFacilities[previewInfo.facility]}/5 ön izleme`
+                : flashFacility
+                  ? `${STADIUM_FACILITY_MAP[flashFacility]?.icon ?? '🏗️'} ${STADIUM_FACILITY_MAP[flashFacility]?.name ?? ''} • Seviye ${displayFacilities[flashFacility]}/5 — 3D\'ye eklendi`
+                  : null
+            }
           />
           {/* Yağmur / sis — çatıya göre hafif overlay, performans dostu */}
           {isRainy && !roofProtects && (
@@ -326,11 +431,43 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             >
               🎬 Sinematik
             </button>
+            <button
+              onClick={() => { setSceneFull(v => !v); if (!sceneFull) focusScene(); }}
+              title="3D görünümü tam ekran yap / ESC ile çık"
+              className={`backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                sceneFull ? 'bg-amber-400 text-black border-amber-300' : 'bg-black/60 text-white border-white/10 hover:bg-black/80'
+              }`}
+            >
+              {sceneFull ? '✕ Tam Ekrandan Çık' : '📺 3D Tam Ekran'}
+            </button>
           </div>
           <div className="absolute top-3 left-3 bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg text-[11px] text-slate-200">
             Koltuk: <b style={{ color: displayDesign.seatColor }}>{displayDesign.seatColor}</b> • Aksan: <b style={{ color: displayDesign.accentColor }}>{displayDesign.accentColor}</b>
             {displayVip && ' • 🥂 VIP'}
             {isPreview && <span className="ml-2 text-amber-300">👁️ ön izleme</span>}
+            {previewBrandId && shownBrand && (
+              <span className="ml-2 font-black" style={{ color: shownBrand.ink ?? '#fff', textShadow: '0 0 0.5px #000' }}>
+                🍔 {shownBrand.icon} {shownBrand.name} tabela ön izlemesi
+              </span>
+            )}
+          </div>
+          {/* Kamera ön ayarları — büfeler/çarşı ve saha tek tıkla */}
+          <div className="absolute top-14 left-3 flex flex-col gap-1.5">
+            {([
+              ['overview', '🏟️ Genel Görünüm'],
+              ['plaza', '🍔 Çarşı & Büfeler'],
+              ['pitch', '🎥 Saha'],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => { setSceneView(id); viewerApi.current?.focusPreset(id); }}
+                className={`text-left backdrop-blur px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                  sceneView === id ? 'bg-emerald-500/80 text-white border-emerald-300' : 'bg-black/55 text-slate-200 border-white/10 hover:bg-black/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           {/* ÖN İZLEME banner — neyin ön izlendiğini söyler, tek tıkla uygular/satın alır */}
           {isPreview && (
@@ -924,48 +1061,188 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
         )}
 
 
-        {/* ── İÇ TESİSLER — Büfe, Mağaza, Otopark vb (detaylı ve güzel) ── */}
+        {/* ── İÇ TESİSLER — Büfe, Mağaza, Otopark vb (3D sahnede görünür + 👁️ ön izleme) ── */}
         {sub === 'facilities' && (
           <div className="space-y-4">
             <div className="bg-gradient-to-br from-amber-900/30 to-slate-800/60 backdrop-blur-xl rounded-2xl border border-amber-500/20 p-5 shadow-xl">
-              <h3 className="text-sm font-black text-amber-300 mb-1">🍔 Stadyum İç Tesisler — Detaylı & Kazançlı</h3>
-              <p className="text-[11px] text-slate-300 mb-3">
-                Her tesis seviye 0-5 arası gelişir. <b>Her iç saha maçında taraftar başına gelir</b> getirir + taraftar mutluluğu + yönetim güveni.
-                Toplam {(() => { const f = (gameState.stadium as any)?.facilities || defaultFacilities(); return Object.values(f).reduce((a:any,b:any)=>a+(b||0),0); })()} seviye tesis kurulu.
-                Tahmini maç başı tesis geliri: <b className="text-emerald-300">{(() => { try { const { facilityIncomePerFan } = require('../../utils/stadium'); const per = facilityIncomePerFan(gameState); const att = Math.round((gameState.stadiumLvl*5000+2000)*0.75); return `$${Math.round(per*att).toLocaleString()} ($${per.toFixed(1)}/taraftar)`; } catch { return 'hesaplanıyor'; } })()}</b>
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-[260px] flex-1">
+                  <h3 className="text-sm font-black text-amber-300 mb-1">🍔 Stadyum İç Tesisler — 3D'de Görünür &amp; Kazançlı</h3>
+                  <p className="text-[11px] text-slate-300 mb-2">
+                    Her tesis seviye 0-5 arası gelişir ve <b className="text-amber-200">yukarıdaki 3D sahnede görünür</b>:
+                    büfe kulübeleri + masa/şemsiyeler, taraftar mağazası, restoran, otopark, müze…
+                    Yükseltmeler <b>her iç saha maçında taraftar başına gelir</b> + taraftar mutluluğu + yönetim güveni getirir.
+                  </p>
+                  <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                    <span className="bg-black/40 rounded-lg px-2 py-1 text-slate-200">
+                      Kurulu tesis seviyesi: <b className="text-white">{totalFacilityLevels}</b>/{STADIUM_FACILITY_DEFS.length * 5}
+                    </span>
+                    <span className="bg-black/40 rounded-lg px-2 py-1 text-slate-200">
+                      Taraftar başına harcama: <b className="text-emerald-300">{formatMoney(Math.round(spendPerFan * 10) / 10)}</b>
+                    </span>
+                    <span className="bg-black/40 rounded-lg px-2 py-1 text-slate-200">
+                      Beklenen maç geliri (büfe &amp; ürün): <b className="text-emerald-300">{formatMoney(preview.catering)}</b>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={focusScene}
+                  className="shrink-0 bg-slate-900/70 hover:bg-slate-800 text-amber-200 border border-amber-500/40 px-3 py-2 rounded-xl text-[11px] font-black"
+                >
+                  🎥 3D sahneye git
+                </button>
+              </div>
+
+              {previewInfo?.facility && (
+                <div className="mt-3 bg-amber-500/15 border border-amber-400/40 rounded-xl px-3 py-2 text-[11px] text-amber-100">
+                  👁️ 3D'de <b>{STADIUM_FACILITY_MAP[previewInfo.facility]?.icon} {STADIUM_FACILITY_MAP[previewInfo.facility]?.name}</b> seviye{' '}
+                  {displayFacilities[previewInfo.facility]}/5 olarak gösteriliyor (sarı halka ile işaretli) — henüz satın alınmadı.
+                  Beğendiysen sarı banner'dan <b>yükselt</b>, istemezsen <b>✕ Kapat</b>.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
                 {STADIUM_FACILITY_DEFS.map(def => {
-                  const facs = (gameState.stadium as any)?.facilities || defaultFacilities();
-                  const lvl = (facs as any)[def.id] ?? 0;
-                  const isMax = lvl >= 5;
-                  const cost = facilityUpgradeCost(def.id, lvl);
+                  const realLvl = realFacilities[def.id] ?? 0;
+                  const isBuffet = def.id === 'buffet';
+                  const openBuffetStudio = () => {
+                    setBuffetOpen(true);
+                    setSub('facilities');
+                    // panel aşağıda; bir sonraki karede oraya kaydır
+                    window.setTimeout(() => document.getElementById('bufe-studyosu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                  };
+                  const lvl = displayFacilities[def.id] ?? 0;   // ön izleme dahil görünüm
+                  const isMax = realLvl >= 5;
+                  const cost = facilityUpgradeCost(def.id, realLvl);
                   const canAfford = gameState.budget >= cost;
+                  const previewing = previewInfo?.id === `preview:facility:${def.id}`;
+                  const patch = facilityPreviewPatch(def.id);
                   const incomePerFan = def.incomePerFan * lvl;
-                  const totalIncomeEst = Math.round(incomePerFan * 15000); // örnek 15k seyirci
+                  // Gelir tahmini gerçek seyirci beklentisiyle (15k sabit değil)
+                  const totalIncomeEst = Math.round(incomePerFan * Math.max(500, preview.attendance));
                   return (
-                    <div key={def.id} className={`rounded-xl p-3 border-2 transition-all ${isMax ? 'bg-emerald-500/10 border-emerald-500/30' : lvl > 0 ? 'bg-slate-700/50 border-slate-600/40' : 'bg-slate-800/40 border-slate-700/30'}`}>
+                    <div
+                      key={def.id}
+                      className={`rounded-xl p-3 border-2 transition-all ${
+                        previewing ? 'bg-amber-500/15 border-amber-400 ring-2 ring-amber-400/30'
+                        : isMax ? 'bg-emerald-500/10 border-emerald-500/30'
+                        : lvl > 0 ? 'bg-slate-700/50 border-slate-600/40'
+                        : 'bg-slate-800/40 border-slate-700/30'
+                      }`}
+                    >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-white font-black text-sm">{def.icon} {def.name}</span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${lvl===0 ? 'bg-slate-700 text-slate-400' : isMax ? 'bg-emerald-500 text-white' : 'bg-amber-500/20 text-amber-200'}`}>Sv. {lvl}/5</span>
+                        <span className="text-white font-black text-sm">
+                          {def.icon} {def.name}
+                          {isBuffet && activeBrand && (
+                            <span className="ml-2 text-[9px] font-black px-1.5 py-0.5 rounded-full border"
+                              style={{ background: `${activeBrand.color}22`, borderColor: activeBrand.color, color: activeBrand.ink ?? '#fff' }}>
+                              {activeBrand.icon} {activeBrand.name}
+                            </span>
+                          )}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                          lvl === 0 ? 'bg-slate-700 text-slate-400' : isMax ? 'bg-emerald-500 text-white' : 'bg-amber-500/20 text-amber-200'
+                        }`}>
+                          Sv. {lvl}/5{previewing && <span className="ml-1 text-amber-100">(ön izleme)</span>}
+                        </span>
                       </div>
                       <div className="text-[10px] text-slate-400 mb-2 min-h-[28px]">{def.desc}</div>
                       <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-2">
-                        <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500" style={{width: `${(lvl/5)*100}%`}} />
+                        <div className="h-full bg-gradient-to-r from-amber-400 to-orange-500" style={{ width: `${(lvl / 5) * 100}%` }} />
                       </div>
                       <div className="grid grid-cols-2 gap-1 text-[10px] mb-2">
-                        <div className="bg-black/30 rounded px-1.5 py-1"><span className="text-slate-400">Gelir/taraftar</span><br/><span className="text-emerald-300 font-bold">${def.incomePerFan} × {lvl} = ${incomePerFan.toFixed(1)}</span></div>
-                        <div className="bg-black/30 rounded px-1.5 py-1"><span className="text-slate-400">Mutluluk</span><br/><span className="text-cyan-300 font-bold">+{def.happiness * lvl}</span>{def.boardBonus ? <span className="text-amber-300"> • Board +{def.boardBonus * lvl}</span> : null}</div>
+                        <div className="bg-black/30 rounded px-1.5 py-1">
+                          <span className="text-slate-400">Gelir/taraftar</span><br />
+                          <span className="text-emerald-300 font-bold">${def.incomePerFan} × {lvl} = ${incomePerFan.toFixed(1)}</span>
+                        </div>
+                        <div className="bg-black/30 rounded px-1.5 py-1">
+                          <span className="text-slate-400">Mutluluk</span><br />
+                          <span className="text-cyan-300 font-bold">+{def.happiness * lvl}</span>
+                          {def.boardBonus ? <span className="text-amber-300"> • Board +{def.boardBonus * lvl}</span> : null}
+                        </div>
                       </div>
-                      <div className="text-[9px] text-slate-500 mb-2">Örnek 15k seyirci: ~${totalIncomeEst.toLocaleString()} gelir</div>
-                      <button disabled={isMax || !canAfford} onClick={()=> onUpgradeStadiumFacility?.(def.id as any)} className={`w-full py-2 rounded-lg text-xs font-black transition-all ${isMax ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : canAfford ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}>
-                        {isMax ? 'Maks Seviye ✓' : `⬆️ Seviye ${lvl+1} — $${cost.toLocaleString()}`}
-                      </button>
-                      {!canAfford && !isMax && <div className="text-[9px] text-red-300 mt-1">Eksik: ${(cost - gameState.budget).toLocaleString()}</div>}
+                      <div className="text-[9px] text-slate-500 mb-2">
+                        Beklenen seyirciyle (~{Math.max(500, preview.attendance).toLocaleString()}) ≈ <b className="text-emerald-300/80">{formatMoney(totalIncomeEst)}</b> maç geliri
+                        {previewing && <span className="text-amber-300"> • 3D'de seviye {lvl} gösteriliyor</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          disabled={isMax || !canAfford}
+                          onClick={() => { buyFacility(def.id); clearPreview(); }}
+                          className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${
+                            isMax ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                            : canAfford ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                            : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {isMax ? 'Maks Seviye ✓' : `⬆️ Seviye ${realLvl + 1} — ${formatMoney(cost)}`}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isMax}
+                          onClick={() => togglePreview(patch)}
+                          title="Satın almadan 3D sahnede gör — yeni yapı sarı halka ile işaretlenir"
+                          className={`shrink-0 px-3 py-2 rounded-lg text-[11px] font-black border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                            previewing
+                              ? 'bg-amber-400 text-black border-amber-300'
+                              : 'bg-slate-900/70 text-slate-100 border-slate-600 hover:bg-slate-700 hover:border-amber-400/60'
+                          }`}
+                        >
+                          {previewing ? '✕ Kapat' : '👁️ Ön İzle'}
+                        </button>
+                      </div>
+                      {!canAfford && !isMax && (
+                        <div className="text-[9px] text-red-300 mt-1">Eksik: {formatMoney(cost - gameState.budget)}</div>
+                      )}
+                      {isBuffet && (
+                        <button
+                          onClick={openBuffetStudio}
+                          className="w-full mt-2 py-2 rounded-lg text-[11px] font-black bg-fuchsia-600/80 hover:bg-fuchsia-500 text-white border border-fuchsia-400/60"
+                        >
+                          🍔 Büfe Stüdyosu — marka, menü, fiyat
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
+              {/* ══════════ 🍔 BÜFE STÜDYOSU — marka sponsorluğu + menü + fiyat ══════════ */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setBuffetOpen(v => !v)}
+                  className="w-full flex items-center justify-between bg-fuchsia-600/20 hover:bg-fuchsia-600/30 border border-fuchsia-500/40 rounded-xl px-4 py-3 transition-all"
+                >
+                  <span className="text-sm font-black text-fuchsia-200 flex items-center gap-2">
+                    🍔 BÜFE STÜDYOSU
+                    <span className="text-[10px] font-bold text-slate-300">
+                      marka sponsorluğu • menü • fiyat politikası
+                      {activeBrand ? ` • şu an ${activeBrand.icon} ${activeBrand.name}` : ''}
+                    </span>
+                  </span>
+                  <span className="text-xs font-black text-fuchsia-200">{buffetOpen ? '▲ Kapat' : '▼ Aç'}</span>
+                </button>
+                {buffetOpen && (
+                  <div className="mt-3">
+                    <BuffetSection
+                      gameState={gameState}
+                      buffet={buffetState}
+                      facilities={realFacilities}
+                      attendance={Math.max(500, preview.attendance)}
+                      onUpgradeBuffet={() => buyFacility('buffet')}
+                      onSignSponsor={(id) => { onSignBuffetSponsor?.(id); setPreviewBrandId(null); }}
+                      onCancelSponsor={onCancelBuffetSponsor ?? (() => {})}
+                      onBuyMenuItem={(id) => onBuyBuffetMenuItem?.(id)}
+                      onSetPriceLevel={(lvl) => onSetBuffetPriceLevel?.(lvl)}
+                      onPreviewBrand={(id) => { setPreviewBrandId(id); focusScene(); }}
+                      previewBrandId={previewBrandId}
+                      onPreviewLevel={() => togglePreview(facilityPreviewPatch('buffet'))}
+                      previewingLevel={previewInfo?.id === 'preview:facility:buffet'}
+                      onFocus3D={focusScene}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 bg-black/30 rounded-xl p-3 border border-slate-700/40">
                 <div className="text-[11px] font-bold text-white mb-1">💡 Tesis Stratejisi</div>
                 <div className="text-[10px] text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-1">
@@ -980,7 +1257,6 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             </div>
           </div>
         )}
-
         {/* ── BİLET FİYATI ── */}
         {sub === 'tickets' && (
           <div className="space-y-4">
