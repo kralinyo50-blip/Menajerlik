@@ -58,6 +58,8 @@ Online lig tek kişilik kariyerden ayrıdır; kariyer haftası ve bütçe ortakl
 
 Aynı evde değilseniz: bir kişi **`paylas.bat`** dosyasına çift tıklasın (Mac/Linux: `./paylas.sh`, veya `npm run share`). Ekrana çıkan internet linkini (örn. `https://....trycloudflare.com`) arkadaşlarına göndersin; **herkes o linki açıp** Online Oyna desin. Hesap açmak, port yönlendirmek, IP bulmak gerekmez. Paylaşım penceresi açık kalmalı; link her başlatışta değişir.
 
+Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalıştırır; Windows'ta çıkabilen `[HATA] spawn EINVAL` sorunu böylece oluşmaz. Yine de görürsen bir kez `npm install` çalıştırıp tekrar dene (ayrıntı: [docs/ONLINE_LIG.md](docs/ONLINE_LIG.md)).
+
 ## Özellikler
 
 ### Maç
