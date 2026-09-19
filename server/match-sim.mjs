@@ -11,7 +11,6 @@
 // - `stepSim` sabit alt adımlarla ilerler; aynı tohum + aynı adım dizisi = aynı maç.
 //   Sunucu (online) ve tarayıcı (kariyer) aynı motoru kullanır.
 // - Motor DOM bilmez, ağ bilmez, saat bilmez: saf ve deterministik fonksiyonlar.
-import { createHash } from 'node:crypto';
 
 /** Sabit simülasyon adımı (ms). Dışarıdan gelen süre bunun katlarına bölünür. */
 export const SIM_DT = 100;
@@ -29,7 +28,7 @@ const SPEED = {
   pass: 21, long: 24, shot: 30, cross: 18, throwIn: 12,
 };
 const GRAVITY = 22;         // z ekseninde yerçekimi
-const GROUND_FRICTION = 9;  // yerdeki yavaşlama (birim/s²)
+const GROUND_FRICTION = 12;  // yerdeki yavaşlama (birim/s²)
 const AIR_DRAG = 0.25;      // havadaki direnç (1/s)
 
 export const FORMATIONS = {
@@ -56,17 +55,25 @@ const ROLE_PACE = { KL: 0.82, STP: 0.93, SB: 1.0, OS: 0.98, FW: 1.05 };
 const ROLE_PUSH = { KL: 0, STP: 5, SB: 6, OS: 9, FW: 13 };
 
 /** Deterministik RNG (xorshift32): aynı tohum, aynı maç. */
-function makeRng(seed) {
-  let state = (seed | 0) || 0x2f6e2b1;
-  return () => {
-    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
-    return (state >>> 0) / 4294967296;
-  };
+/** xorshift32 adımı: durum sayı olarak tutulur (kaydedilip geri yüklenebilir). */
+function nextRandom(sim) {
+  let x = sim.rngState | 0;
+  x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+  sim.rngState = x >>> 0;
+  return sim.rngState / 4294967296;
 }
-/** Aynı girdilerden aynı tohumu üretir (oda kodu + hafta + maç kimliği gibi). */
+/**
+ * Aynı girdilerden aynı tohumu üretir (oda kodu + hafta + maç kimliği gibi).
+ * Saf JS (FNV-1a) olduğu için hem sunucuda hem tarayıcıda aynı sonucu verir.
+ */
 export function seedFrom(...parts) {
-  const digest = createHash('sha256').update(parts.join(':')).digest();
-  return digest.readInt32BE(0) || 1;
+  const text = parts.join(':');
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) || 1;
 }
 
 function blankStats() {
@@ -106,7 +113,7 @@ function buildTeam(spec, key) {
  */
 export function createMatchSim({ home, away, seed = 1, homeAdvantage = 0.05 } = {}) {
   const sim = {
-    rng: makeRng(seed), seed, homeAdvantage,
+    rngState: (seed >>> 0) || 0x9e3779b9, seed, homeAdvantage,
     home: buildTeam(home, 'home'), away: buildTeam(away, 'away'),
     ball: {
       x: 50, y: 50, z: 0, vx: 0, vy: 0, vz: 0, spin: 0,
@@ -134,20 +141,28 @@ function emit(sim, type, data = {}) {
     text: data.text ?? '', x: round2(data.x ?? sim.ball.x), y: round2(data.y ?? sim.ball.y),
   };
   sim.events.push(event);
-  if (sim.events.length > 200) sim.events.shift();
   return event;
 }
 
-/** Birikmiş olayları döndürür ve imleci ilerletir (her karede bir kez çağrılır). */
+/**
+ * Birikmiş olayları döndürür ve imleci ilerletir (her karede bir kez çağrılır).
+ * Uzun maçlarda olay listesi budanırken imleç de kaydırılır — aksi hâlde 200.
+ * olaydan sonraki tüm olaylar sessizce kayboluyordu.
+ */
 export function drainEvents(sim) {
   const out = sim.events.slice(sim.eventCursor);
   sim.eventCursor = sim.events.length;
+  if (sim.events.length > 400) {
+    const drop = sim.events.length - 200;
+    sim.events.splice(0, drop);
+    sim.eventCursor = Math.max(0, sim.eventCursor - drop);
+  }
   return out;
 }
 
-const rnd = (sim, scale = 1) => sim.rng() * scale;
-const chance = (sim, p) => sim.rng() < p;
-const rand = (sim, min, max) => min + sim.rng() * (max - min);
+const rnd = (sim, scale = 1) => nextRandom(sim) * scale;
+const chance = (sim, p) => nextRandom(sim) < p;
+const rand = (sim, min, max) => min + nextRandom(sim) * (max - min);
 
 // ---------------------------------------------------------------------------
 // Oyuncu hareketi ve takım şekli
@@ -202,16 +217,38 @@ function inOwnBox(sim, x, y, key) {
 }
 const inOpponentBox = (x, y, key) => Math.abs(x - targetGoalX(key)) < BOX_DEPTH && Math.abs(y - 50) < BOX_HALF_WIDTH;
 
+/**
+ * Topun "kimin" olduğu: sürükleyen varsa o, yoksa pasın hedefi, yoksa topa en
+ * yakın oyuncunun takımı. Takım dizilişi buna göre kurulur — sahipsiz topta iki
+ * takımın da kendi kalesine yığılmasını engeller.
+ */
+function ballSideKey(sim) {
+  if (sim.carrier) return sim.carrier.side;
+  const aimed = sim.ball.intendedFor;
+  if (aimed) {
+    if (sim.home.players.some(p => p.id === aimed)) return 'home';
+    if (sim.away.players.some(p => p.id === aimed)) return 'away';
+  }
+  let best = null, bestD = Infinity;
+  for (const key of ['home', 'away']) {
+    for (const p of teamOf(sim, key).players) {
+      if (p.sentOff || p.role === 'KL') continue;
+      const d = dist(p.x, p.y, sim.ball.x, sim.ball.y);
+      if (d < bestD) { bestD = d; best = key; }
+    }
+  }
+  return best;
+}
+
 function updatePositions(sim, dt) {
   const ball = sim.ball;
   for (const key of ['home', 'away']) {
     const team = teamOf(sim, key);
     const dir = attackDir(key);
-    const possessing = sim.carrier?.side === key || (sim.restart && sim.restart.side === key && sim.restart.type !== 'goal-kick');
+    const onBall = ballSideKey(sim);
+    const possessing = onBall === key || (sim.restart && sim.restart.side === key && sim.restart.type !== 'goal-kick');
     const restType = sim.restart?.type;
     const ballProgress = key === 'home' ? ball.x : 100 - ball.x;   // 0 = kendi kalesi, 100 = rakip kale
-    // Takım bloğu topun olduğu yere kayar; hatlar arası mesafe korunur.
-    const blockShift = (ballProgress - 50) * (possessing ? 0.4 : 0.33);
     const lineHeight = possessing ? 6 : 1;
     for (const player of team.players) {
       if (player.sentOff || player === sim.carrier) continue;
@@ -236,17 +273,29 @@ function updatePositions(sim, dt) {
         tx = targetGoalX(key) - dir * rand(sim, 4, 12); ty = 38 + player.number * 2.4;
       } else if (possessing) {
         if (player.runner && player.runTo) { steer(sim, player, player.runTo.x, player.runTo.y, true, dt); if (player.actionT <= 0) player.action = 'sprint'; continue; }
-        const push = ROLE_PUSH[player.role] ?? 6;
-        tx = player.anchor.x + dir * (push + lineHeight) * 0.8 + (ballProgress - 50) * (player.role === 'FW' ? 0.65 : player.role === 'OS' ? 0.55 : 0.4);
-        if (player.role === 'FW' && ballProgress > 68) tx += dir * 6;   // ceza sahasına koşu
+        // Hücum şekli doğrudan TOPA göre kurulur: savunma topun 22-26 m gerisinde,
+        // orta saha topun hizasında, forvetler önde. Böylece ileri pas seçeneği hep
+        // doğar ve top kaleye yürür (eski diziliş topun 20 m gerisinde kalıyordu).
+        const ballX = ball.x;
+        const offset = player.role === 'FW' ? 12 : player.role === 'OS' ? 1 : player.role === 'SB' ? -20 : -25;
+        tx = ballX + dir * (offset + lineHeight * 0.4);
+        if (player.role === 'FW' || player.role === 'OS') {
+          // Ofsayta düşmeden savunma hattını geri iter.
+          const line = defensiveLineX(sim, key);
+          const limit = line + dir * (player.role === 'FW' ? 2.5 : -1);
+          tx = dir > 0 ? Math.min(tx, limit) : Math.max(tx, limit);
+          if (player.role === 'FW') tx = dir > 0 ? Math.max(tx, ballX + dir * 7) : Math.min(tx, ballX + dir * 7);
+        }
+        // Kanatlar sahaya yayılır; top bir kanattaysa karşı kanat daha da açar.
+        const spread = player.role === 'SB' ? 10 : player.role === 'OS' ? 8 : 0;
         ty = player.anchor.y + (ball.y - 50) * (player.role === 'OS' ? 0.35 : 0.28);
-        // Hücumda alan açılır: top sağdaysa sol kanat genişler.
-        if (player.role === 'SB' || player.role === 'OS') ty += (ball.y < 50 ? 1 : -1) * 6;
+        ty += (ty >= 50 ? 1 : -1) * spread;
         if ((player.role === 'FW' || player.role === 'OS') && ballProgress > 62) ty *= 0.92;
+        if (player.role === 'FW') ty += (player.number % 2 === 0 ? 1 : -1) * 5;
       } else {
         // Savunma: top ile kendi kalesi arasında kal, hat halinde kay.
-        const lineX = ownGoalX(key) + dir * clamp(11 + ballProgress * 0.62, 10, 70);
-        tx = player.role === 'FW' ? lineX + dir * 12 : player.anchor.x * 0.45 + lineX * 0.55;
+        const lineX = clamp(ball.x - dir * clamp(6 + ballProgress * 0.16, 6, 20), 6, 94);
+        tx = player.role === 'FW' ? lineX + dir * 12 : lineX + dir * (player.role === 'OS' ? 7 : 2.5);
         ty = player.anchor.y + (ball.y - player.anchor.y) * 0.55;
         if (player.role === 'FW' || player.role === 'OS') ty = clamp(ty, 12, 88);
         // Adam adama markaj: eşleştiği koşucunun kale tarafında kalır.
@@ -403,6 +452,16 @@ function chaseLooseBall(sim, dt) {
         steer(sim, receiver, meet.x, meet.y, true, dt);
         if (receiver.actionT <= 0) receiver.action = 'sprint';
       }
+      // Topa en yakın takım arkadaşı da kısa mesafede yardıma koşar (ıskalanan pas sahipsiz kalmasın).
+      const helper = team.players
+        .filter(p => !p.sentOff && p.role !== 'KL' && p.id !== ball.intendedFor)
+        .map(p => ({ p, d: dist(p.x, p.y, ball.x, ball.y) }))
+        .sort((a, b) => a.d - b.d)[0];
+      if (helper && helper.d < 12) {
+        const meet = interceptTarget(sim, helper.p);
+        steer(sim, helper.p, meet.x, meet.y, true, dt);
+        if (helper.p.actionT <= 0) helper.p.action = 'sprint';
+      }
       const gk = team.players[0];
       const stop = predictBallStop(sim);
       if (gk && !gk.sentOff && inOwnBox(sim, stop.x, stop.y, key) && dist(gk.x, gk.y, stop.x, stop.y) < 24) {
@@ -418,9 +477,10 @@ function chaseLooseBall(sim, dt) {
       .map(p => ({ p, meet: interceptTarget(sim, p) }))
       .map(c => ({ ...c, t: c.meet.t }))
       .sort((a, b) => a.t - b.t);
-    const chasers = ranked.slice(0, 3);
-    for (const { p, meet } of chasers) {
-      if (meet.t > 3.2) continue;                       // 3+ saniyede yetişemeyecekse koşmaz
+    const chasers = ranked.slice(0, 4);
+    for (const [index, { p, meet }] of chasers.entries()) {
+      // En yakın iki oyuncu her koşulda topa gider; uzaktakiler ancak yetişebilecekse.
+      if (index >= 2 && meet.t > 3.6) continue;
       steer(sim, p, meet.x, meet.y, true, dt);
       if (p.actionT <= 0) p.action = 'sprint';
     }
@@ -504,18 +564,27 @@ function passOptions(sim, carrier) {
   return options;
 }
 
-/** Futbol mantığıyla pas seçimi: açık hat + ileri oyun; kapalı hattan pas atılmaz. */
-function pickPass(sim, carrier, options) {
-  const open = options.filter(o => o.lane > 0.45 && o.matePressure < 1.5);
-  const pool = open.length ? open : options.filter(o => o.lane > 0.25);
+/**
+ * Futbol mantığıyla pas seçimi.
+ * `intent`: 'keep' topu koru (kısa, güvenli), 'advance' topu ileri taşı,
+ * 'box' ceza sahasına oyna. Amaç niyete göre ağırlıklandırılır — böylece takım
+ * topu yana çevirmek yerine kaleye doğru ilerletir.
+ */
+function pickPass(sim, carrier, options, intent = 'keep') {
+  const laneGate = intent === 'box' ? 0.28 : 0.45;
+  const open = options.filter(o => o.lane > laneGate && o.matePressure < (intent === 'box' ? 2.1 : 1.6));
+  const pool = open.length ? open : options.filter(o => o.lane > 0.24);
   if (!pool.length) return null;
-  const scored = pool.map(o => ({
-    o,
-    value: o.forward * 1.05 + o.lane * 5 + o.progress * 0.06 - o.matePressure * 3.2 - o.d * 0.05
-      + (o.mate.role === 'FW' ? 1.6 : 0) + (o.mate.role === 'KL' ? -20 : 0) + (o.lofted ? 0.6 : 0),
-  })).sort((a, b) => b.value - a.value);
+  const scored = pool.map(o => {
+    let value = o.lane * 4.2 - o.matePressure * 2.2 - o.d * 0.03;
+    if (o.mate.role === 'KL') value -= 20;
+    if (intent === 'keep') value += o.forward * 0.25 + o.progress * 0.04;
+    else if (intent === 'advance') value += o.forward * 0.95 + o.progress * 0.16 + (o.lofted ? 0.4 : 0);
+    else value += o.progress * 0.3 + (o.mate.role === 'FW' ? 1.4 : 0) + (o.mate.role === 'OS' ? 0.6 : 0);
+    return { o, value };
+  }).sort((a, b) => b.value - a.value);
   const { pressure } = pressureOn(sim, carrier);
-  if (pressure > 1.5 && scored.length > 1 && chance(sim, 0.5)) return scored[1].o;
+  if (pressure > 1.6 && scored.length > 1 && chance(sim, 0.4)) return scored[1].o;
   return scored[0].o;
 }
 
@@ -585,13 +654,16 @@ function assignRunners(sim) {
   const defence = teamOf(sim, other(key));
   const line = defensiveLineX(sim, key);
 
-  const attacking = sim.attackMode?.side === key;
+  const carrierProgress = key === 'home' ? carrier.x : 100 - carrier.x;
+  const wideBall = carrier.y < 26 || carrier.y > 74;
+  const attacking = sim.attackMode?.side === key || (!!sim.attackMode && carrierProgress > 62) || carrierProgress > 58 || (wideBall && carrierProgress > 48);
+  const staging = !attacking && carrierProgress > 42;      // top orta sahaya geçti: koşu hazırlığı
   const runners = team.players
     .filter(p => p !== carrier && !p.sentOff && p.role !== 'KL' && (p.role === 'FW' || p.role === 'OS' || p.role === 'SB'))
     .map(p => ({ p, d: dist(p.x, p.y, carrier.x, carrier.y) }))
-    .filter(c => c.d < 42)
+    .filter(c => c.d < 46)
     .sort((a, b) => a.d - b.d)
-    .slice(0, attacking ? 3 : 2);
+    .slice(0, attacking || staging ? 3 : 2);
 
   const spots = attacking ? boxSpots(key) : null;
   runners.forEach(({ p }, index) => {
@@ -599,6 +671,11 @@ function assignRunners(sim) {
     if (attacking && spots) {
       // Kale önüne koşu: ön direk, arka direk, yay.
       p.runTo = spots[index % spots.length];
+    } else if (staging) {
+      // Hazırlık koşusu: savunma hattının hizasında bekler, top yaklaşınca ceza sahasına dalar.
+      const lane = [43, 57, 50][index % 3];
+      p.runTo = { x: clamp(Math.min(line + dir * 1.5, 76), 12, 88), y: clamp(lane + (p.anchor.y - 50) * 0.2, 20, 80) };
+      if (carrierProgress > 70) p.runTo = boxSpots(key)[index % 3];
     } else {
       const laneY = clamp(p.y + (p.y < 50 ? -4 : 4) + (p.anchor.y - 50) * 0.25, 9, 91);
       const beyond = (p.x - line) * dir;
@@ -623,11 +700,11 @@ function throughBallOption(sim, carrier) {
     if (!mate.runner || !mate.runTo || mate.sentOff || mate.role === 'KL') continue;
     if ((mate.x - line) * dir > 3.5) continue;      // arkada kaldıysa ara pası ofsayt olur
     const d = dist(carrier.x, carrier.y, mate.runTo.x, mate.runTo.y);
-    if (d < 10 || d > 52) continue;
+    if (d < 9 || d > 34) continue;
     const space = teamOf(sim, other(carrier.side)).players
       .filter(o => !o.sentOff)
       .reduce((best, o) => Math.min(best, dist(o.x, o.y, mate.runTo.x, mate.runTo.y)), 99);
-    if (space < 6) continue;
+    if (space < 9) continue;
     return { mate, target: mate.runTo, d, space };
   }
   return null;
@@ -646,91 +723,123 @@ function playThroughBall(sim, carrier, option) {
 }
 
 function chooseAction(sim, carrier) {
+  // DEBUG-DECISION
+  const D = (sim.dbg = sim.dbg ?? { dec: 0, shotRange: 0, shot: 0, pass: 0, back: 0, noOpt: 0, dump: 0, finalThird: 0, box: 0, optAhead: 0, backRestart: 0, fwdSum: 0, progSum: 0, matesAhead: 0, matessum: 0 });
+  D.dec++;
+  D.finalThirdTop = (D.finalThirdTop ?? 0); D.boxTop = (D.boxTop ?? 0); D.crossTry = D.crossTry ?? 0; D.wide = D.wide ?? 0; D.boxRunnerSeen = D.boxRunnerSeen ?? 0;
+  { const _d = attackDir(carrier.side); const _prog = _d > 0 ? carrier.x : 100 - carrier.x; if (_prog > 66) D.finalThirdTop++; if (Math.abs(carrier.x - targetGoalX(carrier.side)) < 16.5 && Math.abs(carrier.y - 50) < 20) D.boxTop++; }
   const team = teamOf(sim, carrier.side);
   const dir = attackDir(carrier.side);
   const { pressure, closest } = pressureOn(sim, carrier);
   const goalDist = dist(carrier.x, carrier.y, targetGoalX(carrier.side), 50);
   const progress = dir > 0 ? carrier.x : 100 - carrier.x;
-  const wide = carrier.y < 22 || carrier.y > 78;
+  const wide = carrier.y < 26 || carrier.y > 74;
+  const inBox = dir > 0 ? carrier.x > 82 : carrier.x < 18;
   const finalThird = progress > 66;
 
-  // Kariyer yönlendirmesi: MatchEngine skoru sahiplenir, sim yalnızca oynatır.
-  if (sim.script && sim.script.side === carrier.side && goalDist < 36) {
-    const forced = sim.script.outcome;
-    sim.script = null;
-    takeShot(sim, carrier, forced);
-    return;
+  // Kariyer yönlendirmesi: maç olay motoru sonucu sahiplenir, saha onu oynar.
+  // Sonuç bekleyen taraf top kaleye yakınken şut çeker; uzaktaysa kaleye sürer.
+  if (sim.script && sim.script.side === carrier.side) {
+    if (goalDist < 38) {
+      const forced = sim.script.outcome;
+      sim.script = null;
+      takeShot(sim, carrier, forced);
+      return;
+    }
+    if (progress > 42) { driveAtGoal(sim, carrier); return; }
   }
 
-  // 1) Şut: kale önünde tereddüt yok, uzaklaştıkça ve baskı arttıkça olasılık düşer.
-  if (goalDist < 31 && Math.abs(carrier.y - 50) < 27) {
-    const inBox = dir > 0 ? carrier.x > 82 : carrier.x < 18;
-    // Mesafeye göre şut isteği: yakın mesafede tereddüt yok, uzakta nadir.
-    const banded = goalDist < 12 ? 0.95 : goalDist < 18 ? 0.88 : goalDist < 24 ? 0.72 : 0.5;
-    const shootChance = clamp((inBox ? Math.max(banded, 0.92) : banded) * team.intentions.shoot - pressure * 0.1, 0.15, 0.97);
-    if (chance(sim, shootChance)) { takeShot(sim, carrier); return; }
+  // ── HÜCUM PLANI ──
+  // Top kendi yarısından çıkarken (kuruluş) kısa pas, orta sahada ileri pas/ara pas,
+  // hücum üçte birinde şut-orta-ara pası. Yana pas ancak ileri seçenek yoksa atılır;
+  // böylece top kalenin dibinde amaçsızca dönmez, kaleye gider.
+  const plan = sim.plan && sim.plan.side === carrier.side
+    ? sim.plan
+    : { side: carrier.side, steps: 0, attackSince: 0, lastProgress: progress };
+  sim.plan = plan;
+  if (plan.attackSince && sim.time - plan.attackSince > 5.5 && finalThird && goalDist < 34) {
+    // Hücum tıkandı: baskı yoksa uzaktan denenir (devre sonu / kalabalık savunma anları).
+    plan.attackSince = sim.time;
+    if (pressure < 1.35) { takeShot(sim, carrier); return; }
+  }
+  if (progress > 58 && !plan.attackSince) plan.attackSince = sim.time;
+
+  // 1) ŞUT: kaleye yakın her oyuncu şut çeker; mesafe arttıkça istek düşer.
+  if (goalDist < 30 && Math.abs(carrier.y - 50) < 27) {
+    D.shotRange++;   // DEBUG-DECISION
+    const banded = goalDist < 13 ? 0.98 : goalDist < 19 ? 0.95 : goalDist < 25 ? 0.88 : 0.74;
+    const shootChance = clamp((inBox ? Math.max(banded, 0.93) : banded) * team.intentions.shoot - pressure * 0.1, 0.2, 0.97);
+    if (chance(sim, shootChance)) { D.shot++; takeShot(sim, carrier); return; }
   }
 
-  // Son üçte birde alan varsa kaleye sürülür: ceza sahasına girip şut pozisyonu doğar.
-  if (finalThird && goalDist < 36 && pressure < 1.3 && closest > 3.4) { driveAtGoal(sim, carrier); return; }
+  // 2) Kaleye sürme: son üçte birde alan varsa kaleye gidilir.
+  if (finalThird && goalDist < 40 && pressure < 1.5 && closest > 3.2) { driveAtGoal(sim, carrier); return; }
+  if (progress > 48 && pressure < 1.2 && closest > 4.5) { driveAtGoal(sim, carrier); return; }
 
   // Top sürme kararı bir süre korunur: oyuncu topu ayağında taşır, her 0,1 sn'de karar değişmez.
-  if (sim.time < (carrier.dribbleUntil ?? 0) && pressure < 1.7) { dribble(sim, carrier); return; }
+  if (sim.time < (carrier.dribbleUntil ?? 0) && pressure < 1.7) { D.dump++; dribble(sim, carrier); return; }
 
-  // 2) Kanat ortası: son üçte birde ceza sahasına koşan arkadaş varsa orta yapılır.
+  // 3) KANAT ORTASI: hücum üçte birinde kanattan ceza sahasına orta.
   const boxRunner = team.players.some(m => m.runner && (dir > 0 ? m.x > 76 : m.x < 24) && Math.abs(m.y - 50) < 24);
-  if (!sim.restart && wide && (finalThird || (sim.attackMode?.side === carrier.side && progress > 58))) {
-    if (boxRunner || progress > 74) { if (chance(sim, 0.82)) { cross(sim, carrier); return; } }
-    else if (chance(sim, 0.3)) { cross(sim, carrier); return; }
+  if (boxRunner) D.boxRunnerSeen++;   // DEBUG-DECISION
+  if (wide) D.wide++;                 // DEBUG-DECISION
+  if (finalThird && (wide || boxRunner)) {
+    D.crossTry++;                       // DEBUG-DECISION
+    const chance2 = boxRunner ? (wide ? 0.85 : 0.45) : progress > 82 ? 0.5 : 0.22;
+    if (chance(sim, chance2)) { cross(sim, carrier); return; }
   }
 
-  // 2b) Cut-back: ceza sahasına giren kanat oyuncusu topu yaya çıkarır.
+  // 4) ARA PASI: savunma hattının arkasına kaçan arkadaş varsa top önüne atılır.
+  const through = throughBallOption(sim, carrier);
+  if (through) {
+    const wantThrough = finalThird ? 0.3 : progress > 45 ? 0.14 : 0.05;
+    if (chance(sim, wantThrough)) { playThroughBall(sim, carrier, through); return; }
+  }
+
+  // 5) Cut-back: ceza sahasına giren kanat oyuncusu topu yaya çıkarır.
   if (finalThird && wide && chance(sim, 0.4)) {
     const edge = team.players
       .filter(m => m !== carrier && !m.sentOff && m.role !== 'KL' && Math.abs((dir > 0 ? m.x : 100 - m.x) - 72) < 12 && Math.abs(m.y - 50) < 22)
       .map(m => ({ m, d: dist(m.x, m.y, carrier.x, carrier.y) }))
-      .filter(c => c.d > 8 && c.d < 34)
+      .filter(c => c.d > 6 && c.d < 30)
       .sort((a, b) => a.d - b.d)[0];
     if (edge) {
-      kickBall(sim, carrier, edge.m.x + rand(sim, -2, 2), edge.m.y + rand(sim, -2, 2), clamp(8 + edge.d * 0.8, 11, SPEED.pass), 1.5);
+      kickBall(sim, carrier, edge.m.x, edge.m.y, clamp(edge.d * 1.1 + 6, 10, SPEED.pass), 1.2);
       sim.ball.intendedFor = edge.m.id;
       sim.pendingPass = { from: carrier.id, fromX: carrier.x, fromY: carrier.y, to: edge.m.id, side: carrier.side, at: sim.time };
-      team.stats.passes++;
-      emit(sim, 'cutback', { side: carrier.side, playerId: carrier.id, text: `${carrier.name} topu yaya çıkardı!`, x: carrier.x, y: carrier.y });
+      team.stats.passes++; team.stats.crosses += 0;
+      emit(sim, 'cutback', { side: carrier.side, playerId: carrier.id, text: `${carrier.name} topu yaya çıkardı.`, x: carrier.x, y: carrier.y });
+      carrier.decisionIn = 0.5;
       return;
     }
   }
 
-  // 3) Ara pası: savunma hattının arkasına kaçan koşucuyu topla buluştur.
-  const through = sim.time > (sim.throughCooldown ?? 0) ? throughBallOption(sim, carrier) : null;
-  if (through && chance(sim, clamp(0.34 + (carrier.ovr - 66) / 70 - pressure * 0.12, 0.1, 0.6))) {
-    sim.throughCooldown = sim.time + rand(sim, 11, 20);
-    playThroughBall(sim, carrier, through);
-    return;
-  }
-
-  // 4) Kanal topu: orta alanda iyi seçenek yoksa forvetin koşusuna uzun top atılır.
-  //    (Gerçek futbolda da hücumlar bu şekilde hızlı derinleşir.)
-  const channelBall = sim.time > (sim.longBallCooldown ?? 0) && progress < 70 && pressure > 0.9;
-  if (channelBall && chance(sim, progress < 42 ? 0.6 : 0.35)) {
-    sim.longBallCooldown = sim.time + rand(sim, 7, 14);
-    longBall(sim, carrier);
-    return;
-  }
-
-  // 5) Açık hat varsa pas.
+  // 6) PAS: plana göre ileri oyuncu aranır; ileri seçenek yoksa yana/geriye dönülür.
   const options = passOptions(sim, carrier);
-  const pick = pickPass(sim, carrier, options);
+  // Niyet: kendi yarısında ve baskı altında topu koru, orta sahada ileri taşı,
+  // hücum üçte birinde ceza sahasını hedefle.
+  const intent = finalThird ? 'box' : (progress < 38 && pressure > 1.2) || plan.steps >= 3 ? 'keep' : 'advance';
+  // İleri seçenek varsa geriye pas yasak: top kaleye doğru oynanır.
+  const wanted = intent === 'box' ? -4 : intent === 'advance' ? -2 : -10;
+  const filtered = options.filter(o => o.forward >= wanted);
+  if (filtered.length) D.optAhead++;   // DEBUG-DECISION
+  const pick = pickPass(sim, carrier, filtered.length ? filtered : options, intent);
   if (pick) {
-    const backward = pick.forward < -2;
-    if (!backward || closest < 3.2 || chance(sim, 0.45)) { playPass(sim, carrier, pick); return; }
+    D.pass++; if (pick.forward <= 0) D.back++;   // DEBUG-DECISION
+    if (inOpponentBox(pick.mate.x, pick.mate.y, carrier.side)) D.passToBox = (D.passToBox ?? 0) + 1;   // DEBUG-DECISION
+    D.fwdSum += pick.forward; D.progSum += pick.progress - progress; D.matessum += options.filter(o => o.forward > 4).length;
+    if (pick.forward <= 0 && sim.restart) D.backRestart++;   // DEBUG-DECISION
+    plan.steps = pick.forward > 2 ? 1 : plan.steps + 1;
+    playPass(sim, carrier, pick);
+    return;
   }
+  D.noOpt++;   // DEBUG-DECISION
 
-  // 6) Pas yoksa top sürülür.
+  // 7) Kendi yarısında sıkıştıysa uzun top (forvet topa koşar), yoksa top sürülür.
+  if (progress < 42 && pressure > 1.5 && chance(sim, 0.7)) { longBall(sim, carrier); return; }
   dribble(sim, carrier);
 }
 
-/** Kaleye yönelen sürüş: savunmacıdan kaçarak ceza sahasına girer. */
 function driveAtGoal(sim, carrier) {
   const dir = attackDir(carrier.side);
   const gx = targetGoalX(carrier.side);
@@ -794,7 +903,7 @@ function playPass(sim, carrier, option) {
   const error = (1 - clamp((carrier.ovr - 58) / 45, 0, 1)) * 2.2 + pressure * 0.9;
   tx += rand(sim, -error, error);
   ty += rand(sim, -error, error);
-  const speed = clamp(6 + d * 0.82, 10.5, SPEED.pass);
+  const speed = clamp(5 + d * 0.74, 10, SPEED.pass);
   kickBall(sim, carrier, tx, ty, speed, option.lofted ? 7 : 0);
   sim.ball.intendedFor = mate.id;
   sim.pendingPass = { from: carrier.id, fromX: carrier.x, fromY: carrier.y, to: mate.id, side: carrier.side, at: sim.time, aerial: !!option.lofted };
@@ -871,8 +980,9 @@ function takeShot(sim, shooter, forcedOutcome = null) {
   const aimOffset = side * rand(sim, 0.6, GOAL_HALF_WIDTH - 0.5);
   const aimY = 50 + aimOffset;
   const aimZ = rand(sim, 0.4, GOAL_HEIGHT - 0.35);
-  const spreadY = (1 - placement) * 5.4;
-  const spreadZ = (1 - placement) * 2.0;
+  const range = 1 + d / 24;
+  const spreadY = (1 - placement) * 4.6 * range;
+  const spreadZ = (1 - placement) * 1.6 * range;
   const targetY = aimY + rand(sim, -spreadY, spreadY);
   const targetZ = aimZ + rand(sim, 0, spreadZ);
   const power = SPEED.shot * clamp(0.82 + (shooter.ovr - 65) / 160, 0.75, 1.15);
@@ -931,7 +1041,7 @@ function resolveShot(sim, shot) {
       const closeRange = 1 - clamp(shot.d / 26, 0, 1);
       const power = clamp(shot.power / 34, 0.5, 1.2);
       const saveChance = clamp(
-        0.7 - placement * 0.32 - closeRange * 0.34 - (power - 0.9) * 0.4 + (keeperSkill - 0.72) * 0.8,
+        0.86 - placement * 0.32 - closeRange * 0.34 - (power - 0.9) * 0.4 + (keeperSkill - 0.72) * 0.8,
         0.1, 0.85,
       );
       if (chance(sim, saveChance)) outcome = 'save';
@@ -954,7 +1064,7 @@ function resolveShot(sim, shot) {
     teamOf(sim, defenderKey).stats.saves++;
     emit(sim, 'save', { side: shot.side, playerId: gk?.id ?? null, text: `🧤 ${gk ? gk.name : 'Kaleci'} şutu kurtardı!`, x: targetGoalX(shot.side) - attackDir(shot.side) * 1.5, y: clamp(sim.ball.y, 42, 58) });
     // Kurtarış topu genelde oyun alanında kalır; bazen kornere gider.
-    if (chance(sim, 0.57)) {
+    if (chance(sim, 0.7)) {
       // Kale direği dibinden çelen kaleci topu kornere gönderir.
       sim.ball.x = shot.side === 'home' ? 100.6 : -0.6;
       sim.ball.y = clamp(sim.ball.y, 6, 94);
@@ -1111,7 +1221,7 @@ function executeRestart(sim) {
     team.stats.shots++;
     if (scored) {
       team.stats.onTarget++; team.stats.goals++; sim.score[r.side]++;
-      emit(sim, 'penalty', { side: r.side, playerId: taker?.id ?? null, text: `⚽ PENALTI GOLÜ! ${taker ? taker.name : team.name}`, x: targetGoalX(r.side), y: 50 });
+      emit(sim, 'goal', { side: r.side, playerId: taker?.id ?? null, text: `⚽ PENALTI GOLÜ! ${taker ? taker.name : team.name}`, x: targetGoalX(r.side), y: 50, penalty: true });
       sim.celebrationUntil = sim.time + 3;
       setupKickoff(sim, other(r.side), 2.4);
       return;
@@ -1165,9 +1275,15 @@ function contestBall(sim, dt) {
         if (p.role === 'KL') reach = isShot ? 2.9 : inOwnBox(sim, ball.x, ball.y, p.side) ? 4.6 : 3.2;
         else if (isShot) reach = 1.35;
         else if (receiver) reach = base + 1.5;
-        else if (fast) reach = clamp(0.85 - speed / 55, 0.35, 0.85);
+        else if (fast) reach = clamp(0.55 - speed / 26, 0.22, 0.55);
         else reach = base;
-        if (d < reach) candidates.push({ p, d, receiver: !!receiver });
+        if (d < reach) {
+          // Hızlı topu hattın dibindeki herkes kesemez: savunmacı ya topun
+          // yolunu okur ve keser ya da arkasından bakar. Bu yüzden temas anında
+          // tek bir "okuma" zarı atılır — pas trafiği gerçekçi kalır.
+          if (fast && !receiver && p.role !== 'KL' && !chance(sim, 0.3 + (p.ovr - 70) * 0.006)) continue;
+          candidates.push({ p, d, receiver: !!receiver });
+        }
       }
     }
     candidates.sort((a, b) => (a.receiver === b.receiver ? a.d - b.d : a.receiver ? -1 : 1));
@@ -1189,7 +1305,7 @@ function contestBall(sim, dt) {
       if (sim.pendingPass && sim.pendingPass.side === p.side && sim.pendingPass.to === p.id && isOffside(sim, p, sim.pendingPass)) {
         teamOf(sim, p.side).stats.offsides++;
         emit(sim, 'offside', { side: p.side, playerId: p.id, text: `🚫 ${p.name} ofsayt!`, x: p.x, y: p.y });
-        setupRestart(sim, 'free-kick', other(p.side), p.x, p.y, 1.6, pickTaker(sim, teamOf(sim, other(p.side)), p.x, p.y)?.id ?? null);
+        setupRestart(sim, 'free-kick', other(p.side), p.x, p.y, 1.1, pickTaker(sim, teamOf(sim, other(p.side)), p.x, p.y)?.id ?? null);
         return;
       }
       // Hücum oyuncusunun kafası: ceza sahasındaki orta kafa şutuna dönüşür.
@@ -1205,7 +1321,7 @@ function contestBall(sim, dt) {
         teamOf(sim, p.side).stats.clearances++;
         emit(sim, 'heading', { side: p.side, playerId: p.id, text: `💪 ${p.name} kafayla uzaklaştırdı.`, x: p.x, y: p.y });
         // Baskı altındaki savunmacı topu çoğu zaman kornere/kendi yarı alanına gönderir.
-        if (inOwnBox(sim, p.x, p.y, p.side) && chance(sim, 0.55)) {
+        if (inOwnBox(sim, p.x, p.y, p.side) && chance(sim, 0.7)) {
           sim.ball.x = p.side === 'home' ? -0.6 : 100.6;
           sim.ball.y = clamp(p.y, 6, 94);
           sim.ball.vx = 0; sim.ball.vy = 0; sim.ball.vz = 0; sim.ball.z = 0;
@@ -1252,7 +1368,7 @@ function contestBall(sim, dt) {
     if (chance(sim, clamp(winsBall ? 0.3 - (d.ovr - 70) * 0.004 : 0.5, 0.15, 0.6))) {
       teamOf(sim, d.side).stats.fouls++;
       emit(sim, 'foul', { side: d.side, playerId: d.id, text: `${d.name} faul yaptı.`, x: carrier.x, y: carrier.y });
-      const card = sim.rng();
+      const card = nextRandom(sim);
       if (card < 0.16) {
         d.yellow++;
         if (d.yellow >= 2) {
@@ -1264,9 +1380,10 @@ function contestBall(sim, dt) {
       }
       const penaltySpot = inOpponentBox(carrier.x, carrier.y, d.side);
       if (penaltySpot) {
+        emit(sim, 'penalty', { side: carrier.side, playerId: carrier.id, text: `⚽ Penaltı! ${carrier.name} yerde kaldı.`, x: carrier.x, y: carrier.y });
         setupRestart(sim, 'penalty', carrier.side, targetGoalX(carrier.side) - attackDir(carrier.side) * 10.5, 50, 2.4, carrier.id);
       } else {
-        setupRestart(sim, 'free-kick', carrier.side, carrier.x, carrier.y, 1.6, carrier.id);
+        setupRestart(sim, 'free-kick', carrier.side, carrier.x, carrier.y, 1.2, carrier.id);
       }
       return;
     }
@@ -1317,6 +1434,7 @@ function checkOutOfPlay(sim) {
 // ---------------------------------------------------------------------------
 function substep(sim, dt) {
   sim.time += dt;
+  if (sim.script && sim.time > sim.script.until) sim.script = null;
   if (sim.celebrationUntil > sim.time) { updatePositions(sim, dt); updateKeeper(sim, dt); return; }
   executeRestart(sim);
   if (sim.restart) {

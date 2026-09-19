@@ -154,7 +154,8 @@ test('scriptOutcome golü zorlar (kariyer eşlemesi)', () => {
     stepSim(sim, 100);
     goals += drainEvents(sim).filter(e => e.type === 'goal' && e.side === 'home').length;
   }
-  assert.equal(sim.score.home, before + 1, 'scriptOutcome ile gol gelmeli');
+  // Motor aynı dakikada kendi golünü de atabilir; en az bir ev sahibi golü şart.
+  assert.ok(sim.score.home > before, 'scriptOutcome ile gol gelmeli');
 });
 
 test('scriptOutcome kurtarış ve ıska sonuçlarını da işleyebilir', () => {

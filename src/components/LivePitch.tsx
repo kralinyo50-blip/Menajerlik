@@ -18,6 +18,8 @@ interface LivePitchProps {
   paused?: boolean;
   slowMo?: boolean;
   tactics?: Tactics;
+  /** Saha motoru karesi: 2D saha oyuncuları/topu bu kareden sürülür. */
+  simRef?: React.RefObject<import('../utils/matchSim').SimSnapshot | null>;
 }
 
 /** Formasyona göre rakip diziliş — zonal marking ile */
@@ -31,7 +33,7 @@ const ATTACK_TYPES: MatchEvent['type'][] = ['goal', 'penalty', 'chance', 'save',
 
 export const LivePitch: React.FC<LivePitchProps> = ({
   minute, possession, events, homeLogo, awayLogo, homeName, awayName,
-  isHome, lineup, sentOff, phase, weather = 'sunny', paused = false, slowMo = false, tactics
+  isHome, lineup, sentOff, phase, weather = 'sunny', paused = false, slowMo = false, tactics, simRef
 }) => {
   const [tick, setTick] = useState(0);
   const isWet = weather === 'rain' || weather === 'storm';
@@ -103,7 +105,27 @@ export const LivePitch: React.FC<LivePitchProps> = ({
     return { t: Math.max(5, Math.min(95, t)), l: Math.max(5, Math.min(95, l)) };
   };
 
+  // ── Saha motoru karesi (varsa) ──
+  // 2D saha artık hesaplanmış tahminlerle değil, motorun gerçek oyuncu/top
+  // konumlarıyla çizilir: pas, şut, kurtarış ve diziliş birebir aynıdır.
+  const simFrame = simRef?.current ?? null;
+  const simUserSide: 'home' | 'away' = isHome ? 'home' : 'away';
+  const simToPitch = (x: number, y: number) => (simUserSide === 'home' ? { t: 100 - x, l: y } : { t: x, l: y });
+  const simMap = useMemo(() => {
+    const map = new Map<string, { t: number; l: number; action: string; sentOff: boolean }>();
+    if (!simFrame) return map;
+    for (const s of simFrame.players) {
+      const p = simToPitch(s.x, s.y);
+      map.set(s.id, { ...p, action: s.action, sentOff: s.sentOff });
+    }
+    return map;
+  }, [simFrame, simUserSide]);
+
   const ball = useMemo(() => {
+    if (simFrame) {
+      const { t, l } = simToPitch(simFrame.ball.x, simFrame.ball.y);
+      return { x: Math.max(2, Math.min(98, l)), y: Math.max(2, Math.min(98, t)) };
+    }
     let x = 50 + (possession - 50) * 0.38;
     let y = 50;
 
@@ -136,6 +158,12 @@ export const LivePitch: React.FC<LivePitchProps> = ({
   }, [lastAttack, possession, minute, tick, fatigueFactor, isWind]);
 
   const carrierId = useMemo(() => {
+    const simCarrier = simFrame && simFrame.carrierId ? simFrame.carrierId.replace(/^u-/, '') : null;
+    if (simCarrier) {
+      const id = Number(simCarrier);
+      if (Number.isFinite(id) && lineup.some(p => p.id === id)) return id;
+    }
+    if (simFrame) return null;
     let best: number | null = null;
     let bestDist = 999;
     for (const p of lineup) {
@@ -146,7 +174,7 @@ export const LivePitch: React.FC<LivePitchProps> = ({
       if (d < bestDist) { bestDist = d; best = p.id; }
     }
     return best;
-  }, [lineup, ball, sentOff, defensiveLine, width]);
+  }, [lineup, ball, sentOff, defensiveLine, width, simFrame]);
 
   const avgEnergy = useMemo(() => {
     const avail = lineup.filter(p => !sentOff.includes(p.id) && !p.injured);
@@ -272,10 +300,12 @@ export const LivePitch: React.FC<LivePitchProps> = ({
         {/* Rakip — zonal marking */}
         {awayShape.map((p, i) => {
           const isKeeper = i === 0;
+          const simAway0Dive = i === 0 && simMap.get('o-1')?.action === 'dive';
           const chase = (0.12 + (i > 7 ? 0.18 : 0)) * (0.55 + fatigueFactor * 0.45);
-          const keeperSave = lastAttack && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1;
-          const tgtY = isKeeper ? 7 + Math.max(0, Math.min(9, (ball.y - 6) * 0.12)) : p.t + awayBallInfluence * 2.5 + (ball.y - 50) * chase * 0.22;
-          const tgtX = isKeeper ? 50 + (ball.x - 50) * 0.16 : p.l + (ball.x - 50) * chase * 0.18 + Math.sin(tick * 0.55 + i) * 0.9 * fatigueFactor;
+          const keeperSave = !!simAway0Dive || (lastAttack && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1);
+          const simAway = simMap.get(`o-${i + 1}`);
+          const tgtY = simAway ? simAway.t : isKeeper ? 7 + Math.max(0, Math.min(9, (ball.y - 6) * 0.12)) : p.t + awayBallInfluence * 2.5 + (ball.y - 50) * chase * 0.22;
+          const tgtX = simAway ? simAway.l : isKeeper ? 50 + (ball.x - 50) * 0.16 : p.l + (ball.x - 50) * chase * 0.18 + Math.sin(tick * 0.55 + i) * 0.9 * fatigueFactor;
           return (
             <div key={`away-${i}`} className={`absolute ${isKeeper ? 'w-6 h-6 lg:w-7 lg:h-7 bg-red-800 border-2 border-amber-300 text-[10px]' : 'w-4 h-4 lg:w-5 lg:h-5 bg-red-600 border border-white/80 text-[7px]'} rounded-full shadow flex items-center justify-center font-bold text-white ${isKeeper && keeperSave ? 'animate-keeper-save' : ''}`}
               style={{ top: `${Math.max(6, Math.min(94, tgtY))}%`, left: `${Math.max(8, Math.min(92, tgtX))}%`, transform: 'translate(-50%, -50%)', transition: `all ${motionMs(420 + (1 - fatigueFactor) * 180)}ms ease-out` }}>
@@ -289,17 +319,19 @@ export const LivePitch: React.FC<LivePitchProps> = ({
           const isOff = sentOff.includes(p.id);
           if (isOff) return null;
           const isKeeper = p.role === 'KL';
-          const keeperSave = isKeeper && lastAttack?.team === 'away' && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1;
+          const simGK = simMap.get(`u-${p.id}`);
+          const keeperSave = (isKeeper && simGK?.action === 'dive') || (isKeeper && lastAttack?.team === 'away' && (lastAttack.type === 'save' || lastAttack.type === 'chance') && minute - lastAttack.minute <= 1);
           const isCarrier = carrierId === p.id && possession > 38 && phase !== 'half';
           const isSlipping = slipId === p.id;
-          const base = zonalShift(p.t ?? 50, p.l ?? 50, p.role);
+          const simP = simMap.get(`u-${p.id}`);
+          const base = simP ?? zonalShift(p.t ?? 50, p.l ?? 50, p.role);
           const eEff = effectiveEnergy(p);
           const tired = eEff < 42 || minute > 76;
           const chaseBase = isCarrier ? 0.42 : p.role === 'FW' ? 0.18 : p.role === 'OS' ? 0.15 : p.role === 'SB' ? 0.10 : 0.07;
           const chase = chaseBase * (0.55 + fatigueFactor * 0.45) * (isWet ? 0.88 : 1) * (pressingIntensity > 70 ? 1.15 : 1);
           const jitter = (isCarrier ? 1.6 : 0.9) * fatigueFactor * (isWet ? 1.18 : 1);
-          const dynT = isKeeper ? 93 - Math.max(0, Math.min(8, (94 - ball.y) * 0.10)) : base.t * (1 - chase) + ball.y * chase + Math.sin(tick * 0.7 + p.id * 0.4) * jitter;
-          const dynL = isKeeper ? 50 + (ball.x - 50) * 0.16 : base.l * (1 - chase) + ball.x * chase + Math.cos(tick * 0.6 + p.id * 0.5) * jitter;
+          const dynT = simP ? simP.t : isKeeper ? 93 - Math.max(0, Math.min(8, (94 - ball.y) * 0.10)) : base.t * (1 - chase) + ball.y * chase + Math.sin(tick * 0.7 + p.id * 0.4) * jitter;
+          const dynL = simP ? simP.l : isKeeper ? 50 + (ball.x - 50) * 0.16 : base.l * (1 - chase) + ball.x * chase + Math.cos(tick * 0.6 + p.id * 0.5) * jitter;
           const clampedT = Math.max(7, Math.min(93, dynT));
           const clampedL = Math.max(7, Math.min(93, dynL));
           const energyPct = Math.max(0, Math.min(100, eEff));

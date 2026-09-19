@@ -32,6 +32,8 @@ export interface Match3DProps {
   lowPerf?: boolean;
   /** WebGL açılamazsa 2D sahaya dön */
   onFallback?: () => void;
+  /** Saha motoru karesi: 3D saha oyuncuları/topu bu kareden sürülür. */
+  simRef?: React.RefObject<import('../utils/matchSim').SimSnapshot | null>;
   className?: string;
 }
 
