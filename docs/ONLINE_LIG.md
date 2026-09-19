@@ -10,6 +10,16 @@
 6. Online **Kadro & Taktik** bölümünde hazırlan, **Lig & Canlı Maç** bölümünde **Hazırım — haftayı oyna** de. Herkes hazır olunca sunucu o haftanın beş maçını **canlı** başlatır. Maçlar yaklaşık **5 dakika** sürer. SSE akışıyla dakika, skor, olaylar ve saha konumları **500 ms** aralıklarla gönderilir; tarayıcılar sonucu kendileri hesaplamaz. Bütün maçlar bitince sonuçlar tabloya bir kez işlenir.
 7. 18 haftanın sonunda şampiyon belirlenir. Oda sahibi aynı kodla yeni sezon lobisi açabilir; bu işlem eski sezonun tablosunu ve sonuçlarını sıfırlar.
 
+### Kod doğru ama “bulunamadı” diyor
+
+Bu hatanın sebebi neredeyse her zaman **farklı sunucuda olmak**, yanlış kod yazmak değildir. Kod yalnız oluşturulduğu sunucuda geçerlidir.
+
+1. **Davet bağlantısı kullanın.** Oda sahibi oyundaki **Davet bağlantısı** düğmesiyle link göndersin, katılanlar o linki tarayıcıda açsın. Link doğru sunucuya götürür ve kodu otomatik doldurur.
+2. **Adresleri karşılaştırın.** Oyunun online ekranında yazan sunucu adresi herkeste birebir aynı olmalı. Biri `localhost`, diğeri başka bir adres açmışsa kodlar birbirinde görünmez.
+3. **Tek sunucu çalıştırın.** Aynı Wi-Fi'de oynuyorsanız sunucuyu **yalnızca bir kişi** başlatır (`baslat.bat` / `./start.sh` / `npm run dev`); diğerleri o bilgisayarın ağ adresini açar (`http://SUNUCU_YEREL_IP:5173`). Herkes kendi bilgisayarında sunucu çalıştırırsa her kod yalnız kendi bilgisayarında görünür.
+4. **Kodu kopyalayın, elle yazmayın.** Kodlar 8 karakterdir ve içinde `0`, `O`, `1`, `I` harfleri hiç kullanılmaz — bunlar birbirine karışır. Küçük/büyük harf fark etmez.
+5. Farklı evlerde (farklı internetlerde) oynuyorsanız aynı Wi-Fi yöntemi çalışmaz; oyunun internete açık ortak bir adrese yayınlanması gerekir (aşağıda “İnternete yayınlama / üretim”).
+
 ### Neler ortak, neler yerel?
 
 - **Ortak:** lig üyeleri, sezon/hafta, ev-deplasman fikstürü, hazır durumu, canlı dakika, skor, olaylar, top/oyuncu konumları, maç içi kadrolar, taktikler, molalar, puan tablosu ve oda yönetimi.

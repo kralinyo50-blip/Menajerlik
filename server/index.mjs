@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { resolve, sep, extname } from 'node:path';
 import { createOnlineApi } from './online.mjs';
 
@@ -25,4 +26,10 @@ const server = createServer((req, res) => {
 });
 server.once('close', api.close);
 const port = Number(process.env.PORT || 5173);
-server.listen(port, '0.0.0.0', () => console.log(`Manager Pro Online: http://0.0.0.0:${port}`));
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Manager Pro Online: http://localhost:${port}`);
+  // Arkadaşların localhost'u açamaz; aynı ağdaki adresleri de yazdır.
+  for (const list of Object.values(networkInterfaces())) for (const net of list || []) {
+    if (net.family === 'IPv4' && !net.internal) console.log(`Aynı ağdan katılım: http://${net.address}:${port}`);
+  }
+});

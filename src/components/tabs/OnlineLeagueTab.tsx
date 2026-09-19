@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { GameState } from '../../types/game';
 import type { LiveMatch, OnlineClub } from '../../types/online';
+import { codeHint, isValidOnlineCode, normalizeOnlineCode } from '../../utils/onlineCode';
 import { OnlineLiveMatch } from '../OnlineLiveMatch';
 import type { OnlineLeagueController } from '../../hooks/useOnlineLeague';
 
@@ -10,8 +11,13 @@ const panel = 'rounded-2xl border border-slate-700/60 bg-slate-800/50 p-5';
 const styles = { balanced: 'Dengeli', attack: 'Hücum', defense: 'Savunma', possession: 'Topa sahip olma' };
 
 export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; online: OnlineLeagueController }) {
-  const { room, session, connection, busy, error, lastSynced, connect, action } = online;
-  const [code, setCode] = useState(() => (new URLSearchParams(window.location.search).get('lig') || '').toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 8));
+  const { room, session, connection, busy, error, errorStatus, lastSynced, connect, action } = online;
+  const [code, setCode] = useState(() => normalizeOnlineCode(new URLSearchParams(window.location.search).get('lig') || ''));
+  const serverOrigin = window.location.origin;
+  const onFileOrLocalhost = window.location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
+  const hint = codeHint(code);
+  const codeValid = isValidOnlineCode(code);
+  const codeNotFound = errorStatus === 404 || (!!error && /bulunamadı/i.test(error));
   const [name, setName] = useState(gameState.teamName.slice(0, 32));
   const [copyMessage, setCopyMessage] = useState('');
   const [showAllMatches, setShowAllMatches] = useState(false);
@@ -59,7 +65,14 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
           </span>
         </header>
 
-        {error && <div role="alert" className="rounded-xl p-4 text-sm border border-red-500/40 bg-red-500/10 text-red-200">{error}</div>}
+        {error && <div role="alert" className="rounded-xl p-4 text-sm border border-red-500/40 bg-red-500/10 text-red-200">
+          <p>{error}</p>
+          {codeNotFound && !session && <ol className="mt-3 space-y-2 text-red-100/90 list-decimal list-inside">
+            <li><strong>Davet bağlantısını kullan:</strong> oda sahibi “Davet bağlantısı” düğmesiyle link göndersin, sen o linki tarayıcıda aç. Kodu kendi adresine elle yazmak yetmez.</li>
+            <li><strong>Aynı adreste ol:</strong> şu anki sunucun <span className="font-mono break-all">{serverOrigin}</span> — arkadaşının ekranındaki adresle birebir aynı olmalı. Herkes kendi bilgisayarında sunucu çalıştırıyorsa kodlar birbirinde görünmez.</li>
+            <li><strong>Kodu kopyala:</strong> elle yazma; kodlarda 0, O, 1, I harfleri yoktur, bunlar birbirine karışır.</li>
+          </ol>}
+        </div>}
         {connection === 'reconnecting' && <div role="alert" className="rounded-xl p-4 text-sm bg-amber-500/10 text-amber-200">Sunucu bağlantısı kesildi. Son kayıt gösteriliyor; işlemler geçici olarak kapalı. Bağlantı otomatik olarak yeniden deneniyor.</div>}
         {session && !room && <div className={panel}><p className="text-slate-300">{session.code} kodlu ligdeki oturumun geri yükleniyor… Aynı sunucu adresini kullandığından emin ol.</p></div>}
 
@@ -81,21 +94,24 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
                 <p className="text-sm text-slate-400">Sana özel 8 karakterli senkronizasyon kodunu arkadaşlarına gönder.</p>
                 <button className={`${button} w-full`} disabled={busy || !club.name || !squadReady} onClick={() => void connect(club)}>＋ Lig oluştur ve kod al</button>
               </div>
-              <form className="rounded-xl bg-slate-950/30 p-4 space-y-3" onSubmit={e => { e.preventDefault(); if (code.length === 8 && club.name && squadReady) void connect(club, code); }}>
+              <form className="rounded-xl bg-slate-950/30 p-4 space-y-3" onSubmit={e => { e.preventDefault(); if (codeValid && club.name && squadReady) void connect(club, code); }}>
                 <h3 className="font-bold text-white">2. Kod ile lige katıl</h3>
                 <label htmlFor="sync-code" className="text-sm text-slate-400 block">Arkadaşından gelen senkronizasyon kodu</label>
-                <input id="sync-code" placeholder="ABCD2345" value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 8))} maxLength={8} autoComplete="off" spellCheck={false} className="w-full bg-slate-950 border border-slate-600 focus:border-emerald-400 rounded-xl px-4 py-3 text-white font-mono tracking-[0.25em] uppercase" />
-                <button className={`${secondary} w-full`} disabled={busy || code.length !== 8 || !club.name || !squadReady}>Lige bağlan →</button>
+                <input id="sync-code" placeholder="ABCD2345" value={code} onChange={e => setCode(normalizeOnlineCode(e.target.value))} maxLength={8} autoComplete="off" spellCheck={false} className="w-full bg-slate-950 border border-slate-600 focus:border-emerald-400 rounded-xl px-4 py-3 text-white font-mono tracking-[0.25em] uppercase" />
+                {hint && <p role="status" className="text-xs text-amber-300">{hint}</p>}
+                <button className={`${secondary} w-full`} disabled={busy || !codeValid || !club.name || !squadReady}>Lige bağlan →</button>
+                <p className="text-xs text-slate-500">En garantisi: kodu elle yazmak yerine arkadaşının gönderdiği <strong className="text-slate-300">davet bağlantısını</strong> tarayıcıda aç — kod otomatik dolar, doğru sunucuya gidersin.</p>
               </form>
             </div>
           </section>
           <section className={`${panel} text-sm text-slate-400 space-y-2`}>
             <h3 className="text-white font-bold">Nasıl oynanır?</h3>
-            <p>• Herkes aynı oyun adresinden Online Oyna seçer ve kendi online takımını oluşturur.</p>
+            <p>• <strong className="text-slate-200">Herkes aynı oyun adresini açar</strong>, Online Oyna seçer ve kendi online takımını oluşturur. Şu anki sunucun: <span className="font-mono text-cyan-300 break-all">{serverOrigin}</span></p>
+            {onFileOrLocalhost && <p className="text-amber-300">⚠️ Şu an {window.location.protocol === 'file:' ? 'yerel dosya olarak açmışsın — online çalışmaz' : 'localhost’tasın — arkadaşların bu adresi açamaz'}. Oda sahibinin gönderdiği <strong>davet bağlantısını</strong> tarayıcıda aç; aynı Wi-Fi’deyseniz adres satırındaki <span className="font-mono">localhost</span> yerine sunucu bilgisayarının ağ adresi yazmalı.</p>}
             <p>• 2–10 menajer katılabilir. Oda sahibi sezonu başlatınca boş yerler botlarla dolar.</p>
             <p>• Her hafta herkes “Hazırım” der; sunucu canlı maçları başlatır. Ortak dakika, skor ve saha konumları saniyede iki kez iletilir.</p>
             <p>• Online maçlar ortak 3D/2D sahada canlı oynanır; taktik ve değişiklikler rakibe de yansır. Tek kişilik kariyerden ayrıdır. Offline kariyerin ve kayıtların bu moddan tamamen ayrıdır.</p>
-            <p className="text-amber-300">Kod tek başına sunucu açmaz: farklı cihazlarda ortak bir sunucu adresi gerekir. Yerel dosya olarak açılan HTML online bağlantı kuramaz.</p>
+            <p className="text-amber-300">Kod tek başına sunucu açmaz: farklı cihazlarda ortak bir sunucu adresi gerekir. “Kod bulunamadı” hatasının sebebi genelde budur — kodu değil, davet bağlantısını paylaşın.</p>
           </section>
         </>}
 
@@ -106,6 +122,7 @@ export function OnlineLeagueTab({ gameState, online }: { gameState: GameState; o
               <div className="flex gap-2 flex-wrap"><button className={secondary} onClick={() => void copy(false)}>Kodu kopyala</button><button className={secondary} onClick={() => void copy(true)}>Davet bağlantısı</button></div>
             </div>
             {copyMessage && <p role="status" className="text-xs text-emerald-300 mt-3">{copyMessage}</p>}
+            <p className="text-xs text-slate-500 mt-3">Arkadaşına kodu değil <strong className="text-slate-300">davet bağlantısını</strong> gönderirsen tek tıkla doğru sunucuya gelir — “kod bulunamadı” hatası yaşanmaz.</p>
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400 mt-4 border-t border-slate-700 pt-4">
               <span>Sezon {room.season} · {room.status === 'lobby' ? 'Katılım açık' : room.status === 'finished' ? 'Sezon tamamlandı' : `Hafta ${room.week} / 18`}</span>
               <span>{humans.length} menajer / 10</span><span>Oda sahibi: {host?.name}</span>

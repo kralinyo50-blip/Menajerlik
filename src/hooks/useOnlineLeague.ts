@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OnlineClub, OnlineRoom, OnlineSession } from '../types/online';
+import { normalizeOnlineCode, ONLINE_CODE_PATTERN } from '../utils/onlineCode';
 import { ONLINE_SESSION_KEY } from '../utils/onlineStorage';
 
 const SESSION_KEY = ONLINE_SESSION_KEY;
 function savedSession(): OnlineSession | null {
   try {
     const value = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-    return value && /^[A-Z2-9]{8}$/.test(value.code) && /^[a-f0-9]{64}$/.test(value.token) && typeof value.memberId === 'string' ? value : null;
+    return value && ONLINE_CODE_PATTERN.test(value.code) && /^[a-f0-9]{64}$/.test(value.token) && typeof value.memberId === 'string' ? value : null;
   } catch { return null; }
 }
 
@@ -42,6 +43,7 @@ export function useOnlineLeague() {
   const [room, setRoom] = useState<OnlineRoom | null>(null);
   const [connection, setConnection] = useState<'disconnected' | 'connecting' | 'connected' | 'reconnecting'>(session ? 'connecting' : 'disconnected');
   const [error, setError] = useState('');
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const [lastSynced, setLastSynced] = useState<number | null>(null);
@@ -137,14 +139,21 @@ export function useOnlineLeague() {
 
   const connect = async (club: OnlineClub, code?: string) => {
     if (inFlight.current || sessionRef.current) return;
-    inFlight.current = true; setBusy(true); setError(''); setConnection('connecting');
+    const clean = code === undefined ? undefined : normalizeOnlineCode(code);
+    if (clean !== undefined && !ONLINE_CODE_PATTERN.test(clean)) {
+      setErrorStatus(400);
+      setError('Kod 8 karakter olmalı ve 0, O, 1, I harflerini içermemeli. Davet bağlantısındaki kodu kopyala.');
+      return;
+    }
+    inFlight.current = true; setBusy(true); setError(''); setErrorStatus(null); setConnection('connecting');
     try {
-      const result = await request(code ? `rooms/${code}/join` : 'rooms', null, { club });
+      const result = await request(clean ? `rooms/${clean}/join` : 'rooms', null, { club });
       if (!result.token || !result.memberId) throw new Error('Oturum oluşturulamadı.');
       storeSession({ code: result.room.code, token: result.token, memberId: result.memberId });
       applyRoom(result.room, result.serverTime);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Bağlanılamadı.');
+      setErrorStatus(cause instanceof ApiError ? cause.status : null);
       setConnection('disconnected');
     } finally { inFlight.current = false; setBusy(false); }
   };
@@ -152,7 +161,7 @@ export function useOnlineLeague() {
   const action = async (name: string, extra: Record<string, unknown> = {}) => {
     const current = sessionRef.current;
     if (!current || inFlight.current) return;
-    inFlight.current = true; setBusy(true); setError('');
+    inFlight.current = true; setBusy(true); setError(''); setErrorStatus(null);
     try {
       const result = await request(`rooms/${current.code}/${name}`, current, { week: room?.week, season: room?.season, ...extra });
       if (sessionRef.current?.token !== current.token) return;
@@ -161,10 +170,11 @@ export function useOnlineLeague() {
       } else applyRoom(result.room, result.serverTime);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'İşlem başarısız.');
+      setErrorStatus(cause instanceof ApiError ? cause.status : null);
     } finally { inFlight.current = false; setBusy(false); }
   };
 
-  return { session, room, connection, error, busy, lastSynced, serverTime, connect, action };
+  return { session, room, connection, error, errorStatus, busy, lastSynced, serverTime, connect, action };
 }
 
 export type OnlineLeagueController = ReturnType<typeof useOnlineLeague>;

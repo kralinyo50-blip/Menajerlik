@@ -70,7 +70,7 @@ test('codes join real shared rooms; auth secrets never leak and duplicate names 
   const f = await fixture(t);
   const { host, guest, path } = await f.pair();
   assert.equal(host.status, 201);
-  assert.match(host.room.code, /^[A-Z2-9]{8}$/);
+  assert.match(host.room.code, /^[A-HJ-NP-Z2-9]{8}$/);
   assert.equal(guest.room.members.length, 2);
   assert.equal((await f.req(path)).status, 401);
   assert.equal((await f.req(path, undefined, 'a'.repeat(64))).status, 401);
@@ -79,6 +79,18 @@ test('codes join real shared rooms; auth secrets never leak and duplicate names 
   assert.ok(!JSON.stringify(state.room).includes('token'));
   assert.equal((await f.req(path + '/join', { club: club('ANADOLU FK') })).status, 409);
   assert.equal((await f.req('rooms/ABCDEFGH/join', { club: club() })).status, 404);
+});
+
+test('room codes are case-insensitive but invalid formats explain the real cause', async t => {
+  const f = await fixture(t);
+  const host = await f.create();
+  const lower = host.room.code.toLowerCase();
+  const joined = await f.req(`rooms/${lower}/join`, { club: club('Küçük Harf') });
+  assert.equal(joined.status, 200);
+  assert.equal(joined.room.code, host.room.code);
+  // 0/O/1/I karışıklığı ve eksik kod "adres bulunamadı" değil, kod hatası vermeli.
+  assert.equal((await f.req('rooms/ABCD/join', { club: club() })).status, 400);
+  assert.equal((await f.req('rooms/ABCD0EFG/join', { club: club() })).status, 400);
 });
 
 test('host-only start, minimum users, capacity and late joins are enforced', async t => {

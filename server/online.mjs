@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { squadInput, startLiveRound, advanceLiveRound, liveCommand, publicLiveRound } from './live-match.mjs';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
 const ROOM_TTL = 30 * 24 * 60 * 60 * 1000;
 const hash = token => createHash('sha256').update(token).digest('hex');
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
@@ -179,9 +180,16 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
       else if (++rate.count > 900) fail(429, 'Çok fazla istek. Bir dakika bekle.');
 
       if (url.pathname === '/api/online/health' && req.method === 'GET') return send(200, { ok: true });
-      const route = url.pathname.match(/^\/api\/online\/rooms(?:\/([A-Z2-9]{8})(?:\/(join|start|ready|leave|replace|claim-host|new-season|stream|live-command))?)?$/);
+      // Kodu geniş eşleştirip sonra doğrula: küçük harf de kabul edilir,
+      // bozuk kodlarda "adres bulunamadı" yerine gerçek sebep söylenir.
+      const route = url.pathname.match(/^\/api\/online\/rooms(?:\/([^/]{1,32})(?:\/(join|start|ready|leave|replace|claim-host|new-season|stream|live-command))?)?$/);
       if (!route) fail(404, 'Online adres bulunamadı.');
-      const [, code, action] = route;
+      const [, rawCode, action] = route;
+      const code = rawCode === undefined ? undefined : rawCode.trim().toLocaleUpperCase('en-US');
+      if (rawCode !== undefined && !CODE_PATTERN.test(code)) {
+        if (code.length !== 8) fail(400, `Kod 8 karakter olmalı (yazdığın: ${code.length || 0}). Davet bağlantısındaki kodu kopyala, elle yazma.`);
+        fail(400, 'Kodda geçersiz harf var. Kodlarda 0, O, 1, I harfleri kullanılmaz; davet bağlantısındaki kodu kopyala.');
+      }
       const body = req.method === 'POST' ? await readBody(req) : {};
       if (req.method === 'POST') backup = JSON.stringify([...rooms]);
       if (!code && req.method === 'POST') {
@@ -198,7 +206,9 @@ export function createOnlineApi({ dataFile = process.env.ONLINE_DATA_FILE || res
         return send(201, { room: view(room, member.id), memberId: member.id, token });
       }
       const room = rooms.get(code);
-      if (!room || now() - room.updatedAt >= ROOM_TTL) fail(404, 'Bu kodla bir lig bulunamadı. Kodu ve sunucu adresini kontrol et.');
+      // En sık sebep: herkes kendi bilgisayarındaki sunucuda. Kod doğru olsa bile
+      // farklı sunucuda görünmez; mesaj bunu açıkça söylemeli.
+      if (!room || now() - room.updatedAt >= ROOM_TTL) fail(404, 'Bu kod bu sunucuda bulunamadı. Kod doğruysa farklı bir oyun adresindesin: oda sahibinin “Davet bağlantısı”nı tarayıcıda aç, herkes aynı adrese bağlansın.');
       if (req.method === 'POST' && action === 'join') {
         if (room.status !== 'lobby') fail(409, 'Sezon başlamış. Yeni sezon lobisini bekle.');
         if (room.members.length >= 10) fail(409, 'Lig dolu (en fazla 10 menajer).');
