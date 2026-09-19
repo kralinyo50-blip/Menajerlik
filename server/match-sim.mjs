@@ -279,8 +279,16 @@ function updatePositions(sim, dt) {
         // orta saha topun hizasında, forvetler önde. Böylece ileri pas seçeneği hep
         // doğar ve top kaleye yürür (eski diziliş topun 20 m gerisinde kalıyordu).
         const ballX = ball.x;
-        const offset = player.role === 'FW' ? 16 : player.role === 'OS' ? 5 : player.role === 'SB' ? -18 : -24;
+        // Top ilerledikçe hat yükselir: savunma 20 m'den 14 m'ye çıkar, forvetler
+        // ceza sahasına girer. Böylece takım uzunluğu ve kaleye yakın oyuncu sayısı artar.
+        const deep = ballProgress > 62 ? 26 : ballProgress > 40 ? 20 : 16;
+        const offset = player.role === 'FW' ? 19 : player.role === 'OS' ? (ballProgress > 62 ? 4 : 6) : player.role === 'SB' ? -deep + (ballProgress > 55 ? 12 : 6) : -deep;
         tx = ballX + dir * (offset + lineHeight * 0.4);
+        // Hücum üçte birinde forvetler kaleye yüklenir: yalnızca topun önünde değil,
+        // ceza sahasının içinde (direk arası) beklerler. FIFA/PES'teki "kutu" düzeni.
+        if (player.role === 'FW' && ballProgress > 64) {
+          tx = targetGoalX(key) - dir * (player.number % 2 === 0 ? 7.5 : 11);
+        }
         if (player.role === 'FW' || player.role === 'OS') {
           // Ofsayta düşmeden savunma hattının hizasında bekler (koşucular ara pasıyla kaçar).
           const line = defensiveLineX(sim, key);
@@ -293,7 +301,10 @@ function updatePositions(sim, dt) {
         ty = player.anchor.y + (ball.y - 50) * (player.role === 'OS' ? 0.35 : 0.28);
         ty += (ty >= 50 ? 1 : -1) * spread;
         if ((player.role === 'FW' || player.role === 'OS') && ballProgress > 62) ty *= 0.92;
-        if (player.role === 'FW') ty += (player.number % 2 === 0 ? 1 : -1) * 5;
+        if (player.role === 'FW') {
+          // Ön direk / arka direk paylaşımı: iki forvet aynı noktaya yığılmaz.
+          ty = ballProgress > 64 ? (player.number % 2 === 0 ? 44.5 : 55.5) : ty + (player.number % 2 === 0 ? 1 : -1) * 5;
+        }
       } else {
         // Savunma: top ile kendi kalesi arasında kal, hat halinde kay.
         const lineX = clamp(ball.x - dir * clamp(6 + ballProgress * 0.14, 6, 18), 6, 94);
@@ -315,10 +326,14 @@ function updatePositions(sim, dt) {
       for (const mate of team.players) {
         if (mate === player || mate.sentOff || mate.role === 'KL') continue;
         const d = dist(tx, ty, mate.x, mate.y);
-        if (d < 3.4) { ty += (ty >= mate.y ? 1 : -1) * (3.4 - d) * 0.6; }
+        if (d < 4.6) { ty += (ty >= mate.y ? 1 : -1) * (4.6 - d) * 0.75; }
       }
-      const chasing = !possessing && cornerPress(sim, key, player);
-      steer(sim, player, tx, clamp(ty, 3, 97), chasing, dt);
+      const fy = clamp(ty, 3, 97);
+      // Şekle yetişmek için koşar: hedefi uzaksa sprint eder (hücumda ileri çıkış,
+      // savunmada geri koşu). FIFA/PES'te oyuncular böyle "oyunun içinde" görünür.
+      const gap = dist(player.x, player.y, tx, fy);
+      const chasing = (!possessing && cornerPress(sim, key, player)) || gap > (possessing ? 6.5 : 9);
+      steer(sim, player, tx, fy, chasing, dt);
       if (celebrating) { player.action = 'celebrate'; continue; }
       if (player.actionT > 0) continue;
       player.action = player.actionT > 0 ? player.action : player.sprinting ? 'sprint' : player.moving ? 'run' : 'idle';
@@ -589,7 +604,7 @@ function pickPass(sim, carrier, options, intent = 'keep') {
   const scored = pool.map(o => {
     let value = o.lane * 4.2 - o.matePressure * 2.2 - o.d * 0.03;
     if (o.mate.role === 'KL') value -= 20;
-    if (intent === 'keep') value += o.forward * 0.25 + o.progress * 0.04;
+    if (intent === 'keep') value += o.forward * (o.matePressure < 1.3 ? 0.85 : 0.25) + o.progress * 0.05;
     else if (intent === 'advance') value += o.forward * 0.95 + o.progress * 0.16 + (o.lofted ? 0.4 : 0);
     else value += o.progress * 0.3 + (o.mate.role === 'FW' ? 1.4 : 0) + (o.mate.role === 'OS' ? 0.6 : 0) + (o.box ? 2.2 : 0);
     return { o, value };
@@ -1121,7 +1136,7 @@ function resolveShot(sim, shot) {
     sim.score[shot.side]++;
     emit(sim, 'goal', { side: shot.side, playerId: shot.shooterId, text: `GOL! ${attacker.name} — ${nameOf(attacker, shot.shooterId)}`, x: targetGoalX(shot.side), y: shot.aimY });
     sim.celebrationUntil = sim.time + 3;
-    setupKickoff(sim, defenderKey, 2.6);
+    setupKickoff(sim, defenderKey, 2.0);
     return;
   }
   if (outcome === 'save') {
@@ -1152,7 +1167,7 @@ function resolveShot(sim, shot) {
     return;
   }
   emit(sim, 'chance', { side: shot.side, playerId: shot.shooterId, text: `${nameOf(attacker, shot.shooterId)} şutunda top auta gitti.`, x: targetGoalX(shot.side), y: shot.aimY });
-  setupRestart(sim, 'goal-kick', defenderKey, ownGoalX(defenderKey) + attackDir(defenderKey) * SIX_DEPTH, 44 + rnd(sim, 12), 1.5);
+  setupRestart(sim, 'goal-kick', defenderKey, ownGoalX(defenderKey) + attackDir(defenderKey) * SIX_DEPTH, 44 + rnd(sim, 12), 1.15);
 }
 
 const nameOf = (team, id) => team.players.find(p => p.id === id)?.name ?? 'Oyuncu';
@@ -1290,7 +1305,7 @@ function executeRestart(sim) {
       team.stats.onTarget++; team.stats.goals++; sim.score[r.side]++;
       emit(sim, 'goal', { side: r.side, playerId: taker?.id ?? null, text: `⚽ PENALTI GOLÜ! ${taker ? taker.name : team.name}`, x: targetGoalX(r.side), y: 50, penalty: true });
       sim.celebrationUntil = sim.time + 3;
-      setupKickoff(sim, other(r.side), 2.4);
+      setupKickoff(sim, other(r.side), 1.9);
       return;
     }
     teamOf(sim, other(r.side)).stats.saves++;
@@ -1375,7 +1390,7 @@ function contestBall(sim, dt) {
       if (sim.pendingPass && sim.pendingPass.side === p.side && sim.pendingPass.to === p.id && isOffside(sim, p, sim.pendingPass)) {
         teamOf(sim, p.side).stats.offsides++;
         emit(sim, 'offside', { side: p.side, playerId: p.id, text: `🚫 ${p.name} ofsayt!`, x: p.x, y: p.y });
-        setupRestart(sim, 'free-kick', other(p.side), p.x, p.y, 1.1, pickTaker(sim, teamOf(sim, other(p.side)), p.x, p.y)?.id ?? null);
+        setupRestart(sim, 'free-kick', other(p.side), p.x, p.y, 0.9, pickTaker(sim, teamOf(sim, other(p.side)), p.x, p.y)?.id ?? null);
         return;
       }
       // Hücum oyuncusunun kafası: ceza sahasındaki orta kafa şutuna dönüşür.
@@ -1466,9 +1481,9 @@ function contestBall(sim, dt) {
       const penaltySpot = inOpponentBox(carrier.x, carrier.y, d.side);
       if (penaltySpot) {
         emit(sim, 'penalty', { side: carrier.side, playerId: carrier.id, text: `⚽ Penaltı! ${carrier.name} yerde kaldı.`, x: carrier.x, y: carrier.y });
-        setupRestart(sim, 'penalty', carrier.side, targetGoalX(carrier.side) - attackDir(carrier.side) * 10.5, 50, 2.4, carrier.id);
+        setupRestart(sim, 'penalty', carrier.side, targetGoalX(carrier.side) - attackDir(carrier.side) * 10.5, 50, 2.1, carrier.id);
       } else {
-        setupRestart(sim, 'free-kick', carrier.side, carrier.x, carrier.y, 1.2, carrier.id);
+        setupRestart(sim, 'free-kick', carrier.side, carrier.x, carrier.y, 0.95, carrier.id);
       }
       return;
     }
@@ -1493,7 +1508,7 @@ function checkOutOfPlay(sim) {
   if (ball.y < 0 || ball.y > 100) {
     const taker = other(ball.lastTouchSide);
     teamOf(sim, taker).stats.throwIns++;
-    setupRestart(sim, 'throw-in', taker, clamp(ball.x, 2, 98), ball.y < 0 ? 0.6 : 99.4, 1.4);
+    setupRestart(sim, 'throw-in', taker, clamp(ball.x, 2, 98), ball.y < 0 ? 0.6 : 99.4, 1.05);
     emit(sim, 'out', { side: taker, text: 'Top taça çıktı.', x: ball.x, y: ball.y < 0 ? 0 : 100 });
     return;
   }
@@ -1504,12 +1519,12 @@ function checkOutOfPlay(sim) {
     if (attackerTouchedLast) {
       // Hücum eden takım auta attı: kale vuruşu.
       emit(sim, 'out', { side: defending, text: 'Top auta gitti, kale vuruşu.', x: ball.x > 100 ? 100 : 0, y: ball.y });
-      setupRestart(sim, 'goal-kick', defending, ownGoalX(defending) + attackDir(defending) * SIX_DEPTH, clamp(44 + rnd(sim, 12), 40, 60), 1.5);
+      setupRestart(sim, 'goal-kick', defending, ownGoalX(defending) + attackDir(defending) * SIX_DEPTH, clamp(44 + rnd(sim, 12), 40, 60), 1.15);
     } else {
       // Savunma son dokundu: korner.
       teamOf(sim, attacking).stats.corners++;
       emit(sim, 'out', { side: attacking, text: 'Savunmadan çıktı, korner.', x: ball.x > 100 ? 100 : 0, y: ball.y });
-      setupRestart(sim, 'corner', attacking, ball.x > 100 ? 99.4 : 0.6, ball.y <= 50 ? 0.6 : 99.4, 2);
+      setupRestart(sim, 'corner', attacking, ball.x > 100 ? 99.4 : 0.6, ball.y <= 50 ? 0.6 : 99.4, 1.5);
     }
   }
 }
