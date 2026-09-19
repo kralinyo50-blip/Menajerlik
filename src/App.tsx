@@ -129,6 +129,10 @@ function App() {
     // ⚠️ Stadyum iç tesisleri (büfe, mağaza, otopark…): bu satır eksikti,
     // bu yüzden "Seviye Yükselt" tuşları hiçbir şey yapmıyordu.
     upgradeStadiumFacility,
+    signBuffetSponsor,
+    cancelBuffetSponsor,
+    buyBuffetMenuItem,
+    setBuffetPriceLevel,
     setTacticsSlider,
     buyDevice,
     setActiveDevice,
@@ -1218,6 +1222,10 @@ function App() {
                 onUpgradeTribune={upgradeTribune}
                 onHostEvent={hostStadiumEvent}
                 onUpgradeStadiumFacility={upgradeStadiumFacility}
+                onSignBuffetSponsor={signBuffetSponsor}
+                onCancelBuffetSponsor={cancelBuffetSponsor}
+                onBuyBuffetMenuItem={buyBuffetMenuItem}
+                onSetBuffetPriceLevel={setBuffetPriceLevel}
                 onUpgradeFacilityModule={upgradeFacilityModule}
                 onHireStaff={hireStaff}
                 onDiscoverYouth={discoverYouthPlayer}

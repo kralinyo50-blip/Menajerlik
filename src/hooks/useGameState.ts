@@ -22,8 +22,12 @@ import {
 import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
   stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier,
-  facilityIncomePerFan, facilityHappinessBonus, getStadiumFacilities
+  facilityIncomePerFan, facilityHappinessBonus, getStadiumFacilities, buffetBreakdown
 } from '../utils/stadium';
+import {
+  BUFFET_MENU_MAP, BUFFET_PRICE_MAP, BUFFET_SPONSOR_MAP, buffetBreakFee, normalizeBuffetState
+} from '../data/buffet';
+import type { BuffetPriceLevel } from '../types/game';
 import { StadiumDesign as StadiumDesignType } from '../types/game';
 import {
   CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS,
@@ -1208,6 +1212,15 @@ export const useGameState = () => {
         const ticketRevenue = Math.floor(attendance * price * 0.7 * gateMultiplier(newState));
         // Tribünde büfe/ürün harcaması: stadyumu doldurmak ekstra kazandırır
         const catering = Math.floor(attendance * fanSpendingPerFan(newState));
+        // 🍔 Büfe işletmesi istatistiği: marka primi + menü + fiyat politikası dahil ciro
+        {
+          const buffetNow = normalizeBuffetState(newState.stadium?.buffet);
+          const bd = buffetBreakdown(newState, attendance);
+          newState.stadium = {
+            ...(newState.stadium as any),
+            buffet: { ...buffetNow, revenueTotal: buffetNow.revenueTotal + Math.round(bd.total) },
+          } as any;
+        }
         matchIncome = baseIncome + ticketRevenue + catering + winBonus;
         newState.clubStats.totalAttendance = (newState.clubStats.totalAttendance || 0) + attendance;
         // Tribün kozmetikleri taraftar morali kazandırır
@@ -1424,6 +1437,24 @@ export const useGameState = () => {
         if (newState.activeSponsor.weeksLeft <= 0) {
           newState.news = [`${newState.activeSponsor.name} sponsorluğu sona erdi.`, ...newState.news.slice(0, 4)];
           newState.activeSponsor = null;
+        }
+      }
+
+      /* — 🍔 Büfe marka sponsorluğu: haftalık sayaç + süre bitişi — */
+      {
+        const buffet = normalizeBuffetState(newState.stadium?.buffet);
+        if (buffet.sponsorId && buffet.sponsorWeeksLeft > 0) {
+          const brand = BUFFET_SPONSOR_MAP[buffet.sponsorId];
+          const left = buffet.sponsorWeeksLeft - 1;
+          if (left <= 0) {
+            newState.news = [
+              `${brand?.icon ?? '🍔'} ${brand?.name ?? 'Marka'} ile büfe sponsorluğu sona erdi — yenilemek için Stadyum → İç Tesisler → Büfe.`,
+              ...newState.news.slice(0, 4),
+            ];
+            newState.stadium = { ...(newState.stadium as any), buffet: { ...buffet, sponsorId: null, sponsorWeeksLeft: 0 } } as any;
+          } else {
+            newState.stadium = { ...(newState.stadium as any), buffet: { ...buffet, sponsorWeeksLeft: left } } as any;
+          }
         }
       }
 
@@ -3088,6 +3119,101 @@ export const useGameState = () => {
     });
   }, []);
 
+  /* ══════════ 🍔 BÜFE İŞLETMESİ ══════════
+     Marka sponsorluğu (imza parası + maç başı prim + tabela), menü yatırımı ve
+     fiyat politikası. Etkiler utils/stadium.ts üzerinden maç gelirine işler. */
+
+  /** Marka ile büfe sponsorluğu imzala: imza parası peşin gelir, prim her iç saha maçında */
+  const signBuffetSponsor = useCallback((brandId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const brand = BUFFET_SPONSOR_MAP[brandId];
+      if (!brand) return prev;
+      const stadium = prev.stadium ?? defaultStadium();
+      const buffetLvl = stadium.facilities?.buffet ?? 0;
+      if (buffetLvl < brand.minBuffetLevel) return prev;
+      if ((prev.fanHappiness ?? 60) < brand.minFanHappiness) return prev;
+      const buffet = normalizeBuffetState(stadium.buffet);
+      return {
+        ...prev,
+        budget: prev.budget + brand.signingBonus,
+        fanHappiness: Math.min(100, (prev.fanHappiness ?? 60) + Math.max(0, brand.happiness)),
+        stadium: {
+          ...stadium,
+          buffet: {
+            ...buffet,
+            sponsorId: brand.id,
+            sponsorWeeksLeft: brand.durationWeeks,
+            sponsorEarned: buffet.sponsorEarned + brand.signingBonus,
+          },
+        },
+        news: [
+          `${brand.icon} ${brand.name} büfe sponsorluğu imzalandı! İmza parası $${brand.signingBonus.toLocaleString()} • ${brand.durationWeeks} hafta • maç başına +$${brand.perFan.toFixed(2)}/taraftar`,
+          ...prev.news.slice(0, 4),
+        ],
+      };
+    });
+  }, []);
+
+  /** Büfe sponsorluk sözleşmesini feshet (kalan haftaların cezası ödenir) */
+  const cancelBuffetSponsor = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const buffet = normalizeBuffetState(stadium.buffet);
+      const brand = buffet.sponsorId ? BUFFET_SPONSOR_MAP[buffet.sponsorId] : null;
+      if (!brand || buffet.sponsorWeeksLeft <= 0) return prev;
+      const fee = buffetBreakFee(brand, buffet.sponsorWeeksLeft);
+      return {
+        ...prev,
+        budget: prev.budget - fee,
+        stadium: { ...stadium, buffet: { ...buffet, sponsorId: null, sponsorWeeksLeft: 0 } },
+        news: [`${brand.icon} ${brand.name} sözleşmesi feshedildi. Ceza: $${fee.toLocaleString()}`, ...prev.news.slice(0, 4)],
+      };
+    });
+  }, []);
+
+  /** Büfe menüsüne ürün ekle (ekipman yatırımı; büfe seviyesi yeterli olmalı) */
+  const buyBuffetMenuItem = useCallback((itemId: string) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const item = BUFFET_MENU_MAP[itemId];
+      if (!item) return prev;
+      const stadium = prev.stadium ?? defaultStadium();
+      const buffetLvl = stadium.facilities?.buffet ?? 0;
+      if (buffetLvl < item.minBuffetLevel) return prev;
+      const buffet = normalizeBuffetState(stadium.buffet);
+      if (buffet.menu.includes(item.id)) return prev;
+      if (prev.budget < item.cost) return prev;
+      return {
+        ...prev,
+        budget: prev.budget - item.cost,
+        fanHappiness: Math.min(100, (prev.fanHappiness ?? 60) + item.happiness * 0.5),
+        stadium: { ...stadium, buffet: { ...buffet, menu: [...buffet.menu, item.id] } },
+        news: [
+          `${item.icon} Büfe menüsüne ${item.name} eklendi! (+$${item.perFan.toFixed(2)}/taraftar, +${item.happiness} memnuniyet)`,
+          ...prev.news.slice(0, 4),
+        ],
+      };
+    });
+  }, []);
+
+  /** Büfe fiyat politikası (uygun / normal / premium) */
+  const setBuffetPriceLevel = useCallback((level: BuffetPriceLevel) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const stadium = prev.stadium ?? defaultStadium();
+      const buffet = normalizeBuffetState(stadium.buffet);
+      const tier = BUFFET_PRICE_MAP[level];
+      if (!tier || buffet.priceLevel === level) return prev;
+      return {
+        ...prev,
+        stadium: { ...stadium, buffet: { ...buffet, priceLevel: level } },
+        news: [`${tier.icon} Büfe fiyat politikası: ${tier.label} (gelir ×${tier.incomeMult}, memnuniyet ${tier.happiness >= 0 ? '+' : ''}${tier.happiness})`, ...prev.news.slice(0, 4)],
+      };
+    });
+  }, []);
+
   const hostStadiumEvent = useCallback((eventId: 'concert'|'fair') => {
     setGameState(prev => {
       if (!prev) return null;
@@ -3550,6 +3676,10 @@ export const useGameState = () => {
     upgradeStadiumLevel,
     upgradeTribune,
     upgradeStadiumFacility,
+    signBuffetSponsor,
+    cancelBuffetSponsor,
+    buyBuffetMenuItem,
+    setBuffetPriceLevel,
     hostStadiumEvent,
     setTacticsSlider,
     buyDevice,

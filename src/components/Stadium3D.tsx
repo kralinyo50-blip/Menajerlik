@@ -30,6 +30,8 @@ interface Stadium3DProps {
   teamName?: string;
   /** İç tesis seviyeleri (büfe, mağaza, otopark …) — 3D'de görünür */
   facilities?: Record<string, number>;
+  /** 🍔 Büfe marka sponsoru — kulübe tabelaları ve marka panosu bu markanın olur */
+  buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
   /** Ön izlenen / yeni alınan tesis — 3D'de halka + ışık sütunu ile işaretlenir */
   highlightFacility?: string | null;
   /** İşaretin üstünde görünen etiket (ör. "🍔 Büfe • Seviye 3 ön izleme") */
@@ -88,7 +90,7 @@ function makeLabelSprite(text: string, accent = '#fbbf24'): THREE.Sprite {
 export const Stadium3D: React.FC<Stadium3DProps> = ({
   design, capacity, logo, sponsorText, night = false, cinematic = false, height = 420, className = '',
   crowdIntensity = 50, wet = false, teamName = 'STADYUM', facilities, highlightFacility = null, previewLabel = null,
-  initialView = 'overview', viewerApi,
+  initialView = 'overview', viewerApi, buffetBrand = null,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
@@ -110,6 +112,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     if (!facilities) return '';
     return Object.keys(facilities).sort().map(k => `${k}:${facilities[k] ?? 0}`).join(',');
   }, [facilities]);
+  /** Marka imzası — sponsor değişince tabelalar yeniden çizilir */
+  const brandKey = buffetBrand ? `${buffetBrand.name}|${buffetBrand.color}` : '';
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -229,6 +233,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     const bundle = buildStadiumGroup(design, {
       capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current,
       facilities: facilities as any,
+      buffetBrand: buffetBrand ?? null,
     });
     scene.add(bundle.group);
     // Gökyüzü: prosedürel gradyan dokusu (yoksa düz renk)
@@ -405,7 +410,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [design, capacity, logo, sponsorText, teamName, height, night, wet, facilityKey, highlightFacility]);
+  }, [design, capacity, logo, sponsorText, teamName, height, night, wet, facilityKey, highlightFacility, brandKey]);
 
   if (failed) {
     return (

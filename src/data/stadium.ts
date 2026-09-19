@@ -1,4 +1,5 @@
 import { RoofStyle, StandStyle, PitchPattern, StadiumState, StadiumFacilities, StadiumFacilityId, StadiumFacilityDef } from '../types/game';
+import { defaultBuffetState } from './buffet';
 
 export interface CosmeticOption {
   id: string;
@@ -151,6 +152,8 @@ export function defaultStadium(): StadiumState {
     tribunes: { north: 1, south: 1, east: 1, west: 1 },
     lastEventIncome: 0,
     facilities: defaultFacilities(),
+    // Büfe işletmesi: marka sponsorluğu + menü + fiyat politikası (bkz. data/buffet.ts)
+    buffet: defaultBuffetState(),
     facilityIncomeTotal: 0,
     lastFacilityIncome: 0,
   };

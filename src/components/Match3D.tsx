@@ -5,6 +5,7 @@ import { FORMATIONS, WEATHER_INFO } from '../data/constants';
 import { stadiumCapacity } from '../utils/stadium';
 import { isSoftwareWebGL } from '../utils/webgl';
 import { buildMatchScene, Match3DInput, ShapeSlot, Side } from './match3d/scene';
+import { BUFFET_SPONSOR_MAP } from '../data/buffet';
 import { awayVenue, hashText, homeVenue, kitFrom, opponentKit, Venue } from './match3d/venue';
 
 export type MatchCameraMode = 'manager' | 'broadcast';
@@ -114,6 +115,15 @@ export const Match3D: React.FC<Match3DProps> = ({
     return awayVenue(opponent.name, gameState.season * 31 + gameState.week);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designSig, userIsHome, opponent.name, gameState.season, gameState.week, gameState.teamName, gameState.stadiumLvl]);
+  /** Ev sahibinin büfe sponsoru (sözleşme sürüyorsa) — 3D tabelalarda görünür */
+  const homeBuffetBrand = useMemo(() => {
+    const buffet = gameState.stadium?.buffet;
+    if (!buffet?.sponsorId || (buffet.sponsorWeeksLeft ?? 0) <= 0) return null;
+    const b = BUFFET_SPONSOR_MAP[buffet.sponsorId];
+    return b ? { name: b.name, color: b.color, ink: b.ink, icon: b.icon } : null;
+  }, [gameState.stadium?.buffet?.sponsorId, gameState.stadium?.buffet?.sponsorWeeksLeft]);
+  const buffetBrandKey = homeBuffetBrand ? `${homeBuffetBrand.name}|${homeBuffetBrand.color}` : '';
+
   const venueKey = useMemo(
     () => `${userIsHome ? 'H' : 'A'}|${venue.name}|${venue.capacity}|${venue.night}|${designSig}`,
     [venue, userIsHome, designSig]
@@ -233,7 +243,9 @@ export const Match3D: React.FC<Match3DProps> = ({
         ? `${gameState.activeSponsor.name.toUpperCase()} • RESMİ SPONSOR • `
         : `${gameState.teamName.toUpperCase()} • RESMİ SPONSOR • `,
       logo: userIsHome ? gameState.teamLogo : opponent.logo,
-      facilities: userIsHome ? ((gameState.stadium as any)?.facilities || {}) : {}
+      facilities: userIsHome ? ((gameState.stadium as any)?.facilities || {}) : {},
+      // 🍔 Ev sahibinin büfe sponsoru varsa saha kenarı tabelalar marka olur
+      buffetBrand: userIsHome ? homeBuffetBrand : null
     });
     scene.add(bundle.group);
     // Eğik açıda çim/tribün dokuları keskin kalsın
@@ -413,7 +425,7 @@ export const Match3D: React.FC<Match3DProps> = ({
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venueKey, weather, lowPerf, failed]);
+  }, [venueKey, weather, lowPerf, failed, buffetBrandKey]);
 
   if (failed) {
     return (

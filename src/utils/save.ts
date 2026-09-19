@@ -4,6 +4,7 @@ import { createCareerMissions, createSeasonMissions, createWeeklyMissions } from
 import { emptySkillTree } from './progression';
 import { playerValue, playerWage } from './pricing';
 import { defaultStadium, defaultFacilities } from '../data/stadium';
+import { normalizeBuffetState } from '../data/buffet';
 import { defaultFacility, normalizeFacility } from '../data/facility';
 import { defaultLife } from './life';
 import { generateInitialFeed } from '../data/social';
@@ -154,6 +155,7 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
       cosmetics: state.stadium?.cosmetics ?? defStadium.cosmetics,
       tribunes: (state.stadium as any)?.tribunes ?? defStadium.tribunes,
       facilities: (state.stadium as any)?.facilities ?? defStadium.facilities ?? defaultFacilities(),
+      buffet: normalizeBuffetState((state.stadium as any)?.buffet),
       facilityIncomeTotal: (state.stadium as any)?.facilityIncomeTotal ?? 0,
       lastFacilityIncome: (state.stadium as any)?.lastFacilityIncome ?? 0,
       lastEventIncome: (state.stadium as any)?.lastEventIncome ?? 0,
@@ -206,6 +208,8 @@ export function migrateState(parsed: Partial<GameState> & Record<string, unknown
   if (!result.stadium.facilities) {
     result.stadium.facilities = defaultFacilities();
   }
+  // Büfe işletmesi göçü (marka sponsorluğu + menü + fiyat politikası)
+  result.stadium.buffet = normalizeBuffetState((result.stadium as any).buffet);
 
   return result;
 }

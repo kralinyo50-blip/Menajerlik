@@ -117,6 +117,50 @@ function facadeTexture(clubColor: string, night: boolean): THREE.Texture | null 
   return tex;
 }
 
+/**
+ * 🍔 Büfe marka tabelası dokusu — sponsor markanın adı ve rengi.
+ * Küçük kulübe tabelasında ve büyük marka panosunda kullanılır.
+ */
+function brandSignTexture(name: string, color: string, ink = '#ffffff', big = false): THREE.Texture | null {
+  const W = big ? 1024 : 512;
+  const H = big ? 256 : 128;
+  const canvas = makeCanvas(W, H);
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const band = ink === '#ffffff' ? 'rgba(0,0,0,0.25)' : ink;
+  // marka rengi zemin + üst/alt kurumsal şeritler
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = band;
+  ctx.fillRect(0, 0, W, H * (big ? 0.12 : 0.14));
+  ctx.fillRect(0, H * (big ? 0.88 : 0.86), W, H * (big ? 0.12 : 0.14));
+  // marka adı (emoji yok: canvas'ta sistem fontuna bağlı kalmasın)
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const text = name.toUpperCase();
+  let size = Math.round(H * (big ? 0.38 : 0.44));
+  ctx.font = `bold ${size}px system-ui, "DejaVu Sans", sans-serif`;
+  // yazı sığmazsa küçült
+  let guard = 0;
+  while (ctx.measureText(text).width > W * 0.9 && guard < 12) {
+    size = Math.round(size * 0.88);
+    ctx.font = `bold ${size}px system-ui, "DejaVu Sans", sans-serif`;
+    guard++;
+  }
+  ctx.fillText(text, W / 2, big ? H * 0.47 : H * 0.5);
+  if (big) {
+    ctx.font = `bold ${Math.round(H * 0.11)}px system-ui, "DejaVu Sans", sans-serif`;
+    ctx.fillStyle = band === 'rgba(0,0,0,0.25)' ? 'rgba(255,255,255,0.9)' : ink;
+    ctx.fillText('RESMÎ BÜFE SPONSORU', W / 2, H * 0.71);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 /** Skorbord ekranı: takım adları, skor, dakika + alt LED şerit */
 function scoreboardTexture(accent: string, clubColor: string, teamName: string): THREE.Texture | null {
   const canvas = makeCanvas(512, 256);
@@ -373,6 +417,8 @@ export interface StadiumBuildOptions {
   teamName?: string;
   /** Tesis seviyeleri — 3D temsili */
   facilities?: Record<string, number>;
+  /** 🍔 Büfe marka sponsoru — tabelalar bu markanın renk/adıyla çizilir */
+  buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
 }
 
 export interface StadiumSceneBundle {
@@ -1218,20 +1264,38 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
       const base = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.2, 2.6), buffetMat);
       base.position.y = 1.1;
       base.castShadow = true;
-      const awning = new THREE.Mesh(new THREE.BoxGeometry(5.3, 0.26, 3.3), awnMat);
+      const awning = new THREE.Mesh(new THREE.BoxGeometry(5.3, 0.26, 3.3), brandAwnMat ?? awnMat);
       awning.position.y = 2.32;
       awning.castShadow = true;
       const counter = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.36, 0.55), counterMat);
       counter.position.set(0, 1.05, 1.55);
-      const sign = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 0.16), new THREE.MeshStandardMaterial({
-        color: 0xfef3c7,
-        emissive: new THREE.Color(0xf59e0b),
-        emissiveIntensity: opts.night ? 1.0 : 0.25,
-      }));
+      const kioskSignMat = kioskSignTex
+        ? new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: kioskSignTex,
+            emissive: 0xffffff,
+            emissiveMap: kioskSignTex,
+            emissiveIntensity: opts.night ? 0.85 : 0.35,
+          })
+        : new THREE.MeshStandardMaterial({
+            color: 0xfef3c7,
+            emissive: new THREE.Color(0xf59e0b),
+            emissiveIntensity: opts.night ? 1.0 : 0.25,
+          });
+      const sign = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 0.16), kioskSignMat);
       sign.position.set(0, 1.72, 1.62);
       g.add(base, awning, counter, sign);
       return g;
     };
+
+    // ── 🍔 Marka tabelaları: sponsor varsa kulübe tabelası ve büyük pano marka olur ──
+    const brand = opts.buffetBrand ?? null;
+    // Marka yoksa kulübün kendi büfesi: tabelada "BÜFE" yazar
+    const kioskSignTex = brand
+      ? brandSignTexture(brand.name, brand.color, brand.ink ?? '#ffffff')
+      : brandSignTexture('BÜFE', '#f59e0b', '#1f2937');
+    const brandBoardTex = brand ? brandSignTexture(brand.name, brand.color, brand.ink ?? '#ffffff', true) : null;
+    const brandAwnMat = brand ? new THREE.MeshStandardMaterial({ color: new THREE.Color(brand.color), roughness: 0.6 }) : null;
 
     const plazaFacMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
     const buffetMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6 });
@@ -1256,7 +1320,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         base.position.y = 1.5;
         base.castShadow = true;
         base.receiveShadow = true;
-        const roof = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.3, 4.5), awnMat);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.3, 4.5), brandAwnMat ?? awnMat);
         roof.position.y = 3.12;
         roof.castShadow = true;
         const counter = new THREE.Mesh(new THREE.BoxGeometry(6, 0.4, 0.6), counterMat);
@@ -1265,11 +1329,20 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
         const tray = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.24, 1.8), new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.7 }));
         tray.position.set(0, 1.62, 0.85);
         // menü tabelası — gece yanar
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.9, 0.2), new THREE.MeshStandardMaterial({
-          color: 0xfef3c7,
-          emissive: new THREE.Color(0xf59e0b),
-          emissiveIntensity: opts.night ? 1.0 : 0.25,
-        }));
+        const signMat = kioskSignTex
+          ? new THREE.MeshStandardMaterial({
+              color: 0xffffff,
+              map: kioskSignTex,
+              emissive: 0xffffff,
+              emissiveMap: kioskSignTex,
+              emissiveIntensity: opts.night ? 0.85 : 0.35,
+            })
+          : new THREE.MeshStandardMaterial({
+              color: 0xfef3c7,
+              emissive: new THREE.Color(0xf59e0b),
+              emissiveIntensity: opts.night ? 1.0 : 0.25,
+            });
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.9, 0.2), signMat);
         sign.position.set(0, 2.45, 2.02);
         kiosk.add(base, roof, counter, tray, sign);
         if (opts.night) {
@@ -1298,6 +1371,37 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
           buffetGroup.add(seat);
         }
       }
+      // 🏷️ Büyük marka panosu: sponsor varsa büfe çarşısının üstünde marka reklamı
+      if (brand && brandBoardTex && buffetLvl > 0) {
+        const boardW = 18;
+        const boardH = 4.5;
+        const boardMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          map: brandBoardTex,
+          emissive: 0xffffff,
+          emissiveMap: brandBoardTex,
+          emissiveIntensity: opts.night ? 0.75 : 0.3,
+          roughness: 0.35,
+        });
+        const board = new THREE.Mesh(new THREE.PlaneGeometry(boardW, boardH), boardMat);
+        // Pano giriş yoluna (dışarıya) bakar: kulübün büfe çarşısı marka reklamı
+        board.position.set(-26, 7.2, halfZ + 26.5);
+        const back = new THREE.Mesh(
+          new THREE.BoxGeometry(boardW + 0.6, boardH + 0.6, 0.4),
+          new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.6, metalness: 0.3 })
+        );
+        back.position.set(-26, 7.2, halfZ + 26.15);
+        const legs = [-9, 9].map(off => {
+          const leg = new THREE.Mesh(
+            new THREE.BoxGeometry(0.4, 5, 0.4),
+            new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 })
+          );
+          leg.position.set(-26 + off, 2.5, halfZ + 26.3);
+          return leg;
+        });
+        buffetGroup.add(board, back, ...legs);
+      }
+
       addFacilityObj(buffetGroup, 'buffet', buffetLvl);
     }
     // 👕 Fan Shop dış

@@ -9,6 +9,24 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '4.9.0',
+    date: '19 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: "🍔 Büfe Stüdyosu: Marka Sponsorluğu + Menü + Fiyat Politikası",
+    items: [
+      '🤝 Büfe artık sponsorluk alıyor: Stadyum → İç Tesisler → 🍔 Büfe Stüdyosu ekranından gerçek markalarla anlaşma imzalarsın — Coca-Cola, Burger King, McDonald\'s, Domino\'s Pizza, Starbucks, Red Bull, Algida, Ülker, Eti, Pınar, Sütaş, Torku, Banvit, Kahve Dünyası, Simit Sarayı (mahalli → ulusal → global 3 kademe)',
+      '🏷️ Anlaşma imzalayınca büfenin tabelası o markanın olur: 3D\'deki büfe kulübelerinin tabelası marka adı + marka rengiyle çizilir, tenteler marka rengine döner ve giriş meydanına marka reklam panosu kurulur (maç ekranındaki saha kenarı büfeleri de markalı)',
+      '💰 Marka anlaşması: peşin imza parası (350 bin – 4,5 milyon $), her iç saha maçında taraftar başına prim (+0,35 – +2,1 $) ve taraftar memnuniyeti; süre 12–30 hafta, süre bitince yeniden imzalarsın',
+      '🔒 Markalar koşul ister: büfe seviyesi (1–5) ve taraftar mutluluğu eşiği tutmuyorsa anlaşma kilitli görünür ve nedenini yazar — memnuniyet yükseldikçe üst kademe markalar kapıyı çalar',
+      '✍️ Sözleşme bozulabilir: fesih cezası kalan hafta primi kadar düşülür, başka marka imzalanmadan önce mevcut sözleşmeyi feshetmen gerekir',
+      '🍽️ Menü yatırımı: 12 ürün (sosisli, patates, meşrubat dolabı, simit & çay, cips/çikolata, hamburger, pizza, dondurma, tavuk kanat, dürüm & ayran, kahve barı, tatlı & künefe) büfe seviyesine göre açılır — her ürün taraftar başına gelir (0,8–2,8 $) ve memnuniyet (+1…+5) getirir',
+      '🏷️ Fiyat politikası: 🟢 Uygun (gelir ×0,85, memnuniyet +3) / 🟡 Standart (×1,0) / 🔴 Premium (×1,35, memnuniyet −3) — taraftar memnuniyeti ile kâr arasındaki dengeyi sen kurarsın',
+      '📊 Büfe Stüdyosu panelinde maç başına büfe geliri, taraftar başına harcama, marka primi ve toplam büfe cirosu canlı gösterilir; masaya oturan her yatırım maç kazancına ve memnuniyete işler',
+      '🎥 Panodaki 👁️ tuşuyla markanın tabelasını satın almadan 3D\'de dene; kamera otomatik olarak çarşıdaki büfelere gider',
+      '💾 Tüm büfe durumu kayda işler (marka, kalan süre, menü, fiyat politikası) — eski kayıtlar otomatik göç eder, sözleşme bitince büfe kulübün kendi büfesi olarak devam eder',
+    ],
+  },
+  {
     version: '4.8.3',
     date: '18 Eyl 2026',
     tag: 'DÜZELTME',

@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FacilityModuleId, GameState, RoofStyle, StandStyle, PitchPattern, Staff, StadiumDesign, StadiumFacilities, StadiumFacilityId, StadiumState } from '../../types/game';
 import { Stadium3D, StadiumViewerApi } from '../Stadium3D';
+import { BuffetSection } from './BuffetSection';
+import { BUFFET_SPONSOR_MAP, normalizeBuffetState } from '../../data/buffet';
+import type { BuffetPriceLevel } from '../../types/game';
 import {
   CAPACITY_PACKAGES, COSMETICS, FREE_ACCENT_COLORS, FREE_SEAT_COLORS, MAX_CAPACITY, PREMIUM_COLORS,
   ROOF_LABEL, ROOF_PROTECTION, STAND_LABEL, PITCH_LABEL, TICKET_STRATEGIES, isUnlocked, TRIBUNES, STADIUM_EVENTS,
@@ -21,6 +24,11 @@ interface StadiumTabProps {
   onUpgradeTribune?: (side: 'north'|'south'|'east'|'west') => void;
   onHostEvent?: (eventId: 'concert'|'fair') => void;
   onUpgradeStadiumFacility?: (id: import('../../types/game').StadiumFacilityId) => void;
+  /* ── 🍔 Büfe işletmesi: marka sponsorluğu, menü, fiyat politikası ── */
+  onSignBuffetSponsor?: (brandId: string) => void;
+  onCancelBuffetSponsor?: () => void;
+  onBuyBuffetMenuItem?: (itemId: string) => void;
+  onSetBuffetPriceLevel?: (level: BuffetPriceLevel) => void;
   /* ── 3D Antrenman Kompleksi & tesis yönetimi (eski Tesisler sekmesi buraya taşındı) ── */
   onUpgradeFacilityModule?: (id: FacilityModuleId) => void;
   onHireStaff?: (type: Staff['type'], cost: number) => void;
@@ -137,6 +145,7 @@ const OptionCard: React.FC<OptionCardProps> = ({
 
 export const StadiumTab: React.FC<StadiumTabProps> = ({
   gameState, onSetDesign, onBuyCosmetic, onBuyCapacity, onSetTicketMultiplier, onUpgradeStadiumLevel, onUpgradeTribune, onHostEvent, onUpgradeStadiumFacility,
+  onSignBuffetSponsor, onCancelBuffetSponsor, onBuyBuffetMenuItem, onSetBuffetPriceLevel,
   onUpgradeFacilityModule, onHireStaff, onDiscoverYouth, onPromoteYouth,
   onSendScout, onClaimScoutReport, onDismissScoutReport, onCancelScoutMission
 }) => {
@@ -174,6 +183,10 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
   useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
   /** Aktif ön izlemenin kimliği + etiketi + (varsa) tek tıkla uygulama aksiyonu */
   const [previewInfo, setPreviewInfo] = useState<{ id: string; label: string; facility?: StadiumFacilityId; applyLabel?: string; onApply?: () => void } | null>(null);
+  /** 🍔 3D'de ön izlenen marka tabelası (null → gerçek sponsor) */
+  const [previewBrandId, setPreviewBrandId] = useState<string | null>(null);
+  /** Büfe Stüdyosu paneli açık mı */
+  const [buffetOpen, setBuffetOpen] = useState(false);
   /** Tuşla sabitlenmiş ön izleme — hover'lar bunu bozamaz */
   const pinned = previewInfo !== null;
   const isPreview = pinned || previewDesign !== null || previewBonus !== null || previewVip !== null || previewTribunes !== null || previewLevel !== null || previewFacilities !== null;
@@ -188,6 +201,11 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
   const realFacilities = getStadiumFacilities(gameState);
   /** İç tesis seviyeleri: ön izleme varsa o, yoksa gerçek durum (3D sahne bunu kullanır) */
   const displayFacilities = previewFacilities ?? realFacilities;
+  /** 🍔 Büfe işletmesi durumu (marka, menü, fiyat politikası) */
+  const buffetState = normalizeBuffetState(stadium.buffet);
+  /** 3D'de tabelası görünecek marka: ön izleme varsa o, yoksa sözleşmesi süren sponsor */
+  const activeBrand = buffetState.sponsorId && (buffetState.sponsorWeeksLeft ?? 0) > 0 ? BUFFET_SPONSOR_MAP[buffetState.sponsorId] : null;
+  const shownBrand = previewBrandId ? BUFFET_SPONSOR_MAP[previewBrandId] : activeBrand;
   const displayStadium = {
     ...stadium,
     design: displayDesign,
@@ -291,6 +309,13 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
     };
   };
 
+  /** Büfe stüdyosu sekmeye geçince kamera meydana (büfe çarşısı) baksın */
+  useEffect(() => {
+    if (!buffetOpen) return;
+    setSceneView('plaza');
+    viewerApi.current?.focusPreset('plaza');
+  }, [buffetOpen]);
+
   /** Fare üzerine gelince ön izleme — yalnızca sabitlenmiş bir ön izleme yoksa */
   const hoverPreview = (p: PreviewPatch) => { if (!pinned) applyPatch(p); };
   const hoverEnd = () => { if (!pinned) resetPreviewValues(); };
@@ -349,6 +374,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             facilities={displayFacilities as unknown as Record<string, number>}
             initialView={sceneView}
             viewerApi={viewerApi}
+            buffetBrand={shownBrand ? { name: shownBrand.name, color: shownBrand.color, ink: shownBrand.ink, icon: shownBrand.icon } : null}
             highlightFacility={highlightFacility}
             previewLabel={
               previewFacilities && previewInfo?.facility
@@ -419,6 +445,11 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
             Koltuk: <b style={{ color: displayDesign.seatColor }}>{displayDesign.seatColor}</b> • Aksan: <b style={{ color: displayDesign.accentColor }}>{displayDesign.accentColor}</b>
             {displayVip && ' • 🥂 VIP'}
             {isPreview && <span className="ml-2 text-amber-300">👁️ ön izleme</span>}
+            {previewBrandId && shownBrand && (
+              <span className="ml-2 font-black" style={{ color: shownBrand.ink ?? '#fff', textShadow: '0 0 0.5px #000' }}>
+                🍔 {shownBrand.icon} {shownBrand.name} tabela ön izlemesi
+              </span>
+            )}
           </div>
           {/* Kamera ön ayarları — büfeler/çarşı ve saha tek tıkla */}
           <div className="absolute top-14 left-3 flex flex-col gap-1.5">
@@ -1073,6 +1104,13 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
                 {STADIUM_FACILITY_DEFS.map(def => {
                   const realLvl = realFacilities[def.id] ?? 0;
+                  const isBuffet = def.id === 'buffet';
+                  const openBuffetStudio = () => {
+                    setBuffetOpen(true);
+                    setSub('facilities');
+                    // panel aşağıda; bir sonraki karede oraya kaydır
+                    window.setTimeout(() => document.getElementById('bufe-studyosu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                  };
                   const lvl = displayFacilities[def.id] ?? 0;   // ön izleme dahil görünüm
                   const isMax = realLvl >= 5;
                   const cost = facilityUpgradeCost(def.id, realLvl);
@@ -1093,7 +1131,15 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-white font-black text-sm">{def.icon} {def.name}</span>
+                        <span className="text-white font-black text-sm">
+                          {def.icon} {def.name}
+                          {isBuffet && activeBrand && (
+                            <span className="ml-2 text-[9px] font-black px-1.5 py-0.5 rounded-full border"
+                              style={{ background: `${activeBrand.color}22`, borderColor: activeBrand.color, color: activeBrand.ink ?? '#fff' }}>
+                              {activeBrand.icon} {activeBrand.name}
+                            </span>
+                          )}
+                        </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
                           lvl === 0 ? 'bg-slate-700 text-slate-400' : isMax ? 'bg-emerald-500 text-white' : 'bg-amber-500/20 text-amber-200'
                         }`}>
@@ -1148,10 +1194,55 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                       {!canAfford && !isMax && (
                         <div className="text-[9px] text-red-300 mt-1">Eksik: {formatMoney(cost - gameState.budget)}</div>
                       )}
+                      {isBuffet && (
+                        <button
+                          onClick={openBuffetStudio}
+                          className="w-full mt-2 py-2 rounded-lg text-[11px] font-black bg-fuchsia-600/80 hover:bg-fuchsia-500 text-white border border-fuchsia-400/60"
+                        >
+                          🍔 Büfe Stüdyosu — marka, menü, fiyat
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
+              {/* ══════════ 🍔 BÜFE STÜDYOSU — marka sponsorluğu + menü + fiyat ══════════ */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setBuffetOpen(v => !v)}
+                  className="w-full flex items-center justify-between bg-fuchsia-600/20 hover:bg-fuchsia-600/30 border border-fuchsia-500/40 rounded-xl px-4 py-3 transition-all"
+                >
+                  <span className="text-sm font-black text-fuchsia-200 flex items-center gap-2">
+                    🍔 BÜFE STÜDYOSU
+                    <span className="text-[10px] font-bold text-slate-300">
+                      marka sponsorluğu • menü • fiyat politikası
+                      {activeBrand ? ` • şu an ${activeBrand.icon} ${activeBrand.name}` : ''}
+                    </span>
+                  </span>
+                  <span className="text-xs font-black text-fuchsia-200">{buffetOpen ? '▲ Kapat' : '▼ Aç'}</span>
+                </button>
+                {buffetOpen && (
+                  <div className="mt-3">
+                    <BuffetSection
+                      gameState={gameState}
+                      buffet={buffetState}
+                      facilities={realFacilities}
+                      attendance={Math.max(500, preview.attendance)}
+                      onUpgradeBuffet={() => buyFacility('buffet')}
+                      onSignSponsor={(id) => { onSignBuffetSponsor?.(id); setPreviewBrandId(null); }}
+                      onCancelSponsor={onCancelBuffetSponsor ?? (() => {})}
+                      onBuyMenuItem={(id) => onBuyBuffetMenuItem?.(id)}
+                      onSetPriceLevel={(lvl) => onSetBuffetPriceLevel?.(lvl)}
+                      onPreviewBrand={(id) => { setPreviewBrandId(id); focusScene(); }}
+                      previewBrandId={previewBrandId}
+                      onPreviewLevel={() => togglePreview(facilityPreviewPatch('buffet'))}
+                      previewingLevel={previewInfo?.id === 'preview:facility:buffet'}
+                      onFocus3D={focusScene}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 bg-black/30 rounded-xl p-3 border border-slate-700/40">
                 <div className="text-[11px] font-bold text-white mb-1">💡 Tesis Stratejisi</div>
                 <div className="text-[10px] text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-1">
