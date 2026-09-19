@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -420,6 +421,79 @@ test('authenticated event streams push identical head-to-head frames and command
   assert.equal(one.room.revision,two.room.revision);
   const reconnect = await subscribe(guest.token);
   assert.deepEqual(ownMatch((await reconnect.read(() => true)).room), ownMatch(two.room));
+});
+
+test('kopan (okunmayan) akışlar yeniden bağlanmayı kilitmez, yeni sekme devralır', { timeout: 10_000 }, async t => {
+  const f = await fixture(t);
+  const { host, path } = await f.pair();
+  const { port } = new URL(f.url());
+  // Zombi bağlantı: isteği gönderen ama artık hiç okumayan, kapanmayan soket (tünel/proxy davranışı).
+  const zombies = [];
+  t.after(() => zombies.forEach(s => s.destroy()));
+  for (let i = 0; i < 4; i++) {
+    const socket = connect(Number(port), '127.0.0.1');
+    await new Promise(resolve => socket.once('connect', resolve));
+    socket.write(`GET /api/online/${path}/stream HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nX-Member-Token: ${host.token}\r\nX-Tab-Id: zombi-sekme-${i}\r\n\r\n`);
+    socket.pause();
+    zombies.push(socket);
+  }
+  await new Promise(resolve => setTimeout(resolve, 200));
+  // Eski davranış: dört zombi soket slota yazılıyor ve buradan sonra her istek 429 dönüyordu.
+  const recovered = await fetch(f.url() + path + '/stream', { headers: { 'X-Member-Token': host.token, 'X-Tab-Id': 'yeni-sekme-1' } });
+  assert.equal(recovered.status, 200);
+  assert.match(recovered.headers.get('content-type'), /text\/event-stream/);
+  const reader = recovered.body.getReader();
+  const first = await reader.read();
+  assert.match(new TextDecoder().decode(first.value), /"room"/);
+  // Beşinci sekme de bağlanabilir; en eski sekme "limit" ile düşürülür.
+  const extra = await fetch(f.url() + path + '/stream', { headers: { 'X-Member-Token': host.token, 'X-Tab-Id': 'yeni-sekme-2' } });
+  assert.equal(extra.status, 200);
+  const extraReader = extra.body.getReader();
+  assert.match(new TextDecoder().decode((await extraReader.read()).value), /"room"/);
+  await extraReader.cancel();
+  await reader.cancel();
+});
+
+test('aynı sekme kimliğiyle yeniden bağlanan istemci eski zombi akışını devralır', { timeout: 10_000 }, async t => {
+  const f = await fixture(t);
+  const { host, path } = await f.pair();
+  const open = tab => fetch(f.url() + path + '/stream', { headers: { 'X-Member-Token': host.token, ...(tab ? { 'X-Tab-Id': tab } : {}) } });
+  const stale = await open('sekme-aaaa-1111');
+  const staleReader = stale.body.getReader();
+  assert.match(new TextDecoder().decode((await staleReader.read()).value), /"room"/);
+  const fresh = await open('sekme-aaaa-1111');
+  assert.equal(fresh.status, 200);
+  const freshReader = fresh.body.getReader();
+  assert.match(new TextDecoder().decode((await freshReader.read()).value), /"room"/);
+  // Eski bağlantı kapanırken nedenini bildirir; istemci buna göre yoklamaya geçer.
+  let closed = '';
+  for (;;) {
+    const { done, value } = await staleReader.read();
+    if (value) closed += new TextDecoder().decode(value);
+    if (done || /event: superseded/.test(closed)) break;
+  }
+  assert.match(closed, /event: superseded/);
+  assert.match(closed, /"reason":"tab"/);
+  await freshReader.cancel();
+});
+
+test('canlı bağlantı açılış hızı 429 ve Retry-After ile bildirilir', { timeout: 15_000 }, async t => {
+  const f = await fixture(t);
+  const { host, path } = await f.pair();
+  let limited;
+  const opened = [];
+  for (let i = 0; i < 32 && !limited; i++) {
+    const response = await fetch(f.url() + path + '/stream', { headers: { 'X-Member-Token': host.token, 'X-Tab-Id': `sekme-hiz-${i}` } });
+    if (response.status === 429) { limited = response; break; }
+    assert.equal(response.status, 200);
+    opened.push(response);
+  }
+  t.after(() => opened.forEach(r => r.body?.cancel?.()));
+  assert.ok(limited, 'otuz denemeden sonra hız sınırı devreye girmeli');
+  assert.match(limited.headers.get('retry-after') || '', /^\d+$/);
+  assert.ok(Number(limited.headers.get('retry-after')) > 0);
+  const body = await limited.json();
+  assert.match(body.error, /çok sık/i);
 });
 
 test('server timer advances and persists a match with all browsers disconnected', async t => {
