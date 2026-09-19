@@ -78,6 +78,7 @@ Arayüz ve online API aynı portta çalışır (varsayılan **5173**). Aynı Wi-
 Windows'da `paylas.bat` dosyasına çift tıkla (Mac/Linux: `./paylas.sh`, veya `npm run share`). Oyun derlenip sunucu başlatılır, bilgisayarın ücretsiz güvenli bir tünelle internete açılır ve ekrana herkese-açık bir link yazılır (`https://....trycloudflare.com`). Bu linki arkadaşlarına gönder; **herkes (sen dahil) o linki açıp** Online Oyna desin, sonra kodla aynı lige girsin. Davet bağlantılarının doğru çalışması için senin de internet linkinden oynaman gerekir (localhost'tan oynarsan kopyaladığın davet linki arkadaşlarında çalışmaz).
 
 - Pencere açık kalmalı; kapatırsan oyun herkese kapanır (Ctrl+C ile durdur).
+- **`[HATA] spawn EINVAL` görürsen:** Windows, `npm.cmd`/`npx.cmd` gibi kabuk betiklerinin doğrudan (kabuk olmadan) başlatılmasını engelliyor demektir. Paylaşım betiği artık bu komutları `cmd.exe` üzerinden çalıştırıyor ve derlemeyi `npm` yerine yerel Vite ile (`node node_modules/vite/bin/vite.js build`) yapıyor; yani bu hata güncel sürümde çıkmaz. Yine görürsen: klasörde bir kez `npm install` çalıştır, Node.js sürümünü 20.19+/22.12+ yap ve `paylas.bat` dosyasını yeniden dene.
 - Link her başlatışta değişir ama lig kayıtları `data/online-rooms.json` dosyasında durur; paylaşımı kapatıp yeniden açınca eski oda kodları aynen çalışır — arkadaşların yeni link + eski kodla katılmaya devam eder (katılım lobisi hâlâ açıksa).
 - İlk açılışta tünel programı bir kez indirilir (~40 MB). Güvenlik duvarın/okul ağın tüneli engellerse aynı Wi-Fi yöntemini dene.
 
