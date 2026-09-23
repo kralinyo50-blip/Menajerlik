@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useGameState } from './hooks/useGameState';
 import { SetupScreen } from './components/SetupScreen';
 import { Sidebar } from './components/Sidebar';
@@ -21,7 +21,8 @@ import { TechTab } from './components/tabs/TechTab';
 import { CasinoTab } from './components/tabs/CasinoTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { FpsOverlay } from './components/FpsOverlay';
-import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus } from './utils/unlocks';
+import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus, unlocksBetween } from './utils/unlocks';
+import { loadGraphics, subscribeGraphics } from './utils/graphics';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -204,6 +205,24 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   const [pendingMatchAfterStory, setPendingMatchAfterStory] = useState(false);
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
   const [seasonHandled, setSeasonHandled] = useState<number | null>(null);
+  // 🎯 v5.0.1 Seviye atlama kutlaması — kariyer seviyesi artınca kutlama perdesi
+  const [levelUpInfo, setLevelUpInfo] = useState<{ level: number; bonus: number; unlocked: ReturnType<typeof unlocksBetween> } | null>(null);
+  const prevCareerLvlRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!gameState) return;
+    const lvl = careerLevelFromMatches(gameState.matchesPlayed || 0);
+    if (prevCareerLvlRef.current === null) { prevCareerLvlRef.current = lvl; return; }
+    if (lvl > prevCareerLvlRef.current) {
+      const unlocked = unlocksBetween(prevCareerLvlRef.current, lvl);
+      setLevelUpInfo({ level: lvl, bonus: levelUpBonus(lvl), unlocked });
+      sfx.levelUp();
+      prevCareerLvlRef.current = lvl;
+    }
+  }, [gameState?.matchesPlayed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🎛️ Düşük grafik profilinde menü arkaplanı süs animasyonlarını durdur (3D grafiklere dokunmadan)
+  const gfxTier = useSyncExternalStore(subscribeGraphics, () => loadGraphics().tier, () => 'high' as const);
+
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabsScrollFade, setTabsScrollFade] = useState({ left: false, right: false });
 
@@ -997,7 +1016,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
+    <div className={`min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden ${gfxTier === 'low' ? 'perf-lite' : ''}`}>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.07),transparent_60%),radial-gradient(ellipse_at_bottom_right,_rgba(6,182,212,0.06),transparent_60%),radial-gradient(ellipse_at_bottom_left,_rgba(139,92,246,0.05),transparent_60%),radial-gradient(ellipse_at_center,_rgba(251,191,36,0.03),transparent_70%)] pointer-events-none" />
       <div className="absolute inset-0 opacity-[0.025] pointer-events-none" style={{backgroundImage:"url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJhIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1Ii8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2EpIiBvcGFjaXR5PSIuMDUiLz48L3N2Zz4=')"}} />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -1072,6 +1091,35 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
       {gameState.pendingPress && (
         <PressConference press={gameState.pendingPress} onAnswer={answerPressQuestion} onDismiss={dismissPress} />
+      )}
+
+      {/* 🎯 Seviye atlama kutlaması */}
+      {levelUpInfo && (
+        <div className="fixed inset-0 bg-black/85 z-[76] flex items-center justify-center p-4" onClick={() => setLevelUpInfo(null)}>
+          <div className="w-full max-w-md bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border-2 border-emerald-500/50 p-6 text-center shadow-[0_0_60px_rgba(16,185,129,0.35)]" style={{ animation: 'goalPop 500ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
+            <div className="text-6xl mb-2" style={{ animation: 'confetti 900ms ease 100ms both' }}>⬆️</div>
+            <div className="text-xs text-emerald-400 font-black tracking-[0.2em]">KARİYER SEVİYESİ</div>
+            <div className="text-5xl font-black text-white mt-1" style={{ animation: 'goalGlow 900ms ease 200ms 2 alternate' }}>{levelUpInfo.level}</div>
+            <div className="mt-2 text-sm text-slate-300">Seviye primi: <b className="text-amber-300">+${levelUpInfo.bonus.toLocaleString()}</b> • Yetenek puanı: <b className="text-violet-300">+1</b></div>
+            {levelUpInfo.unlocked.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="text-[10px] tracking-widest text-slate-400 font-bold">🔓 YENİ AÇILANLAR</div>
+                {levelUpInfo.unlocked.map(u => (
+                  <div key={u.tab} className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3 text-left">
+                    <span className="text-2xl">{u.icon}</span>
+                    <div>
+                      <div className="text-white font-black text-sm">{u.label}</div>
+                      <div className="text-[11px] text-slate-400">Üst menüden ulaşabilirsin</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setLevelUpInfo(null); sfx.coin(); }} className="mt-5 w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-black rounded-xl shadow-lg shadow-emerald-500/25">
+              Devam ⚽
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Sezon sonu gazetesi */}

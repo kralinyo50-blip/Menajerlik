@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CasinoState, GameState } from '../../types/game';
 import { formatMoney } from '../../utils/pricing';
 
@@ -20,9 +20,9 @@ const SLOT_SYMBOLS = [
   { s: '⚽', w: 10 }, { s: '👑', w: 6 }, { s: '💎', w: 3 }, { s: '7️⃣', w: 1 },
 ];
 const SLOT_POOL = SLOT_SYMBOLS.flatMap(x => Array(x.w).fill(x.s));
-// Ödemeler (3 aynı): RTP ≈ %93 olacak şekilde ayarlandı
+// Ödemeler — analitik olarak dengelendi (RTP ≈ %89.5, tools/sim-casino-rtp.mjs ile doğrulanır)
 const SLOT_PAYOUT: Record<string, number> = {
-  '7️⃣': 77, '💎': 24, '👑': 12, '⚽': 8, '🔔': 5, '🍀': 3.5, '🍋': 2.2, '🍒': 1.6,
+  '7️⃣': 250, '💎': 110, '👑': 60, '⚽': 35, '🔔': 22, '🍀': 15, '🍋': 10, '🍒': 8,
 };
 
 function spinSlots(): { reels: string[]; mult: number } {
@@ -30,15 +30,15 @@ function spinSlots(): { reels: string[]; mult: number } {
   if (reels[0] === reels[1] && reels[1] === reels[2]) {
     return { reels, mult: SLOT_PAYOUT[reels[0]] ?? 2 };
   }
-  // 2 aynı: küçük geri dönüş
+  // 2 aynı: bahis geri gelir (yüksek sembollerde çarpanlı)
   for (const sym of SLOT_SYMBOLS) {
     if (reels.filter(r => r === sym.s).length === 2) {
-      return { reels, mult: sym.s === '7️⃣' ? 4 : sym.s === '💎' ? 2 : 0.5 };
+      return { reels, mult: sym.s === '7️⃣' ? 6 : sym.s === '💎' ? 3 : 1 };
     }
   }
   // 7️⃣ tek başına bile küçük teselli
   const sevens = reels.filter(r => r === '7️⃣').length;
-  if (sevens === 1) return { reels, mult: 0.2 };
+  if (sevens === 1) return { reels, mult: 0.3 };
   return { reels, mult: 0 };
 }
 
@@ -97,10 +97,10 @@ const WHEEL_POOL = WHEEL_SEGMENTS.flatMap(x => Array(Math.round(x.w * 10)).fill(
 type GameId = 'slots' | 'roulette' | 'blackjack' | 'wheel';
 
 const GAME_META: Record<GameId, { name: string; icon: string; desc: string; rtp: string }> = {
-  slots: { name: 'Şans Makinesi 777', icon: '🎰', desc: '3 makara, 8 sembol. 7️⃣7️⃣7️⃣ = 77×!', rtp: '≈%93' },
+  slots: { name: 'Şans Makinesi 777', icon: '🎰', desc: '3 makara, 8 sembol. 7️⃣7️⃣7️⃣ = 250× JACKPOT!', rtp: '≈%90' },
   roulette: { name: 'Avrupa Ruleti', icon: '🎡', desc: 'Kırmızı/siyah, tek/çift, 0. Tek sayı 36×', rtp: '≈%97' },
   blackjack: { name: 'Blackjack', icon: '🃏', desc: "21'i tut. Blackjack 3:2 öder.", rtp: '≈%95' },
-  wheel: { name: 'Çarkıfelek', icon: '🎯', desc: 'Döndür ve kazan: 10× dilimi var!', rtp: '≈%91' },
+  wheel: { name: 'Çarkıfelek', icon: '🎯', desc: 'Döndür ve kazan: 10× dilimi var!', rtp: '≈%97' },
 };
 
 const MAX_BET = 5_000_000;
@@ -116,6 +116,10 @@ export const CasinoTab: React.FC<Props> = ({ gameState, onUpdateCasino }) => {
   const [reels, setReels] = useState(['7️⃣', '💎', '⚽']);
   const [spinning, setSpinning] = useState(false);
   const spinTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Sekmeden ayrılınca dönen makara zamanlayıcısını bırak
+  useEffect(() => () => {
+    if (spinTimer.current) { clearInterval(spinTimer.current); spinTimer.current = null; }
+  }, []);
 
   // Rulet durumu
   const [rBetKind, setRBetKind] = useState<RouletteBetKind>('red');

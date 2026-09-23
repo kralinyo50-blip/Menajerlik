@@ -76,6 +76,17 @@ export function careerProgress(matchesPlayed: number): CareerProgress {
   return { level, matchesPlayed, matchesToNext: level >= MAX_CAREER_LEVEL ? 0 : matchesToNext, levelProgress, nextUnlock };
 }
 
+/** İki seviye arasında açılan özellikler (seviye atlama ekranı için) */
+export interface UnlockReveal { tab: UnlockableTab; label: string; icon: string; atLevel: number }
+export function unlocksBetween(fromLevel: number, toLevel: number): UnlockReveal[] {
+  const out: UnlockReveal[] = [];
+  for (const [tab, meta] of Object.entries(UNLOCK_META)) {
+    const at = TAB_UNLOCK_LEVEL[tab as UnlockableTab];
+    if (at > fromLevel && at <= toLevel) out.push({ tab: tab as UnlockableTab, label: meta.label, icon: meta.icon, atLevel: at });
+  }
+  return out.sort((a, b) => a.atLevel - b.atLevel);
+}
+
 export const isTabUnlocked = (tab: UnlockableTab, matchesPlayed: number): boolean =>
   careerLevelFromMatches(matchesPlayed) >= TAB_UNLOCK_LEVEL[tab];
 

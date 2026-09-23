@@ -9,6 +9,19 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.0.1',
+    date: '23 Eyl 2026',
+    tag: 'İYİLEŞTİRME',
+    title: '🎯 Seviye Kutlaması + 🎰 Dengeli Kumarhane + ⚡ Zayıf PC İnce Ayarı',
+    items: [
+      '🎉 Seviye atlayınca artık kutlama ekranı geliyor: prim, yetenek puanı ve açılan özellikler tek ekranda gösterilir.',
+      '🎰 Kumarhane matematiği dengeleendi: slot ödemeleri %31\'lik haksız RTP\'den ≈%90\'a çekildi (7️⃣7️⃣7️⃣ = 250× JACKPOT, çiftler bahis geri). Rulet/çark RTP\'leri doğrulandı — npm run sim:casino ile herkes test edebilir.',
+      '⚡ Maç motoru her dakika tikinde kadro gücünü yeniden hesaplamıyor artık (useMemo) — zayıf CPU\'larda tick maliyeti düştü.',
+      '⚡ Düşük grafik profilinde menü arkaplanı süs animasyonları durduruluyor (3D grafiklere dokunmadan).',
+      '⚡ GPU benchmark\'ı kare başına 4096 matris çarpması yapmıyor — tahsis yok, daha doğru skor.',
+    ],
+  },
+  {
     version: '5.0.0',
     date: '23 Eyl 2026',
     tag: 'BÜYÜK',

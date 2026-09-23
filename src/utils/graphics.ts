@@ -271,22 +271,28 @@ export function runGpuBenchmark(): Promise<{ fps: number; score: number }> {
       let frames = 0;
       const t0 = performance.now();
       const DURATION = 900;
+      // MVP = P × T (yalnız öteleme) → kapalı formül, kare başına 4096 matris
+      // çarpması/nesnesi YOK. GC baskısı skoru bozmasın.
+      const mvp = new Float32Array(16);
+      mvp[0] = proj[0]; mvp[1] = proj[1]; mvp[2] = proj[2]; mvp[3] = proj[3];
+      mvp[4] = proj[4]; mvp[5] = proj[5]; mvp[6] = proj[6]; mvp[7] = proj[7];
+      mvp[8] = proj[8]; mvp[9] = proj[9]; mvp[10] = proj[10]; mvp[11] = proj[11];
+      mvp[15] = proj[15];
       const step = (now: number) => {
         const t = now * 0.001;
-        // Izgara çizimi — her küp için uniform mat4 (drawArrays 36 vert)
-        // 4096 * 36 = 147k vert/kare — eski iGPU için bile ağır ama adil bir test
+        // Izgara çizimi — 4096 küp × 36 vert = 147k vert/kare; eski iGPU için bile
+        // ağır ama adil bir test
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.uniformMatrix4fv(uMVP, false, proj);
         const cos = Math.cos, sin = Math.sin;
         for (let r = 0; r < ROWS; r++) {
           for (let c = 0; c < COLS; c++) {
             const x = (c / COLS - 0.5) * 30 + sin(t + c * 0.3) * 2;
             const y = (r / ROWS - 0.5) * 20 + cos(t + r * 0.25) * 2;
             const z = -((c % 8) * 4 + (r % 8) * 4) - 20;
-            // Model matrisini projeye çarpmak yerine pozisyonu MVP'ye ekleyen
-            // küçük bir dolap: uniform mat4 yaz + draw
-            M_TMP[12] = x; M_TMP[13] = y; M_TMP[14] = z;
-            gl.uniformMatrix4fv(uMVP, false, mul(proj, M_TMP));
+            mvp[12] = proj[12] + x * proj[0] + y * proj[4] + z * proj[8];
+            mvp[13] = proj[13] + x * proj[1] + y * proj[5] + z * proj[9];
+            mvp[14] = proj[14] + x * proj[2] + y * proj[6] + z * proj[10];
+            gl.uniformMatrix4fv(uMVP, false, mvp);
             gl.drawArrays(gl.TRIANGLES, 0, 36);
           }
         }
@@ -301,23 +307,6 @@ export function runGpuBenchmark(): Promise<{ fps: number; score: number }> {
           const score = Math.max(0, Math.min(140, Math.round(fps * 1.1)));
           resolve({ fps: Math.round(fps), score });
         }
-      };
-      const M_TMP = new Float32Array([
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
-      ]);
-      const mul = (a: Float32Array, b: Float32Array) => {
-        const o = new Float32Array(16);
-        for (let i = 0; i < 4; i++) {
-          for (let j = 0; j < 4; j++) {
-            let s = 0;
-            for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k];
-            o[i * 4 + j] = s;
-          }
-        }
-        return o;
       };
       requestAnimationFrame(step);
     } catch {

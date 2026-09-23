@@ -404,7 +404,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     };
   }, [gameState, activeLineup, isHome, sentOff, talkBonus, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile]);
 
-  const userStrength = calculateStrength();
+  // ⚡ Her render'da yeniden hesaplamak yerine yalnızca bağımlılıklar değişince hesapla
+  // (zayıf CPU'larda her dakika tikinde kadro taraması yapmıyoruz)
+  const userStrength = useMemo(() => calculateStrength(), [calculateStrength]);
   const oppOvr = Math.floor(opponent.ovr * (diffCfg?.oppOvrMult || 1));
 
   // ── v5.1 RAKİP KADROSU — takım adı+sezondan deterministik üretilen isimler.
@@ -424,12 +426,12 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     return (pool.length ? pool[Math.floor(Math.random() * pool.length)] : oppSquad[8]).name;
   }, [oppSquad]);
   // Rakip kırmızı kartları gücü gerçekten düşürür (her kırmızı ≈ -5%)
-  const oppStrength = {
+  const oppStrength = useMemo(() => ({
     attack: oppOvr * Math.max(0.7, 1 - oppReds * 0.05) * (isHome ? 1 : 1.03),
     defense: oppOvr * Math.max(0.7, 1 - oppReds * 0.05) * (isHome ? 1 : 1.03),
     midfield: oppOvr * Math.max(0.72, 1 - oppReds * 0.04) * (isHome ? 0.98 : 1.02),
     overall: oppOvr
-  };
+  }), [oppOvr, oppReds, isHome]);
   const userKeeper = activeLineup.find(p => p.role === 'KL' && !p.injured && !sentOff.includes(p.id));
   const userKeeperSaveBonus = userKeeper
     ? Math.max(-0.035, Math.min(0.06, (userKeeper.ovr - 72) * 0.002 + ((userKeeper.energy - 55) * 0.00035) + ((userKeeper.morale - 50) * 0.0002)))
