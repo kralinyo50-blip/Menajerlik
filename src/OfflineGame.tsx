@@ -18,6 +18,10 @@ import { StadiumTab } from './components/tabs/StadiumTab';
 import { LifeTab } from './components/tabs/LifeTab';
 import { SocialTab } from './components/tabs/SocialTab';
 import { TechTab } from './components/tabs/TechTab';
+import { CasinoTab } from './components/tabs/CasinoTab';
+import { SettingsTab } from './components/tabs/SettingsTab';
+import { FpsOverlay } from './components/FpsOverlay';
+import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus } from './utils/unlocks';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -49,7 +53,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
+  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech' | 'casino' | 'settings';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -65,6 +69,37 @@ interface SeasonSummary {
   topScorer?: { name: string; goals: number };
   departed: string[];
 }
+
+
+/* ── v5.0: Kilitli sekme perdesi — seviye atlayınca açılır ── */
+const LockedGate: React.FC<{ tab: TabId; requiredLevel: number; careerLevel: number; matchesPlayed: number }> = ({ tab, requiredLevel, careerLevel, matchesPlayed }) => {
+  // tab: hangi sekme kilitli (ileride sekmeye özel açıklamalar için)
+  void tab;
+  const prog = careerProgress(matchesPlayed);
+  const remaining = Math.max(0, (requiredLevel - 1) * 5 - matchesPlayed);
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 px-4">
+      <div className="text-7xl mb-4 animate-pulse">🔒</div>
+      <h3 className="text-2xl font-black text-white">Bu bölüm henüz kilitli</h3>
+      <p className="text-slate-400 mt-2 max-w-md text-sm">
+        <b className="text-amber-300">Kariyer Seviye {requiredLevel}</b>'te açılıyor.
+        Her oynadığın <b>5 maç</b> seni bir seviye yukarı taşır — kupa maçları da sayılır.
+      </p>
+      <div className="mt-6 w-full max-w-md bg-slate-800/70 border border-slate-700 rounded-2xl p-5">
+        <div className="flex items-center justify-between text-xs font-bold mb-2">
+          <span className="text-emerald-300">Seviye {careerLevel}</span>
+          <span className="text-slate-400">{remaining > 0 ? `${remaining} maç kaldı` : 'Açıldı!'}</span>
+        </div>
+        <div className="h-3 bg-slate-700/60 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all" style={{ width: `${Math.min(100, (prog.levelProgress * 100))}%` }} />
+        </div>
+        <div className="mt-2 text-[11px] text-slate-500">Bu seviye ilerlemesi: {prog.levelProgress * 5 >= 1 ? `${Math.round(prog.levelProgress * 5)}/5 maç` : 'bir sonraki maç başlangıcı'}</div>
+      </div>
+      <div className="mt-6 text-xs text-slate-500">💡 Kenar panelden <b className="text-emerald-300">MAÇA ÇIK</b> ile seviye atlayabilirsin</div>
+    </div>
+  );
+};
+
 
 function OfflineGame({ onExit }: { onExit: () => void }) {
   const {
@@ -149,6 +184,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     recallLoan,
     claimDailyReward,
     dismissDailyReward,
+    updateCasino,
     autoPickBestEleven,
     addSocialPost,
     likeSocialPost,
@@ -389,12 +425,23 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
           if (gameState.clubStats.leagueTitles > 0) unlockCup('double');
         }
 
+        // v5.0: Kupa maçları da kariyer seviyesine sayılır (her 5 maçta 1 seviye)
+        const cupMatchesPlayed = (gameState.matchesPlayed || 0) + 1;
+        const cupPrevLevel = careerLevelFromMatches(gameState.matchesPlayed || 0);
+        const cupNewLevel = careerLevelFromMatches(cupMatchesPlayed);
+        const cupLevelBonus = cupNewLevel > cupPrevLevel ? levelUpBonus(cupNewLevel) : 0;
+        if (cupNewLevel > cupPrevLevel) {
+          extraNews.push(`⬆️ Kariyer seviyesi ${cupNewLevel}! +$${cupLevelBonus.toLocaleString()} prim ve +1 yetenek puanı.`);
+        }
+
         updateGameState({
           cupMatches: updatedCupMatches,
           cupEliminated: !userWon,
-          budget: gameState.budget + (userWon ? prize : Math.floor(prize / 3)) + extraBudget,
+          budget: gameState.budget + (userWon ? prize : Math.floor(prize / 3)) + extraBudget + cupLevelBonus,
           achievements,
           minigameTokens: userWon ? (gameState.minigameTokens || 0) + 1 : gameState.minigameTokens,
+          matchesPlayed: cupMatchesPlayed,
+          skillPoints: (gameState.skillPoints || 0) + Math.max(0, cupNewLevel - cupPrevLevel),
           clubStats: userWon && currentCupRound === 3
             ? { ...gameState.clubStats, cupWins: gameState.clubStats.cupWins + 1 }
             : gameState.clubStats,
@@ -919,6 +966,15 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   const socialCount = (gameState.socialFeed || []).filter(p=>!p.isUser).length;
   const socialBadge = socialCount > 0 ? Math.min(9, Math.ceil(socialCount/4)) : 0;
 
+  /* ── v5.0 Kariyer seviyesi & kilitli sekmeler ── */
+  const matchesPlayed = gameState.matchesPlayed || 0;
+  const careerLvl = careerLevelFromMatches(matchesPlayed);
+  const lockedTabs = new Set<TabId>(
+    (Object.keys(TAB_UNLOCK_LEVEL) as UnlockableTab[]).filter(id => !isTabUnlocked(id, matchesPlayed))
+  );
+  // Kilitli bir sekmeye geçilirse içerik yerine kilit perdesi göster
+  const activeTabLocked = lockedTabs.has(activeTab);
+
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
     { id: 'social', label: 'Sosyal', icon: '💬', badge: socialBadge },
@@ -931,11 +987,13 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     { id: 'training', label: 'Antrenman', icon: '🏋️' },
     { id: 'league', label: 'Lig', icon: '🏆' },
     { id: 'cup', label: 'Kupa', icon: '🏅' },
+    { id: 'casino', label: 'Kumarhane', icon: '🎰' },
     { id: 'shop', label: 'Dükkan', icon: '🛒' },
     { id: 'merch', label: 'Formalar', icon: '👕' },
     { id: 'invest', label: 'Yatırım', icon: '📈' },
     { id: 'history', label: 'Geçmiş', icon: '📊' },
-    { id: 'tech', label: 'Teknoloji', icon: '🛒' },
+    { id: 'tech', label: 'Teknoloji', icon: '💻' },
+    { id: 'settings', label: 'Ayarlar', icon: '🔧' },
   ];
 
   return (
@@ -1139,7 +1197,14 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
                 <button
                   key={tab.id}
                   data-tab={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    if (lockedTabs.has(tab.id)) {
+                      const need = TAB_UNLOCK_LEVEL[tab.id];
+                      showToast(`🔒 ${tab.label}, Kariyer Seviye ${need}'te açılır (her 5 maçta 1 seviye). ${Math.max(0, need - careerLvl) * 5} maç kaldı!`);
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }}
                   onMouseMove={(e) => {
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     (e.currentTarget as HTMLElement).style.setProperty('--x', `${e.clientX - r.left}px`);
@@ -1151,8 +1216,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
                       : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
                   }`}
                 >
-                  <span className="text-base">{tab.icon}</span>
-                  <span className="tracking-wide">{tab.label}</span>
+                  <span className={lockedTabs.has(tab.id) ? 'opacity-40' : ''}>{tab.icon}</span>
+                  <span className="tracking-wide">{lockedTabs.has(tab.id) ? `${tab.label} 🔒` : tab.label}</span>
                   {!!tab.badge && tab.badge > 0 && (
                     <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600 animate-badge-pop':'bg-red-500 text-white'}`}>
                       {tab.badge > 9 ? '9+' : tab.badge}
@@ -1186,13 +1251,31 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             )}
           </div>
 
-          <div className="flex-1 bg-slate-800/45 backdrop-blur-xl rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
+          {/* 🐛 FIX: burada backdrop-blur YOK — backdrop-filter, 'fixed' modal pencereleri için
+            kapsayıcı blok oluşturup Antrenman/Kadro vb. pencereleri kaydırma içeriğinin
+            tepesine sabitliyordu ("en alttaki oyuncuya basınca modal en üstte açılıyordu").
+            Cam hissi, biraz artırılmış opaklıkla korunur. */}
+          <div className="flex-1 bg-slate-800/70 rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
             <div className="pointer-events-none absolute top-3 right-4 hidden lg:flex items-center gap-1.5 opacity-[0.35] hover:opacity-60 transition-opacity">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span className="kaan-watermark text-[10px] tracking-[0.18em]">MADE BY KAAN</span>
             </div>
             <div key={activeTab} className="tab-content">
-            {activeTab === 'social' && (
+            {activeTabLocked ? (
+              <LockedGate
+                tab={activeTab}
+                requiredLevel={TAB_UNLOCK_LEVEL[activeTab]}
+                careerLevel={careerLvl}
+                matchesPlayed={matchesPlayed}
+              />
+            ) : (<>
+              {activeTab === 'casino' && (
+                <CasinoTab gameState={gameState} onUpdateCasino={updateCasino} />
+              )}
+              {activeTab === 'settings' && (
+                <SettingsTab gameState={gameState} onToggleSound={toggleSound} />
+              )}
+              {activeTab === 'social' && (
               <SocialTab gameState={gameState} onCreatePost={addSocialPost} onLikePost={likeSocialPost} onAddComment={commentOnPost} />
             )}
             {activeTab === 'office' && (
@@ -1289,6 +1372,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             )}
             {activeTab === 'history' && <HistoryTab gameState={gameState} />}
             {activeTab === 'tech' && <TechTab gameState={gameState} onBuyDevice={buyDevice} onSetActiveDevice={setActiveDevice} onSellDevice={sellDevice} onBuyPCComponent={buyPCComponent} onSetPCPart={setPCPart} onSellPCComponent={sellPCComponent} onAssemblePC={assemblePC} />}
+            </>)}
             </div>
           </div>
         </div>
@@ -1305,6 +1389,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         </div>
       </div>
       <AiAssistant />
+      <FpsOverlay />
       <NewsTicker news={gameState.news} />
     </div>
   );

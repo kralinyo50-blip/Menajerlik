@@ -9,6 +9,24 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.0.0',
+    date: '23 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🔧 Ayarlar + 🎯 Kariyer Seviyesi + 🎰 Kumarhane + ⚡ Maç Motoru 2.0',
+    items: [
+      '🔧 AYARLAR sekmesi eklendi: "PC\'imi Tara" donanımını algılar (GPU adı, çekirdek, RAM) ve 1 saniyelik GPU testiyle en uygun kalite profilini otomatik kurar. Düşük/Orta/Yüksek/Ultra profilleri + çözünürlük ölçeği, gölge, anti-alias, tribün yoğunluğu, partikül, FPS sınırı ayarları.',
+      '⚡ Uyarlanabilir Çözünürlük: FPS düşünce oyun render ölçeğini kendiliğinden kısar, toparlanınca geri açar. 3D modeller, tribünler ve efektler tam gücünde kalır — eski Intel i3\'lerde bile akıcı maç.',
+      '🎯 KARİYER SEVİYESİ: her 5 maçta 1 seviye (kupa dahil). Dükkan Sv.2, Formalar Sv.3, Yatırım Sv.5, Teknoloji Sv.8\'de açılır. Seviye başına bütçe primi + yetenek puanı.',
+      '🎰 KUMARHANE Seviye 40\'ta açılır: Şans Makinesi 777, Avrupa Ruleti, Blackjack ve Çarkıfelek. Kulüp bütçesinden kasa aç, kâseyi katla… ya da sezon primini masada bırak.',
+      '⚽ MAÇ MOTORU 2.0: rakip artık gerçekten oynuyor — yenilen rakip yüklenir, öndeki rakip kontra bekler, oyuncu değiştirir, kart görür (10 kişiye düşebilir). Pas zincirleri hızlandı, net pozisyonlar arttı; maçlar artık 0-0 kurusu değil gollü, aksiyonlu geçiyor.',
+      '👥 Rakip takımın kendi oyuncuları var: goller, kartlar ve maçın adamı artık isimli rakip futbolculara gidiyor.',
+      '🐛 DÜZELTME: Antrenman\'da listedeki en alttaki oyuncuya basınca pencere ekranın tepesine düşüyordu (panel blur\'unun fixed konumlandırmayı bozması). Modallar artık hep ekran ortasında açılır.',
+      '🐛 DÜZELTME: Antrenman Kompleksi\'nde "Ön İzle"ye basınca sayfa en üste fırlıyordu — artık yalnızca sahne tamamen görünmezse en kısa yoldan kaydırılır.',
+      '⏩ Maç hızına 4x eklendi.',
+      '🐛 DÜZELTME: Penaltı mini-oyunu hiç tetiklenemiyordu (ölü kod) — artık net pozisyonlarda penaltı kullanabilirsin.',
+    ],
+  },
+  {
     version: '4.12.0',
     date: '19 Eyl 2026',
     tag: 'YENİ',

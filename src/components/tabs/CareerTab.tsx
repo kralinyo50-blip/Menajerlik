@@ -1,6 +1,7 @@
 import React from 'react';
 import { GameState, Mission, SkillId } from '../../types/game';
 import { SKILLS, managerLevelTitle, xpForLevel } from '../../utils/progression';
+import { careerProgress } from '../../utils/unlocks';
 
 interface CareerTabProps {
   gameState: GameState;
@@ -55,12 +56,48 @@ export const CareerTab: React.FC<CareerTabProps> = ({ gameState, onSpendSkillPoi
   const xpPct = Math.min(100, Math.round((xp / xpNeed) * 100));
   const points = gameState.skillPoints || 0;
   const missions = gameState.missions || [];
+  // v5.0 Kariyer seviyesi: her 5 maçta 1 seviye, özellikler kademeli açılır
+  const prog = careerProgress(gameState.matchesPlayed || 0);
   const cs = gameState.clubStats;
   const played = (cs.totalWins || 0) + (cs.totalDraws || 0) + (cs.totalLosses || 0);
 
   return (
     <div className="h-full relative overflow-y-auto">
       <div className="max-w-5xl mx-auto space-y-4">
+        {/* 🎯 Kariyer seviyesi — maç ilerlemesi */}
+        <div className="bg-gradient-to-r from-emerald-900/50 to-cyan-900/40 rounded-2xl border border-emerald-500/30 p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex flex-col items-center justify-center font-black text-white">
+                <span className="text-[9px] leading-none">KARİYER</span>
+                <span className="text-xl leading-none">{prog.level}</span>
+              </div>
+              <div>
+                <div className="text-white font-bold text-base">Kariyer Seviyesi {prog.level}</div>
+                <div className="text-xs text-slate-300">
+                  {prog.matchesPlayed} maç oynandı • her 5 maçta 1 seviye • {prog.matchesToNext} maç sonra Seviye {prog.level + 1}
+                </div>
+              </div>
+            </div>
+            {prog.nextUnlock && (
+              <div className="text-right bg-black/30 rounded-xl px-3.5 py-2 border border-slate-700">
+                <div className="text-[10px] tracking-widest text-slate-400 font-bold">SIRADAKİ AÇILIM</div>
+                <div className="text-sm font-black text-amber-300">{prog.nextUnlock.icon} {prog.nextUnlock.label} <span className="text-slate-400 font-normal">— Sv.{prog.nextUnlock.atLevel}</span></div>
+              </div>
+            )}
+          </div>
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] text-slate-400 font-bold mb-1">
+              <span>Seviye {prog.level}</span>
+              <span>{5 - prog.matchesToNext}/5 maç</span>
+              <span>Seviye {prog.level + 1}</span>
+            </div>
+            <div className="h-2.5 bg-slate-700/50 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all" style={{ width: `${Math.max(4, Math.round(prog.levelProgress * 100))}%` }} />
+            </div>
+          </div>
+        </div>
+
         {/* Menajer profili */}
         <div className="bg-gradient-to-r from-violet-900/50 to-slate-800/60 rounded-2xl border border-violet-500/30 p-4">
           <div className="flex items-center justify-between flex-wrap gap-3">

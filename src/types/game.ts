@@ -761,6 +761,26 @@ export interface GameState {
   life: ManagerLife;
   // ── v4.1: Sosyal Medya (FutbolX) ──
   socialFeed: SocialPost[];
+  // ── v5.0: Kariyer seviyesi (her 5 maçta 1 seviye, özellikler kademeli açılır) ──
+  /** Toplam oynanan maç (lig + kupa). Seviye = 1 + floor(maç / 5) */
+  matchesPlayed?: number;
+  /** 🎰 Kumarhane (seviye 40'ta açılır) */
+  casino?: CasinoState;
+}
+
+export interface CasinoState {
+  /** Kumarhane kasesi — kulüp bütçesinden ayrı */
+  balance: number;
+  /** Toplam yatırılan bahis */
+  wagered: number;
+  /** Toplam kazanılan */
+  won: number;
+  /** Oyun sayısı */
+  plays: number;
+  /** En büyük tek kazanç */
+  biggestWin: number;
+  /** Son 12 oyunun sonucu (kasa değişimi) */
+  history: number[];
 }
 
 export interface ShopBranchData {

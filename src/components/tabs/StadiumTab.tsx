@@ -239,7 +239,9 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
     const el = sceneRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    if (r.top < 8 || r.bottom > window.innerHeight - 8) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 🐛 FIX: block:'start' sayfayı tepeye fırlatıyordu — tamamen görünmezse en kısa yolla kaydır
+    const fullyHidden = r.bottom < 40 || r.top > window.innerHeight - 40;
+    if (fullyHidden) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
   interface PreviewPatch {
@@ -1109,7 +1111,7 @@ export const StadiumTab: React.FC<StadiumTabProps> = ({
                     setBuffetOpen(true);
                     setSub('facilities');
                     // panel aşağıda; bir sonraki karede oraya kaydır
-                    window.setTimeout(() => document.getElementById('bufe-studyosu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                    window.setTimeout(() => document.getElementById('bufe-studyosu')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 60);
                   };
                   const lvl = displayFacilities[def.id] ?? 0;   // ön izleme dahil görünüm
                   const isMax = realLvl >= 5;

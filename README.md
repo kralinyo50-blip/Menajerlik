@@ -62,7 +62,20 @@ Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalışt
 
 ## Özellikler
 
+### 🔧 Ayarlar & Performans (v5.0)
+- **Otomatik PC algılama** — "PC'imi Tara" düğmesi GPU adını, çekirdek ve RAM bilgisini okur, 1 saniyelik gerçek GPU testiyle en uygun profili kurar (Intel HD 4000'li 3. nesil i3 dahil)
+- **4 kalite profili** (Düşük/Orta/Yüksek/Ultra) + ayrıntılı ayarlar: çözünürlük ölçeği, gölgeler, anti-alias, tribün yoğunluğu, partiküller, FPS sınırı (30/60/120/sınırsız)
+- **Uyarlanabilir Çözünürlük** — FPS düşünce render ölçeği kendiliğinden kısılır, toparlanınca geri açılır; 3D modeller, tribünler, efektler **asla kısılmaz** (yalnızca piksel sayısı)
+- Tüm 3D sahneler (maç, stadyum, antrenman, hayat) FPS sınırı + uyarlanabilir çözünürlük ile tek merkezden yönetilir; ayarlar tarayıcıda saklanır
+
+### 🎯 Kariyer Seviyesi & 🎰 Kumarhane (v5.0)
+- **Her 5 maçta 1 seviye** (kupa maçları dahil) — seviye başına bütçe primi + yetenek puanı
+- Kademeli açılan özellikler: 🛒 Dükkan Sv.2 • 👕 Formalar Sv.3 • 📈 Yatırım Sv.5 • 💻 Teknoloji Sv.8 • 🎰 **Kumarhane Sv.40**
+- Kilitli sekmeler ilerleme çubuğuyla "kaç maç kaldı" bilgisi gösterir; Kariyer sekmesinde canlı seviye kartı
+- **Kumarhane**: Şans Makinesi 777, Avrupa Ruleti, Blackjack (3:2 ödeme) ve Çarkıfelek — kulüp bütçesinden kasa, istatistikler ve son eller
+
 ### Maç
+- **⚽ Maç Motoru 2.0 (v5.0)** — rakip artık gerçekten oynuyor: yenilen rakip yüklenir, öndeki rakip kontra bekler, oyuncu değiştirir ve kart görür (10 kişiye düşebilir); pas zincirleri hızlandı, maçlar gollü ve aksiyonlu geçer; rakip goller/kartlar isimli rakip futbolculara gider
 - **İç saha / deplasman** fikstürü, ev sahibi avantajı ve **seyirci + bilet geliri**
 - **Hava durumu** (güneş/yağmur/kar/fırtına/sis/rüzgâr) → gol ve sakatlık oranlarına etki
 - **🎥 3D maç simülasyonu (v4.8)** — maç menajerlerin durduğu kenardan izlenir: 🧑‍💼 MENAJER ve 📺 YAYIN kameraları, sürükle/bak + tekerlek/zoom; ev maçlarında kendi stadyumun, deplasmanda rakibe özel rastgele statlar
@@ -129,10 +142,11 @@ Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalışt
 ## Kontroller
 
 - Sol menüden **MAÇA ÇIK** → **maç öncesi taktik odası** (rakip raporu, hava durumu, kadro uyarıları)
-- Üst sekmeler: Ofis, Sosyal, Kariyer, **Hayat**, Stadyum, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, Dükkan, Formalar, Yatırım, Geçmiş, Teknoloji
+- Üst sekmeler: Ofis, Sosyal, Kariyer, **Hayat**, Stadyum, Kadro, Transfer, Taktik, Antrenman, Lig, Kupa, 🎰 Kumarhane, Dükkan, Formalar, Yatırım, Geçmiş, Teknoloji, 🔧 Ayarlar
 - 🏟️ **Stadyum** sekmesi (3D): Renkler & Mimari, Kapasite & Büyüme, Tribünler & Etkinlik, Bilet Fiyatı, Kozmetik Mağazası + **🏋️ Antrenman Kompleksi (3D)**, **👥 Personel**, **🎓 Akademi & Scout** (eski Tesisler sekmesi buraya taşındı)
 - 🏋️ Antrenman kompleksinde her modülün (saha / fitness / rejenerasyon / taktik / altyapı) yanındaki **👁️ Ön İzle** tuşuna bas (veya üzerine gel) → bir üst seviyeyi 3D ön izlemede gör; gelişim, moral, enerji ve sakatlık riski canlı tabloda
 - Maç içinde: hız 1x/2x/4x, 🔄 Değişiklik (5 hak — ekran açıkken simülasyon donar), ⏭️ Atla; kart anında 🐢 yavaş çekim
+- 🔧 Ayarlar → "PC'imi Tara & Otomatik Ayarla": donanım algılanır, GPU testiyle kalite profili kurulur; FPS göstergesini açıp performansı canlı izleyebilirsin
 - 💾 menüsünden kayıt slotları ve yedekleme; 🔊 ile sesi kapat
 
 Geliştirme yol haritası ve detaylı analiz: [`GELISTIRME_PLANI.md`](./GELISTIRME_PLANI.md)

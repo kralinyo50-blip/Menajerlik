@@ -43,6 +43,10 @@ export interface BuildMatchOpts {
   facilities?: Record<string, number>;
   /** 🍔 Büfe marka sponsoru — sahadaki büfe tabelaları bu markanın olur */
   buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
+  /** 🎛️ Tribün insan yoğunluğu 0.15-1 (grafik ayarları) */
+  crowdDensity?: number;
+  /** 🎛️ Hava partikülleri (yağmur/kar) açılsın mı */
+  particles?: boolean;
 }
 
 export interface Match3DEvent {
@@ -178,7 +182,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     night: opts.night,
     wet: ['rain', 'storm', 'snow'].includes(opts.weather),
     facilities: opts.facilities,
-    buffetBrand: opts.buffetBrand ?? null
+    buffetBrand: opts.buffetBrand ?? null,
+    crowdDensity: opts.crowdDensity
   });
   group.add(stadium.group);
 
@@ -577,7 +582,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   const snowy = opts.weather === 'snow';
   let particles: THREE.Points | null = null;
   let particleVel = 0;
-  if ((rainy || snowy) && !lowPerf) {
+  if ((rainy || snowy) && !lowPerf && opts.particles !== false) {
     const count = rainy ? 1400 : 800;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {

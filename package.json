@@ -13,7 +13,9 @@
     "serve": "node server/index.mjs",
     "share": "node tools/share-online.mjs",
     "test:online": "node --test tools/test-online.mjs tools/test-share.mjs",
-    "test:modes": "esbuild tools/test-modes.mts --bundle --format=esm --platform=node --outfile=.test-results/mode-tests.mjs --log-level=error && node --test .test-results/mode-tests.mjs"
+    "test:modes": "esbuild tools/test-modes.mts --bundle --format=esm --platform=node --outfile=.test-results/mode-tests.mjs --log-level=error && node --test .test-results/mode-tests.mjs",
+    "test:unlocks": "esbuild tools/test-unlocks.mjs --bundle --format=esm --platform=node --outfile=.test-results/unlocks.mjs --log-level=error && node .test-results/unlocks.mjs",
+    "sim:match": "node tools/sim-match-balance.mjs"
   },
   "dependencies": {
     "@types/three": "^0.186.0",

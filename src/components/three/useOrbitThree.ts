@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { isBackgroundRenderPaused } from '../../utils/renderGate';
+import { FpsGovernor, effectivePixelRatio, loadGraphics, subscribeGraphics } from '../../utils/graphics';
 
 export interface OrbitSceneLike {
   group: THREE.Group;
@@ -42,6 +43,8 @@ export function useOrbitThree(
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  // 🎛️ Grafik ayarları — değişince sahne yeniden kurulur (aa/gölge kurulum-zamanı seçenekler)
+  const gfx = useSyncExternalStore(subscribeGraphics, loadGraphics, loadGraphics);
   const resetRef = useRef<() => void>(() => {});
   const cinematicRef = useRef(opts.cinematic ?? false);
   const interactiveRef = useRef(opts.interactive ?? true);
@@ -54,16 +57,16 @@ export function useOrbitThree(
 
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias, alpha: false, powerPreference: 'high-performance' });
     } catch {
       setFailed(true);
       return;
     }
 
     const height = opts.height;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(effectivePixelRatio(gfx.renderScale));
     renderer.setSize(host.clientWidth || 640, height, false);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = gfx.shadows;
     // ⚠️ PCFSoftShadowMap r186'da kaldırıldı → PCFShadowMap (konsol uyarısı yok)
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -171,6 +174,15 @@ export function useOrbitThree(
     const timer = new THREE.Timer();
     if (typeof document !== 'undefined') timer.connect(document);
     timer.reset();
+    // 🎛️ FPS sınırı + uyarlanabilir çözünürlük — ayarlar canlı değiştirilebilir
+    let curBase = gfx.renderScale;
+    const applyAdaptive = (s: number) => renderer.setPixelRatio(effectivePixelRatio(curBase * s));
+    let gov = new FpsGovernor(gfx.fpsCap, gfx.adaptiveResolution, applyAdaptive, 1);
+    const unsubscribeGfx = subscribeGraphics(g => {
+      curBase = g.renderScale;
+      gov = new FpsGovernor(g.fpsCap, g.adaptiveResolution, applyAdaptive, 1);
+      applyAdaptive(1);
+    });
     const loop = () => {
       raf = requestAnimationFrame(loop);
       timer.update();
@@ -178,6 +190,7 @@ export function useOrbitThree(
       // GPU'yu boşuna yorma — kareyi atla, rAF'u canlı tut.
       // (Zamanlayıcı yine güncellenir; duraklama sonrası dt sıçraması olmaz.)
       if (isBackgroundRenderPaused() || document.hidden) return;
+      if (!gov.tick(performance.now())) return;
       const dt = Math.min(0.05, timer.getDelta());
       const t = timer.getElapsed();
       if (cinematicRef.current && !dragging) {
@@ -192,6 +205,7 @@ export function useOrbitThree(
     return () => {
       cancelAnimationFrame(raf);
       timer.dispose();
+      unsubscribeGfx();
       window.removeEventListener('resize', onResize);
       observer?.disconnect();
       el.removeEventListener('pointerdown', onDown);
@@ -221,7 +235,8 @@ export function useOrbitThree(
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+    // 🎛️ kurulum-zamanı grafik seçenekleri (anti-alias, gölge) değişirse sahneyi yeniden kur
+  }, [...deps, gfx.antialias, gfx.shadows]);
 
   return { hostRef, ready, failed, resetCamera: () => resetRef.current() };
 }

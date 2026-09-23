@@ -3,6 +3,7 @@ import { GameState, Sponsor } from '../types/game';
 import { SPONSOR_OFFERS, WEATHER_INFO, ROLE_NAMES } from '../data/constants';
 import { describeSlots, clearSlot, SlotInfo } from '../utils/save';
 import { managerLevelTitle, xpForLevel } from '../utils/progression';
+import { careerProgress } from '../utils/unlocks';
 
 interface SidebarProps {
   gameState: GameState;
@@ -224,6 +225,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               style={{ width: `${Math.min(100, Math.round(((gameState.managerXp || 0) / xpForLevel(gameState.managerLevel || 1)) * 100))}%` }}
             />
           </div>
+          {/* v5.0 Kariyer seviyesi: her 5 maçta 1 seviye */}
+          {(() => {
+            const prog = careerProgress(gameState.matchesPlayed || 0);
+            return (
+              <div className="mt-1.5 flex items-center justify-between text-[10px]">
+                <span className="text-emerald-300 font-bold">🎯 Kariyer Sv.{prog.level} • {prog.matchesToNext} maç sonra Sv.{prog.level + 1}</span>
+                {prog.nextUnlock && <span className="text-slate-400">Sırada: {prog.nextUnlock.icon} Sv.{prog.nextUnlock.atLevel}</span>}
+              </div>
+            );
+          })()}
           {(() => {
             const active = (gameState.missions || []).filter(m => !m.completed).slice(0, 2);
             if (active.length === 0) return <div className="text-[10px] text-emerald-300 mt-1">✅ Tüm görevler tamam!</div>;

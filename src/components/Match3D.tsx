@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { GameState, MatchEvent, Player, StadiumDesign, Weather } from '../types/game';
 import { FORMATIONS, WEATHER_INFO } from '../data/constants';
 import { stadiumCapacity } from '../utils/stadium';
 import { isSoftwareWebGL } from '../utils/webgl';
+import { FpsGovernor, effectivePixelRatio, loadGraphics, subscribeGraphics } from '../utils/graphics';
 import { buildMatchScene, Match3DInput, ShapeSlot, Side } from './match3d/scene';
 import { BUFFET_SPONSOR_MAP } from '../data/buffet';
 import { awayVenue, hashText, homeVenue, kitFrom, opponentKit, Venue } from './match3d/venue';
@@ -88,6 +89,8 @@ export const Match3D: React.FC<Match3DProps> = ({
   scoreUser, scoreOpp, lineup, userOnPitch, oppOnPitch, events,
   paused, slowMo, lowPerf = false, onFallback, className = ''
 }) => {
+  // 🎛️ Ayarlar sekmesinden canlı grafik profili
+  const gfx = useSyncExternalStore(subscribeGraphics, loadGraphics, loadGraphics);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -200,9 +203,12 @@ export const Match3D: React.FC<Match3DProps> = ({
     // baştan düşük kaliteyle kurulur; yine kaldırmazsa aşağıdaki bekçi 2D'ye düşer.
     const softGl = isSoftwareWebGL();
     const perf = lowPerf || softGl;
+    // 🎛️ Kullanıcı grafik profili — ultra'da tam kalite, düşükte akıcılık
+    const gfx = loadGraphics();
+    const wantAA = perf ? false : gfx.antialias;
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: !perf, alpha: false, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({ antialias: wantAA, alpha: false, powerPreference: 'high-performance' });
     } catch {
       setFailed(true);
       fallbackRef.current?.();
@@ -211,13 +217,13 @@ export const Match3D: React.FC<Match3DProps> = ({
 
     const width = Math.max(320, host.clientWidth);
     const height = Math.max(240, host.clientHeight);
-    // Piksel oranı: 1.25 üstü bu sahne boyutunda göz farkı yaratmaz, GPU'yu gereksiz şişirir
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, perf ? 1 : 1.25));
+    // Piksel oranı: profil ölçeği × cihaz DPR; maç sahnede 2.0 üstü göz farkı yaratmaz
+    renderer.setPixelRatio(Math.min(effectivePixelRatio(gfx.renderScale), perf ? 1 : 2));
     renderer.setSize(width, height, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = venue.night ? 0.92 : 1.04;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = gfx.shadows;
     // ⚠️ PCFSoftShadowMap r186'da kaldırıldı → PCFShadowMap (konsol uyarısı yok)
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.style.width = '100%';
@@ -245,7 +251,10 @@ export const Match3D: React.FC<Match3DProps> = ({
       logo: userIsHome ? gameState.teamLogo : opponent.logo,
       facilities: userIsHome ? ((gameState.stadium as any)?.facilities || {}) : {},
       // 🍔 Ev sahibinin büfe sponsoru varsa saha kenarı tabelalar marka olur
-      buffetBrand: userIsHome ? homeBuffetBrand : null
+      buffetBrand: userIsHome ? homeBuffetBrand : null,
+      // 🎛️ Grafik profili: tribün yoğunluğu + hava partikülleri
+      crowdDensity: gfx.crowdDensity,
+      particles: gfx.particles
     });
     scene.add(bundle.group);
     // Eğik açıda çim/tribün dokuları keskin kalsın
@@ -264,7 +273,7 @@ export const Match3D: React.FC<Match3DProps> = ({
     // 🩺 Gölge haritasını makula indir: 2048² PCF pişirme zayıf GPU'da sayfayı
     // kilitler. Statik sahneye 512/1024 görsel olarak yeter, bellek/dolgu maliyeti 4-16× azalır.
     // (İlk render'dan ÖNCE ayarlanmalı — harita ilk karede bu boyutta tahsis edilir.)
-    const shadowRes = perf ? 512 : 1024;
+    const shadowRes = perf ? 512 : gfx.tier === 'ultra' ? 2048 : gfx.tier === 'high' ? 1536 : 1024;
     scene.traverse(o => {
       const light = o as THREE.DirectionalLight;
       if (light.isDirectionalLight && light.castShadow) light.shadow.mapSize.set(shadowRes, shadowRes);
@@ -338,6 +347,15 @@ export const Match3D: React.FC<Match3DProps> = ({
     let prev = performance.now();
     let hudT = 0;
     let readyShown = false;
+    // 🎛️ FPS sınırı + uyarlanabilir çözünürlük (Ayarlar'dan canlı yönetilir)
+    let curBase = gfx.renderScale;
+    const applyAdaptive = (sc: number) => renderer.setPixelRatio(Math.min(effectivePixelRatio(curBase * sc), perf ? 1 : 2));
+    let gov = new FpsGovernor(gfx.fpsCap, gfx.adaptiveResolution, applyAdaptive, 1);
+    const unsubscribeGfx = subscribeGraphics(g => {
+      curBase = g.renderScale;
+      gov = new FpsGovernor(g.fpsCap, g.adaptiveResolution, applyAdaptive, 1);
+      applyAdaptive(1);
+    });
     // 🩺 Kare süresi bekçisi: kurulduktan sonraki ilk 6 saniyede ortalama kare süresi
     // 350 ms'yi aşarsa (yazılımsal WebGL / çok zayıf GPU) 3D yerine sorunsuz çalışan
     // 2D sahaya otomatik geçilir — maç asla donup kalmaz. İlk pişirmede yavaşlayıp
@@ -350,6 +368,7 @@ export const Match3D: React.FC<Match3DProps> = ({
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
       if (document.hidden) return;            // sekme arka planda → GPU'yu yorma
+      if (!gov.tick(now)) return;             // 🎛️ FPS sınırı / adaptif ölçek karesi atladı
 
       bundle.setCameraMode(camModeRef.current);
       bundle.update(now / 1000, dt, inputRef.current);
@@ -396,6 +415,7 @@ export const Match3D: React.FC<Match3DProps> = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      unsubscribeGfx();
       ro.disconnect();
       el.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
@@ -425,7 +445,7 @@ export const Match3D: React.FC<Match3DProps> = ({
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venueKey, weather, lowPerf, failed, buffetBrandKey]);
+  }, [venueKey, weather, lowPerf, failed, buffetBrandKey, gfx.antialias, gfx.shadows, gfx.tier, gfx.particles, gfx.crowdDensity]);
 
   if (failed) {
     return (

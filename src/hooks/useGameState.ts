@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import {
+import { CasinoState,
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
   LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer, LifeActivityId,
   FacilityModuleId, FacilityReport, FacilityState
 } from '../types/game';
+import { careerLevelFromMatches, levelUpBonus, TAB_UNLOCK_LEVEL } from '../utils/unlocks';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
   INITIAL_INVESTMENTS, CREDIT_PACKAGES, UNHAPPY_MORALE
@@ -22,7 +23,7 @@ import {
 import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
   stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier,
-  facilityIncomePerFan, facilityHappinessBonus, getStadiumFacilities, buffetBreakdown
+  buffetBreakdown
 } from '../utils/stadium';
 import {
   BUFFET_MENU_MAP, BUFFET_PRICE_MAP, BUFFET_SPONSOR_MAP, buffetBreakFee, normalizeBuffetState
@@ -31,7 +32,7 @@ import type { BuffetPriceLevel } from '../types/game';
 import { StadiumDesign as StadiumDesignType } from '../types/game';
 import {
   CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS,
-  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost as stadiumFacilityUpgradeCost, defaultFacilities
+  STADIUM_FACILITY_MAP, facilityUpgradeCost as stadiumFacilityUpgradeCost, defaultFacilities
 } from '../data/stadium';
 import {
   assignKeyPlayers, buildGenericMarketPlayers, buildMarketStars, generateLoanList,
@@ -795,6 +796,15 @@ export const useGameState = () => {
     if ((loaded as any).weeklySocialEarnings === undefined) (loaded as any).weeklySocialEarnings = 0;
     if ((loaded as any).lastSocialPayoutWeek === undefined) (loaded as any).lastSocialPayoutWeek = 0;
     if ((loaded as any).clubStats && (loaded as any).clubStats.socialEarnings === undefined) (loaded as any).clubStats.socialEarnings = 0;
+    if ((loaded as any).matchesPlayed === undefined) {
+      // Eski kayıtlar: oynanan maç sayısını geçmişten tahmin et (sezon başına ~hafta ilerlemesi)
+      const seasons = (loaded as any).season || 1;
+      const leagueGames = Math.max(0, ((loaded as any).league?.find((t: any) => t.isUser)?.o) || 0);
+      (loaded as any).matchesPlayed = leagueGames + Math.max(0, seasons - 1) * 18;
+    }
+    if (!(loaded as any).casino) {
+      (loaded as any).casino = { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] };
+    }
     if ((loaded as any).lastMarketRefreshWeek === undefined) (loaded as any).lastMarketRefreshWeek = 1;
     if ((loaded as any).matchesSinceMarketRefresh === undefined) (loaded as any).matchesSinceMarketRefresh = 0;
     if (!(loaded as any).botTransfers) (loaded as any).botTransfers = [];
@@ -805,6 +815,24 @@ export const useGameState = () => {
     }
     setGameState(loaded);
     return true;
+  }, []);
+
+  /* ══════════════ 🎰 KUMARHANE (seviye 40) ══════════════ */
+  const updateCasino = useCallback((
+    patch: (c: CasinoState, budget: number) => { casino: CasinoState; budget: number },
+    news?: string
+  ) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const current: CasinoState = prev.casino ?? { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] };
+      const result = patch(current, prev.budget);
+      return {
+        ...prev,
+        casino: result.casino,
+        budget: result.budget,
+        news: news ? [news, ...prev.news.slice(0, 4)] : prev.news,
+      };
+    });
   }, []);
 
   const resetCareer = useCallback(() => {
@@ -1202,6 +1230,24 @@ export const useGameState = () => {
       }
 
       newState.league.sort((a, b) => b.p - a.p || (b.gf - b.ga) - (a.gf - a.ga));
+
+      /* — v5.0 Kariyer seviyesi: her 5 maçta 1 seviye, seviye başına bütçe primi — */
+      const prevLevel = careerLevelFromMatches(prev.matchesPlayed || 0);
+      newState.matchesPlayed = (prev.matchesPlayed || 0) + 1;
+      const newLevel = careerLevelFromMatches(newState.matchesPlayed);
+      if (newLevel > prevLevel) {
+        const bonus = levelUpBonus(newLevel);
+        newState.budget += bonus;
+        newState.skillPoints = (newState.skillPoints || 0) + newLevel - prevLevel;
+        const unlocked = (Object.entries(TAB_UNLOCK_LEVEL) as [string, number][])
+          .filter(([tab, at]) => (tab === 'shop' || tab === 'merch' || tab === 'invest' || tab === 'tech' || tab === 'casino') && at > prevLevel && at <= newLevel)
+          .map(([, at]) => `Seviye ${at} özelliği`);
+        newState.news = [
+          `⬆️ Kariyer seviyesi ${newLevel}! +$${bonus.toLocaleString()} prim ve +${newLevel - prevLevel} yetenek puanı.`,
+          ...(unlocked.length ? [`🔓 ${unlocked.join(', ')} açıldı! Üst menüden ulaşabilirsin.`] : []),
+          ...newState.news.slice(0, 4)
+        ];
+      }
 
       /* — Gelir: bilet + yayın + prim — */
       const baseIncome = newState.stadiumLvl * 200000;
@@ -3663,6 +3709,7 @@ export const useGameState = () => {
     applyMinigameReward,
     spendSkillPoint,
     claimDailyReward,
+    updateCasino,
     dismissDailyReward,
     autoPickBestEleven,
     doLifeActivity,

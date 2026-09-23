@@ -29,12 +29,15 @@ export const TrainingComplexSection: React.FC<Props> = ({ gameState, onUpgradeFa
   /** 👁️ Ön İzle tuşuyla sabitlenmiş mi? (hover bunu bozamaz) */
   const [pinnedModule, setPinnedModule] = useState<FacilityModuleId | null>(null);
   const sceneRef = useRef<HTMLDivElement | null>(null);
-  /** Ön izleme başlayınca 3D sahne ekranda değilse oraya kaydır */
+  /** Ön izleme başlayınca 3D sahne tamamen ekran DIŞINDAYSA en kısa yoldan görünür yap.
+   *  🐛 FIX: eskiden block:'start' ile sahneyi sayfanın tepesine zorluyordu — kullanıcı
+   *  modül kartlarında en alttayken basınca sayfa aniden en üste fırlıyordu. */
   const focusScene = () => {
     const el = sceneRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    if (r.top < 8 || r.bottom > window.innerHeight - 8) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const fullyHidden = r.bottom < 40 || r.top > window.innerHeight - 40;
+    if (fullyHidden) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
   const toggleModulePreview = (id: FacilityModuleId) => {
     if (pinnedModule === id) { setPinnedModule(null); setPreviewModule(null); return; }

@@ -312,7 +312,7 @@ function pitchTexture(design: StadiumDesign, logo: string): THREE.Texture | null
 }
 
 /** Tribün yüzeyi için kalabalık dokusu (uzaktan seyirci gibi görünür) */
-function crowdTexture(seatColor: string): THREE.Texture | null {
+function crowdTexture(seatColor: string, density = 1): THREE.Texture | null {
   const canvas = makeCanvas(256, 256);
   if (!canvas) return null;
   const ctx = canvas.getContext('2d');
@@ -322,7 +322,9 @@ function crowdTexture(seatColor: string): THREE.Texture | null {
   ctx.fillRect(0, 0, 256, 256);
 
   const skin = ['#e8b48a', '#c98b5e', '#8d5b3a', '#f2d2b3'];
-  for (let i = 0; i < 2600; i++) {
+  // 🎛️ Tribün yoğunluğu: ayar düşükse koltuklar boş görünür (insan noktası azalır)
+  const people = Math.round(2600 * Math.max(0.15, Math.min(1, density)));
+  for (let i = 0; i < people; i++) {
     const x = Math.random() * 256;
     const y = Math.random() * 256;
     const roll = Math.random();
@@ -403,6 +405,8 @@ function standProfile(rows: number, style: StandStyle, isDouble: boolean) {
 }
 
 export interface StadiumBuildOptions {
+  /** 🎛️ Tribün insan yoğunluğu 0.15-1 (grafik ayarları) */
+  crowdDensity?: number;
   /** Toplam koltuk kapasitesi */
   capacity: number;
   /** Kulüp logosu (emoji) */
@@ -574,7 +578,7 @@ export function buildStadiumGroup(design: StadiumDesign, opts: StadiumBuildOptio
   /* ── Tribünler ── */
   const isDouble = design.stands === 'double' || design.stands === 'bowl';
   const { shape, depth, height } = standProfile(rows, design.stands, isDouble);
-  const crowdTex = crowdTexture(design.seatColor);
+  const crowdTex = crowdTexture(design.seatColor, opts.crowdDensity ?? 1);
   const standMat = new THREE.MeshStandardMaterial({
     color: crowdTex ? 0xffffff : new THREE.Color(design.seatColor).getHex(),
     roughness: 0.9,
