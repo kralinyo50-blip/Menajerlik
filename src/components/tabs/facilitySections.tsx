@@ -17,7 +17,7 @@ export const StaffSection: React.FC<StaffSectionProps> = ({ gameState, onHireSta
     { type: 'physio' as const, name: 'Fizyoterapist', icon: '🩺', cost: 300000, desc: 'Hızlı enerji yenileme & sakatlık önleme' },
     { type: 'analyst' as const, name: 'Analist', icon: '📊', cost: 220000, desc: 'Maç içi taktik avantajları (+3 güç)' },
     { type: 'agent' as const, name: 'Oyuncu Menajeri', icon: '💼', cost: 400000, desc: 'Sözleşme yenilemelerinde imza parası %18 düşer — adam herkesi tanır' },
-    { type: 'fixer' as const, name: 'Kabaracı', icon: '🕶️', cost: 550000, desc: '"İşlerin adamı" — şike/rüşvet dosyalarının %45\'ini daha kapatmadan çözer (yakalanma riski -45%)' },
+    { type: 'fixer' as const, name: 'Kabaracı', icon: '🕶️', cost: 550000, desc: '"İşlerin adamı" — yeraltı bağlantıları rüşvet dosyalarını sen kapatmadan çözer (yakalanma riski %45 azalır)' },
     { type: 'lawyer' as const, name: 'Avukat', icon: '⚖️', cost: 480000, desc: 'Disiplin cezalarını yarıya indirir — mahkemede kimse onunla konuşamaz' }
   ];
   const hasStaff = (type: Staff['type']) => gameState.staff.some(s => s.type === type);

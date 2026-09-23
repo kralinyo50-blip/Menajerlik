@@ -1210,8 +1210,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           let ring = 0;
           actors.forEach(o => {
             if (o.staff || o.gk || o === fa || o === fb || o.mode === 'bench') return;
-            const d = Math.hypot(ball.pos.x - o.pos.x, ball.pos.z - o.pos.z);
-            if (d < 30) {
+            const d = Math.hypot(hot.x - o.pos.x, hot.z - o.pos.z);
+            if (d < 26) {
               const ang = (ring / 9) * Math.PI * 2;
               o.mode = 'play';
               o.target.set(hot.x + Math.cos(ang) * (4.5 + (ring % 3) * 1.6), 0, hot.z + Math.sin(ang) * (4 + (ring % 2) * 1.8));

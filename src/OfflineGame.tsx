@@ -456,9 +456,6 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
           extraNews.push(`⬆️ Kariyer seviyesi ${cupNewLevel}! +$${cupLevelBonus.toLocaleString()} prim ve +1 yetenek puanı.`);
         }
 
-        // 🕶️ Kupa maçında da karanlık işler hesabı görülür (puan silme kupa dosyasına işlenmez)
-        resolveCorruptionAfterMatch(true);
-
         updateGameState({
           cupMatches: updatedCupMatches,
           cupEliminated: !userWon,
@@ -482,10 +479,14 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             ...gameState.news.slice(0, 4)
           ]
         });
+
+        // 🕶️ Kupa maçında da karanlık işler hesabı görülür (ödül state'e işlendikten SONRA —
+        // yoksa bayat budget kopyası para cezasını siliyordu). Puan silme kupa dosyasına işlenmez.
+        resolveCorruptionAfterMatch(true, userWon ? 'W' : isDraw ? 'D' : 'L');
       }
     } else if (opponent) {
       // 🕶️ Karanlık işler hesabı görüldü (rüşvetler tükendi / yakalanma zarı atılır)
-      resolveCorruptionAfterMatch(false);
+      resolveCorruptionAfterMatch(false, userWon ? 'W' : isDraw ? 'D' : 'L');
 
       processMatchResult(userScore, oppScore, opponent, {
         isCup: false,

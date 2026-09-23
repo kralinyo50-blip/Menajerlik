@@ -13,21 +13,18 @@ const BRIBE_PRICE = {
   ref: { small: 1000000, big: 3000000 },
 } as const;
 
-/** Yakalanma riski % — kabaracı indirimi dahil */
-function riskPct(tier: 'small' | 'big', hasFixer: boolean): number {
-  const base = tier === 'small' ? 5.5 : 10;
+/** Yakalanma riski % — kabaracı indirimi dahil (kaleci: 5.5/10, hakem: 8/13) */
+function riskPct(kind: 'keeper' | 'ref', tier: 'small' | 'big', hasFixer: boolean): number {
+  const base = kind === 'keeper' ? (tier === 'small' ? 5.5 : 10) : (tier === 'small' ? 8 : 13);
   return Math.round(base * (hasFixer ? 0.55 : 1) * 100) / 100;
 }
 
-const RiskMeter: React.FC<{ pct: number }> = ({ pct }) => {
-  const color = pct <= 4 ? 'bg-emerald-500' : pct <= 8 ? 'bg-amber-500' : 'bg-red-500';
+const RiskBadge: React.FC<{ pct: number }> = ({ pct }) => {
+  const color = pct <= 4 ? 'text-emerald-400' : pct <= 8 ? 'text-amber-400' : 'text-red-400';
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-2 bg-slate-700/60 rounded-full overflow-hidden">
-        <div className={`h-full ${color} transition-all`} style={{ width: `${Math.min(100, pct * 6)}%` }} />
-      </div>
-      <span className="text-[11px] font-black text-slate-300 w-14 text-right">maçbaşı %{pct.toFixed(1).replace('.', ',')}</span>
-    </div>
+    <span className={`text-[10px] font-black ${color} whitespace-nowrap`}>
+      🔥 %{pct.toFixed(1).replace('.', ',')} risk
+    </span>
   );
 };
 
@@ -85,9 +82,15 @@ export const DarkTab: React.FC<Props> = ({ gameState, onBuyBribe, onHireStaff })
             const afford = gameState.budget >= price;
             return (
               <div key={tier} className="bg-slate-950/50 border border-slate-700/50 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="text-[10px] font-black text-slate-400 tracking-wider">{tier === 'small' ? 'KÜÇÜK TEŞVİK' : 'BÜYÜK ANLAŞMA'}</span>
-                  <RiskMeter pct={riskPct(tier, hasFixer)} />
+                  <RiskBadge pct={riskPct(kind, tier, hasFixer)} />
+                </div>
+                <div className="h-1.5 bg-slate-700/60 rounded-full overflow-hidden mb-2.5">
+                  <div
+                    className={`h-full ${riskPct(kind, tier, hasFixer) <= 4 ? 'bg-emerald-500' : riskPct(kind, tier, hasFixer) <= 8 ? 'bg-amber-500' : 'bg-red-500'}`}
+                    style={{ width: `${Math.min(100, riskPct(kind, tier, hasFixer) * 6)}%` }}
+                  />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-amber-300 font-black text-sm">{formatMoney(price)}</span>
@@ -148,12 +151,12 @@ export const DarkTab: React.FC<Props> = ({ gameState, onBuyBribe, onHireStaff })
         {bribeCard(
           'keeper', '🧤', 'Rakip Kaleciye Rüşvet',
           'Devresinde yemek yiyen kaleci, bugün "ayakları kaygan" oynar.',
-          ['Bizim şutlar daha sık gole dönüşür (+%14 / +%28)', 'Kaleci kurtarış bonusu ciddi şekilde erir', 'Küçük: %5,5 risk • Büyük: %10 risk (kabaracıyla daha az)']
+          ['Bizim şutlar daha sık gole dönüşür (+%14 / +%28)', 'Kaleci kurtarış bonusu ciddi şekilde erir', 'Her maçta yakalanma: %5,5 / %10 (kabaracıyla daha az)']
         )}
         {bribeCard(
           'ref', '🟨', 'Hakeme Rüşvet',
           'Düdük o gün biraz daha "bizim tarafta" çalar.',
-          ['Rakip golleri şüpheli VAR kararlarıyla iptal edilebilir (%20 / %40)', 'Bizim kartlarımıza görmezden gelir, rakibi affetmez', 'Küçük: %8 risk • Büyük: %13 risk (kabaracıyla daha az)']
+          ['Rakip golleri şüpheli VAR kararlarıyla iptal edilebilir (%20 / %40)', 'Bizim kartlarımıza görmezden gelir, rakibi affetmez', 'Her maçta yakalanma: %8 / %13 — dosyası daha sıcak (kabaracıyla daha az)']
         )}
       </div>
 

@@ -1030,7 +1030,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         if (kind === 'brawl') {
           setSceneBanner({ icon: '🔥', title: 'SAHADA KAVGA!', sub: 'İki takım orta sahada birbirine girdi — hakem araya giriyor!', key: Date.now() });
           setTimeout(() => setSceneBanner(null), 4600);
-          pushSpiker('🔥 SAHADA GERING! Oyuncular birbirine girdi, soyunma sıraları boşladı!');
+          pushSpiker('🔥 SAHADA KAVGA ÇIKTI! Oyuncular birbirine girdi — soyunma sıraları boşaldı!');
           addEvent({
             minute: currentMinute, type: 'brawl', team: 'home',
             description: `🔥 KAVGA! Oyun durdu — ${gameState.teamName} ve ${opponent.name} oyuncuları orta sahada birbirine girdi! Hakem kartları dağıtıyor.`
@@ -1044,14 +1044,15 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             cardMapRef.current.set(victim.id, record);
             setCardCount(prev => { const n = new Map(prev); n.set(victim.id, record.yellow); return n; });
             setTimeout(() => {
+              // 2. sarı → kırmızı: kart gösterilirken cezaya işlesin (sekans ortasında ani kaybolma yok)
+              if (record.yellow >= 2) {
+                sentOffRef.current = [...sentOffRef.current, victim.id];
+                setSentOff(sentOffRef.current);
+                setActiveLineup(prev => prev.map(pp => (pp.id === victim.id ? { ...pp, redCard: true } : pp)));
+              }
               setCardPop({ player: victim.name, kind: record.yellow >= 2 ? 'second' : 'yellow', key: Date.now() });
               setTimeout(() => setCardPop(null), 2600);
             }, 4200);
-            if (record.yellow >= 2) {
-              sentOffRef.current = [...sentOffRef.current, victim.id];
-              setSentOff(sentOffRef.current);
-              setActiveLineup(prev => prev.map(pp => (pp.id === victim.id ? { ...pp, redCard: true } : pp)));
-            }
           } else {
             setTimeout(() => {
               const oppName = oppPlayerName(['STP', 'SB', 'OS']);
@@ -1604,6 +1605,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                   : event.type === 'injury' ? 'text-orange-400'
                   : event.type === 'card' ? 'text-yellow-400'
                   : event.type === 'substitution' ? 'text-blue-400'
+                  : event.type === 'brawl' ? 'text-red-400 font-bold'
+                  : event.type === 'invader' ? 'text-fuchsia-300'
+                  : event.type === 'var' ? 'text-purple-300'
                   : 'text-slate-300'
                 }`}>
                   <span className="text-slate-500">[{event.minute}']</span> {event.description} {event.xg ? <span className="text-[9px] text-slate-500">xG {event.xg.toFixed(2)}</span> : null}

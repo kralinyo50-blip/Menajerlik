@@ -833,7 +833,7 @@ export const useGameState = () => {
   }, []);
 
   /* ══════════════ 🕶️ KARANLIK İŞLER — yakalanma denetimi ══════════════ */
-  const resolveCorruptionAfterMatch = useCallback((isCup: boolean) => {
+  const resolveCorruptionAfterMatch = useCallback((isCup: boolean, result?: 'W' | 'D' | 'L') => {
     setGameState(prev => {
       if (!prev) return null;
       const cor = prev.corruption ?? { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
@@ -841,13 +841,16 @@ export const useGameState = () => {
 
       const hasFixer = prev.staff?.some(st => st.type === 'fixer') ?? false;
       const hasLawyer = prev.staff?.some(st => st.type === 'lawyer') ?? false;
-      const baseRisk = (tier: 'small' | 'big') => (tier === 'small' ? 0.055 : 0.1);
+      // 🎲 Yakalanma riski (kabaracı indirimi ×0.55): kaleci K %5.5 / B %10 — hakem K %8 / B %13
+      const baseRisk = (kind: 'keeper' | 'ref', tier: 'small' | 'big') =>
+        kind === 'keeper' ? (tier === 'small' ? 0.055 : 0.1) : (tier === 'small' ? 0.08 : 0.13);
       const riskMult = hasFixer ? 0.55 : 1;
 
-      const caughtKeeper = cor.keeperBribe && Math.random() < baseRisk(cor.keeperBribe.tier) * riskMult;
-      const caughtRef = cor.refBribe && Math.random() < baseRisk(cor.refBribe.tier) * riskMult;
+      const caughtKeeper = cor.keeperBribe && Math.random() < baseRisk('keeper', cor.keeperBribe.tier) * riskMult;
+      const caughtRef = cor.refBribe && Math.random() < baseRisk('ref', cor.refBribe.tier) * riskMult;
       const caught = caughtKeeper || caughtRef;
-      const next: GameState = { ...prev, corruption: { ...cor, keeperBribe: null, refBribe: null } };
+      const dirtyWin = result === 'W' ? 1 : 0; // 🏆 kirli galibiyet istatistiği
+      const next: GameState = { ...prev, corruption: { ...cor, keeperBribe: null, refBribe: null, dirtyWins: (cor.dirtyWins || 0) + dirtyWin } };
 
       if (!caught) {
         // Rüşvet tükendi, temiz çıktın
@@ -926,6 +929,7 @@ export const useGameState = () => {
       const cost = PRICE[kind][tier];
       if (prev.budget < cost) return prev;
       const cor = prev.corruption ?? { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
+      if ((kind === 'keeper' && cor.keeperBribe) || (kind === 'ref' && cor.refBribe)) return prev; // bu dosya zaten aktif
       const label = kind === 'keeper'
         ? (tier === 'small' ? 'Rakip kaleciyle "çay parası" anlaşması' : 'Rakip kalecinin gözüne "çim tozu" kaçtı — anlaşma tamam')
         : (tier === 'small' ? 'Hakemle otobüs altında buluşma ayarlandı' : 'Hakemin devre arası tatili senin cebinden — anlaşma tamam');
@@ -2051,7 +2055,7 @@ export const useGameState = () => {
         newState.boardMessages = [msg, ...newState.boardMessages.slice(0, 5)];
         newState.news = [msg, ...newState.news.slice(0, 4)];
       }
-      if (newState.boardConfidence <= 0) {
+      if (newState.boardConfidence <= 0 && !newState.careerOver) { // 🕶️ şike skandalı sebebi varsa ezme
         newState.careerOver = true;
         newState.careerOverReason = 'Yönetim kurulu güvenini kaybetti ve sözleşmen feshedildi.';
       }
@@ -2296,6 +2300,7 @@ export const useGameState = () => {
   const hireStaff = useCallback((type: Staff['type'], cost: number) => {
     setGameState(prev => {
       if (!prev || prev.budget < cost) return prev;
+      if (prev.staff.some(st => st.type === type)) return prev; // aynı rolden bir kişi yeter
 
       const names: Record<Staff['type'], string> = {
         coach: 'Antrenör',
