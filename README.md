@@ -68,6 +68,12 @@ Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalışt
 - **Uyarlanabilir Çözünürlük** — FPS düşünce render ölçeği kendiliğinden kısılır, toparlanınca geri açılır; 3D modeller, tribünler, efektler **asla kısılmaz** (yalnızca piksel sayısı)
 - Tüm 3D sahneler (maç, stadyum, antrenman, hayat) FPS sınırı + uyarlanabilir çözünürlük ile tek merkezden yönetilir; ayarlar tarayıcıda saklanır
 
+### 🚀💎🔵 Kumarhane Mini Oyunları (v5.3)
+- **🚀 Roket (Crash)**: çarpan yükselirken çekil — patlamadan önce! Canlı eğri + roket animasyonu
+- **💎 Mayın Tarlası**: 25 kutuda 3 mayın; elma topladıkça çarpan büyür (max ~30×), istediğin an çekil
+- **🔵 Plinko**: top 12 sıra pimi aşar, uç kova 23× öder — her düşüş animasyonlu
+- 7 oyunun tamamı Monte-Cardo simülasyonuyla RTP denetimli (slot %89.5, diğerleri ~%97)
+
 ### 🎨 Forma Tasarımcısı & 📈 Portföy Grafiği (v5.2)
 - Taktik sekmesinde forma + şort rengini tasarla, 3D maçta anında sahaya yansısın
 - Yatırım Merkezi'nde 24 maçlık portföy değer grafiği

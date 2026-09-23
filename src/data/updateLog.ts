@@ -9,6 +9,18 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.3.0',
+    date: '24 Eyl 2026',
+    tag: 'YENİ',
+    title: '🚀💎🔵 Kumarhaneye 3 Yeni Mini Oyun: Roket, Mayın Tarlası, Plinko',
+    items: [
+      '🚀 ROKET (Crash): çarpan 1.00×\'ten yükselirken eğri üzerinde roket uçar — patlamadan önce "ÇEKİL"e bas! Ne kadar beklersen o kadar kazanç, ama tek kıvılcım her şeyi alır. Strateji bağımsız %97 getiri.',
+      '💎 MAYIN TARLASI: 25 kutu, 3 mayın. Elma topladıkça çarpanın büyür (1.11× → 30×), istediğin an çekil. Mayına basarsan hepsi gider!',
+      '🔵 PLINKO: topu bırak, 12 sıra pimi geçsin, kovaya düşsün — uç kovalar 23× öder, orta kova 0.5×. Her düşüş kalp atışı.',
+      '🎰 Kumarhane artık 7 oyun: Slot, Rulet, Blackjack, Çarkıfelek + bu üçü. Hepsi Seviye 40\'ta, hepsi gerçekçi RTP ile denetlenmiş (tools/sim-casino-rtp).',
+    ],
+  },
+  {
     version: '5.2.0',
     date: '23 Eyl 2026',
     tag: 'İYİLEŞTİRME',
