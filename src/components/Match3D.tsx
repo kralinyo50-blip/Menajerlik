@@ -168,7 +168,7 @@ export const Match3D: React.FC<Match3DProps> = ({
   const lastEvent = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const ev = events[i];
-      if (!['goal', 'chance', 'save', 'card', 'injury', 'substitution', 'foul'].includes(ev.type)) continue;
+      if (!['goal', 'chance', 'save', 'card', 'injury', 'substitution', 'foul', 'brawl', 'invader', 'var'].includes(ev.type)) continue;
       let side: Side = ev.team === 'home' ? sceneSideUser : sceneSideOpp;
       let type = ev.type;
       // "Savunma araya girdi" → kurtaran kullanıcı, şutu çeken rakip

@@ -467,10 +467,31 @@ export interface Sponsor {
 
 export interface Staff {
   id: number;
-  type: 'coach' | 'scout' | 'physio' | 'analyst';
+  type: 'coach' | 'scout' | 'physio' | 'analyst' | 'agent' | 'fixer' | 'lawyer';
   name: string;
   level: number;
   salary: number;
+}
+
+/* ══════════ 🕶️ KARANLIK İŞLER — ŞİKE & RÜŞVET (v5.1) ══════════ */
+export interface BribeState {
+  /** 'small' = düşük riskli küçük rüşvet, 'big' = yüksek riskli büyük rüşvet */
+  tier: 'small' | 'big';
+  /** Kaç maç boyunca etkili (şimdilik 1) */
+  matchesLeft: number;
+}
+
+export interface CorruptionState {
+  /** Sıradaki maçta etkili: rakip kaleciye para verildi */
+  keeperBribe: BribeState | null;
+  /** Sıradaki maçta etkili: hakeme para verildi */
+  refBribe: BribeState | null;
+  /** Kaç kez yakalandı (3.'de kovulma!) */
+  timesCaught: number;
+  /** Rüşvetlere toplam harcanan para */
+  totalSpent: number;
+  /** Şike sayesinde geldiği düşünülen galibiyet sayısı (istatistik) */
+  dirtyWins: number;
 }
 
 export interface Tactics {
@@ -764,6 +785,8 @@ export interface GameState {
   // ── v5.0: Kariyer seviyesi (her 5 maçta 1 seviye, özellikler kademeli açılır) ──
   /** Toplam oynanan maç (lig + kupa). Seviye = 1 + floor(maç / 5) */
   matchesPlayed?: number;
+  // ── v5.1: Karanlık İşler (şike & rüşvet) ──
+  corruption?: CorruptionState;
   /** 🎰 Kumarhane (seviye 40'ta açılır) */
   casino?: CasinoState;
 }
@@ -820,7 +843,7 @@ export interface SocialPost {
 
 export interface MatchEvent {
   minute: number;
-  type: 'goal' | 'save' | 'chance' | 'foul' | 'injury' | 'substitution' | 'card' | 'penalty' | 'var' | 'info' | 'offside' | 'corner' | 'freekick' | 'tackle' | 'interception';
+  type: 'goal' | 'save' | 'chance' | 'foul' | 'injury' | 'substitution' | 'card' | 'penalty' | 'var' | 'info' | 'offside' | 'corner' | 'freekick' | 'tackle' | 'interception' | 'brawl' | 'invader';
   team: 'home' | 'away';
   player?: string;
   description: string;

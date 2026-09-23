@@ -9,6 +9,19 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.1.0',
+    date: '23 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🕶️ Karanlık İşler + 🎪 Sahada Kavga & Sahaya Atlayan Taraftar + 💼 Adamlar',
+    items: [
+      '🕶️ YENİ SEKME — Karanlık İşler (Sv.2\'de açılır): rakip kaleciye para ver (şutlar artık daha sık gole gider) veya hakemi "ikna et" (rakip golleri şüpheli VAR kararıyla iptal edilebilir, sana kart çıkmaz, rakibi affetmez).',
+      '🚨 YAKALANMA SİSTEMİ: her rüşvetli maçta yakalanma riski var (%5.5–%13). Yakalanırsan para cezası + ligden 3 puan silme + yönetim güveni -22. 3. yakalanışta yönetim sözleşmeni fesheder!',
+      '👤 ARKANDAKİ ADAMLAR (Personel): 🕶️ Kabaracı (yakalanma riski -45%), ⚖️ Avukat (cezaları yarıya indirir), 💼 Oyuncu Menajeri (sözleşme imza parası %18 düşür). Karanlık İşler sekmesinden veya Stadyum → Personel\'den alınırlar.',
+      '🎪 BÜYÜK OLAYLAR (≈ her 10 maçta 1, 3D\'de canlı sinematik): 🔥 SAHADA KAVGA — iki takım orta sahada birbirine girer, etrafında halka kurulur, hakem koşup kart dağıtır (kartlar gerçekten cezalara işler); 🏃 SAHAYA ATLAYAN TARAFTAR — tribüncü kanat boyu koşar, iki güvenlik görevlisi kovalar, yakalar ve çıkarır!',
+      '📈 YATIRIM +5 ARAÇ: 💵 Dolar/TL Vadeli, 🛢️ Enerji Fonu (Brent), 🎮 E-Spor Giriş Sermayesi, 🎨 Sanat Eseri Fonu, 🏦 Euro Tahvil Sepeti — her biri farklı volatilite/beta/temettü profiliyle. Eski kayıtlara otomatik eklenir.',
+    ],
+  },
+  {
     version: '5.0.1',
     date: '23 Eyl 2026',
     tag: 'İYİLEŞTİRME',

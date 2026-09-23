@@ -10,7 +10,7 @@
 export type UnlockableTab =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer'
   | 'tactics' | 'training' | 'league' | 'cup' | 'shop' | 'merch' | 'invest'
-  | 'history' | 'tech' | 'casino' | 'settings';
+  | 'history' | 'tech' | 'casino' | 'settings' | 'dark';
 
 /** Sekmenin açıldığı seviye */
 export const TAB_UNLOCK_LEVEL: Record<UnlockableTab, number> = {
@@ -32,6 +32,7 @@ export const TAB_UNLOCK_LEVEL: Record<UnlockableTab, number> = {
   merch: 3,     // 15 maç — Formalar (mağaza zinciri)
   invest: 5,    // 25 maç — Yatırım & kredi
   tech: 8,      // 40 maç — Teknoloji/AVM
+  dark: 2,      // 10 maç — 🕶️ Karanlık İşler (şike & rüşvet)
   casino: 40,   // 195 maç — 🎰 Kumarhane
 };
 
@@ -56,6 +57,7 @@ export interface CareerProgress {
 const UNLOCK_META: Record<string, { label: string; icon: string }> = {
   shop: { label: 'Dükkan', icon: '🛒' },
   merch: { label: 'Formalar', icon: '👕' },
+  dark: { label: 'Karanlık İşler', icon: '🕶️' },
   invest: { label: 'Yatırım', icon: '📈' },
   tech: { label: 'Teknoloji', icon: '💻' },
   casino: { label: 'Kumarhane', icon: '🎰' },

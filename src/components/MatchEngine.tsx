@@ -167,6 +167,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [subBoard, setSubBoard] = useState<{ outName: string; inName: string; outRole: string; inRole: string; key: number } | null>(null);
   const [cardPop, setCardPop] = useState<{ player: string; kind: 'yellow' | 'red' | 'second'; key: number } | null>(null);
   const [freeze, setFreeze] = useState<{ icon: string; reason: string } | null>(null);
+  const [sceneBanner, setSceneBanner] = useState<{ icon: string; title: string; sub: string; key: number } | null>(null);
+  const specialEventFiredRef = useRef(false); // maç başına en fazla 1 büyük olay (kavga/taraftar)
   const [slowMo, setSlowMo] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(true);
   const [view3d, setView3d] = useState(!gameState.life?.lowPerf && !isSoftwareWebGL());
@@ -436,7 +438,12 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const userKeeperSaveBonus = userKeeper
     ? Math.max(-0.035, Math.min(0.06, (userKeeper.ovr - 72) * 0.002 + ((userKeeper.energy - 55) * 0.00035) + ((userKeeper.morale - 50) * 0.0002)))
     : -0.01;
-  const oppKeeperSaveBonus = Math.max(-0.035, Math.min(0.06, (oppOvr - 72) * 0.002));
+  // 🕶️ Rüşvet: rakip kaleci "yorgun" ve "dikkatsiz" — kurtarış bonusu erir, ayakları kayar
+  const keeperBribe = gameState.corruption?.keeperBribe ?? null;
+  const refBribe = gameState.corruption?.refBribe ?? null;
+  const bribeStrength = (b: { tier: 'small' | 'big' } | null) => (b ? (b.tier === 'small' ? 1 : 2) : 0);
+  const oppKeeperSaveBonus = Math.max(-0.035, Math.min(0.06, (oppOvr - 72) * 0.002))
+    - bribeStrength(keeperBribe) * 0.045;
 
   const addEvent = useCallback((event: MatchEvent) => {
     setEvents(prev => [...prev, event]);
@@ -742,6 +749,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     goalProb -= keeperSave;
     // Rakip YZ: yüklenen rakip pozisyonlarını daha cesur bitirir, geri çekilen daha tembel
     if (!isUserChain) goalProb *= 1 + oppPush * 1.6;
+    // 🕶️ Kaleci rüşveti: pozisyonlar daha sık gole dönüşür
+    if (isUserChain && keeperBribe) goalProb *= 1 + 0.14 * bribeStrength(keeperBribe);
     goalProb *= goalMult;
     goalProb = Math.max(0.02, Math.min(0.9, goalProb));
 
@@ -822,6 +831,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     } else {
       // Rakip atağı
       if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 1) {
+        // 🕶️ Hakem rüşveti: rakip golü "şüpheli ofsayt" ile iptal edilir
+        if (refBribe && Math.random() < 0.2 * bribeStrength(refBribe)) {
+          play(sfx.card);
+          pushSpiker(`🟨 VAR: GOL İPTAL! ${opponent.name} ofsaytta yakalandı... (tribünler yuhalıyor)`);
+          addEvent({
+            minute: currentMinute, type: 'var', team: 'away',
+            description: `🚫 GOL İPTAL! ${opponent.name} golü VAR'a takıldı — şüpheli ofsayt kararı. Şans mı, yoksa...?`
+          });
+          return;
+        }
         if (mgCountRef.current < 2 && xgVal > 0.25 && Math.random() < 0.28 && !pausedRef.current) {
           mgCountRef.current += 1;
           pausedRef.current = true;
@@ -882,7 +901,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
     if (Math.random() < (0.012 + (pressingIntensity - 50) / 5000) && currentMinute > 10) {
       // 🐛 FIX: kartlar eskiden yalnızca bizim oyunculara çıkıyordu — hakem artık tarafsız (rakip ~%45)
-      const cardForOpponent = Math.random() < 0.45;
+      // 🕶️ Hakem rüşveti: bizden görmezden gelir, rakibi affetmez
+      const refBias = refBribe ? 0.22 * bribeStrength(refBribe) : 0;
+      const cardForOpponent = Math.random() < Math.min(0.8, 0.45 + refBias);
 
       if (cardForOpponent) {
         const oppName = oppPlayerName(['STP', 'SB', 'OS']);
@@ -914,6 +935,11 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
 
       const player = getRandomPlayer(false, ['STP', 'SB', 'OS']);
+      // Hakem rüşveti bizim kartlarımıza da göz yumar
+      if (refBribe && Math.random() < 0.5 * bribeStrength(refBribe)) {
+        addEvent({ minute: currentMinute, type: 'info', team: 'home', description: `😬 ${player.name} faul yaptı ama hakem cebine gitmedi — şanslısın!` });
+        return;
+      }
       const isRed = Math.random() < 0.09;
       const record = cardMapRef.current.get(player.id) || { yellow: 0, red: 0 };
 
@@ -991,6 +1017,58 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             setTimeout(() => setSubBoard(null), 2800);
           }
         }
+      }
+    }
+
+    // ── 🎪 BÜYÜK OLAYLAR — ~her 10 maçta 1: kavga veya sahaya atlayan taraftar ──
+    // 3D sahada gerçek sinematik: aktörler toplanır, güvenlik koşar, hakem kart görür.
+    if (!specialEventFiredRef.current && currentMinute >= 14 && currentMinute <= 84 && pausedRef.current === false && !matchMinigame) {
+      if (Math.random() < 0.0018) { // ~%12.6 maç başına (70 dakika pencere)
+        specialEventFiredRef.current = true;
+        const kind: 'brawl' | 'invader' = Math.random() < 0.55 ? 'brawl' : 'invader';
+        triggerSlowMo(4600);
+        if (kind === 'brawl') {
+          setSceneBanner({ icon: '🔥', title: 'SAHADA KAVGA!', sub: 'İki takım orta sahada birbirine girdi — hakem araya giriyor!', key: Date.now() });
+          setTimeout(() => setSceneBanner(null), 4600);
+          pushSpiker('🔥 SAHADA GERING! Oyuncular birbirine girdi, soyunma sıraları boşladı!');
+          addEvent({
+            minute: currentMinute, type: 'brawl', team: 'home',
+            description: `🔥 KAVGA! Oyun durdu — ${gameState.teamName} ve ${opponent.name} oyuncuları orta sahada birbirine girdi! Hakem kartları dağıtıyor.`
+          });
+          // Kavganın bedeli: rastgele sarı kart(lar) — kupa/ceza sistemine gerçekten işler
+          const cardVictim = Math.random() < 0.5;
+          if (cardVictim) {
+            const victim = getRandomPlayer(false, ['STP', 'SB', 'OS']);
+            const record = cardMapRef.current.get(victim.id) || { yellow: 0, red: 0 };
+            record.yellow += 1;
+            cardMapRef.current.set(victim.id, record);
+            setCardCount(prev => { const n = new Map(prev); n.set(victim.id, record.yellow); return n; });
+            setTimeout(() => {
+              setCardPop({ player: victim.name, kind: record.yellow >= 2 ? 'second' : 'yellow', key: Date.now() });
+              setTimeout(() => setCardPop(null), 2600);
+            }, 4200);
+            if (record.yellow >= 2) {
+              sentOffRef.current = [...sentOffRef.current, victim.id];
+              setSentOff(sentOffRef.current);
+              setActiveLineup(prev => prev.map(pp => (pp.id === victim.id ? { ...pp, redCard: true } : pp)));
+            }
+          } else {
+            setTimeout(() => {
+              const oppName = oppPlayerName(['STP', 'SB', 'OS']);
+              setCardPop({ player: `${oppName} (${opponent.name})`, kind: 'yellow', key: Date.now() });
+              setTimeout(() => setCardPop(null), 2600);
+            }, 4200);
+          }
+        } else {
+          setSceneBanner({ icon: '🏃', title: 'TARAFTAR SAHAYA ATLADI!', sub: 'Güvenlik kovalıyor — tribünler ayakta gülerken oyun durdu!', key: Date.now() });
+          setTimeout(() => setSceneBanner(null), 4600);
+          pushSpiker('🏃 BİR TARAFTAR SAHAYA ATTI KENDİNİ! Güvenlik peşinde — tribün eğleniyor!');
+          addEvent({
+            minute: currentMinute, type: 'invader', team: 'home',
+            description: `🏃 Taraftar sahaya atladı! Güvenlik ekibi kovalıyor, tribünler ayakta — oyun kısa süreliğine durdu.`
+          });
+        }
+        return; // bu dakika başka olay üretilmesin
       }
     }
 
@@ -1170,11 +1248,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const startMatch = () => {
     setPhase('first');
     pausedRef.current = false;
+    specialEventFiredRef.current = false;
     playedRef.current = new Set(gameState.team11.map(p => p.id));
     possessionChainRef.current = { team: isHome ? 'home' : 'away', phase: 'build', passes: 0 };
     momentumRef.current = { home: isHome ? 0.5 : -0.3, away: isHome ? -0.3 : 0.5 };
     play(sfx.whistle);
     addEvent({ minute: 0, type: 'info', team: 'home', description: `🏟️ Hakem düdüğü çaldı, maç başladı! Formasyon: ${gameState.tactics.formation} • ${formationProfile.midfieldWeight > 0.6 ? 'Orta saha kalabalık' : 'Kanatlar açık'} • Pres %${pressingIntensity} • Tempo %${tempoValue}` });
+    // 🕶️ Rüşvet aktifse gizli ipucu
+    if (keeperBribe || refBribe) {
+      addEvent({ minute: 0, type: 'info', team: 'home', description: `🤫 Soyunma odasında fısıltılar: "${(keeperBribe ? 'Kaleci ' : '') + (keeperBribe && refBribe ? 've ' : '') + (refBribe ? 'adam beyazlı' : '')} bugün bizim..." Sessiz ol.` });
+    }
     const sAvg = activeLineup.reduce((a, p) => a + p.ovr, 0) / Math.max(1, activeLineup.length);
     const sChem = gameState.teamChemistry ?? 55;
     const adapting = activeLineup.filter(p => adaptationPct(p) < 0.5 && (p.ovr - sAvg) >= 3);
@@ -1657,6 +1740,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         </div>
       )}
 
+      {sceneBanner && (
+        <div key={sceneBanner.key} className="absolute inset-x-0 top-16 z-[56] flex justify-center pointer-events-none px-4">
+          <div className="bg-slate-950/92 border-2 border-amber-400/70 rounded-2xl px-6 py-4 shadow-[0_16px_44px_rgba(0,0,0,0.65)] text-center max-w-md" style={{ animation: 'sceneBannerIn 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
+            <div className="text-4xl mb-1" style={{ animation: 'sceneBannerShake 500ms ease 200ms 3' }}>{sceneBanner.icon}</div>
+            <div className="text-lg font-black text-amber-300 tracking-wide">{sceneBanner.title}</div>
+            <div className="text-[11px] text-slate-300 mt-1 leading-snug">{sceneBanner.sub}</div>
+          </div>
+        </div>
+      )}
+
       {cardPop && (
         <div key={cardPop.key} className="absolute inset-0 z-[53] flex items-center justify-center pointer-events-none" style={{ animation: 'cardFade 2600ms ease forwards' }}>
           <div className="relative bg-slate-900/94 border-2 rounded-2xl px-6 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] text-center min-w-[280px] max-w-[90%]" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : cardPop.kind === 'second' ? '#f59e0b' : '#eab308', animation: 'cardPop 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
@@ -1688,6 +1781,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         @keyframes cardFade { 0%{opacity:0} 10%{opacity:1} 85%{opacity:1} 100%{opacity:0} }
         @keyframes cardPop { 0%{transform:scale(0.85) translateY(12px); opacity:0} 100%{transform:scale(1) translateY(0); opacity:1} }
         @keyframes cardFlip { 0%{transform:rotate(18deg) scale(0.8); opacity:0} 100%{transform:rotate(6deg) scale(1); opacity:1} }
+        @keyframes sceneBannerIn { 0%{transform:translateY(-22px) scale(0.85); opacity:0} 100%{transform:translateY(0) scale(1); opacity:1} }
+        @keyframes sceneBannerShake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-7deg)} 75%{transform:rotate(7deg)} }
       `}</style>
     </div>
   );

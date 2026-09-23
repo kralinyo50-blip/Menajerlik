@@ -19,6 +19,7 @@ import { LifeTab } from './components/tabs/LifeTab';
 import { SocialTab } from './components/tabs/SocialTab';
 import { TechTab } from './components/tabs/TechTab';
 import { CasinoTab } from './components/tabs/CasinoTab';
+import { DarkTab } from './components/tabs/DarkTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { FpsOverlay } from './components/FpsOverlay';
 import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus, unlocksBetween } from './utils/unlocks';
@@ -54,7 +55,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech' | 'casino' | 'settings';
+  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech' | 'casino' | 'settings' | 'dark';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -186,6 +187,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     claimDailyReward,
     dismissDailyReward,
     updateCasino,
+    resolveCorruptionAfterMatch,
+    buyBribe,
     autoPickBestEleven,
     addSocialPost,
     likeSocialPost,
@@ -453,6 +456,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
           extraNews.push(`⬆️ Kariyer seviyesi ${cupNewLevel}! +$${cupLevelBonus.toLocaleString()} prim ve +1 yetenek puanı.`);
         }
 
+        // 🕶️ Kupa maçında da karanlık işler hesabı görülür (puan silme kupa dosyasına işlenmez)
+        resolveCorruptionAfterMatch(true);
+
         updateGameState({
           cupMatches: updatedCupMatches,
           cupEliminated: !userWon,
@@ -478,6 +484,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         });
       }
     } else if (opponent) {
+      // 🕶️ Karanlık işler hesabı görüldü (rüşvetler tükendi / yakalanma zarı atılır)
+      resolveCorruptionAfterMatch(false);
+
       processMatchResult(userScore, oppScore, opponent, {
         isCup: false,
         isHome,
@@ -1006,6 +1015,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     { id: 'training', label: 'Antrenman', icon: '🏋️' },
     { id: 'league', label: 'Lig', icon: '🏆' },
     { id: 'cup', label: 'Kupa', icon: '🏅' },
+    { id: 'dark', label: 'Karanlık İşler', icon: '🕶️' },
     { id: 'casino', label: 'Kumarhane', icon: '🎰' },
     { id: 'shop', label: 'Dükkan', icon: '🛒' },
     { id: 'merch', label: 'Formalar', icon: '👕' },
@@ -1322,6 +1332,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
               )}
               {activeTab === 'settings' && (
                 <SettingsTab gameState={gameState} onToggleSound={toggleSound} />
+              )}
+              {activeTab === 'dark' && (
+                <DarkTab gameState={gameState} onBuyBribe={buyBribe} onHireStaff={hireStaff} />
               )}
               {activeTab === 'social' && (
               <SocialTab gameState={gameState} onCreatePost={addSocialPost} onLikePost={likeSocialPost} onAddComment={commentOnPost} />

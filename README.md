@@ -68,9 +68,17 @@ Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalışt
 - **Uyarlanabilir Çözünürlük** — FPS düşünce render ölçeği kendiliğinden kısılır, toparlanınca geri açılır; 3D modeller, tribünler, efektler **asla kısılmaz** (yalnızca piksel sayısı)
 - Tüm 3D sahneler (maç, stadyum, antrenman, hayat) FPS sınırı + uyarlanabilir çözünürlük ile tek merkezden yönetilir; ayarlar tarayıcıda saklanır
 
+### 🕶️ Karanlık İşler (v5.1)
+- **Rüşvet sistemi**: rakip kaleciye para ver (şutlar daha sık gole gider) veya hakemi ikna et (rakip golleri VAR'la iptal edilebilir, sana kart çıkmaz)
+- **Yakalanma riski**: her rüşvetli maçta %5.5–%13 → yakalanınca para cezası + 3 puan silme + yönetim güveni -22; **3. yakalanışta kovulursun**
+- **Arkadaki adamlar**: 🕶️ Kabaracı (risk -45%), ⚖️ Avukat (ceza -50%), 💼 Oyuncu Menajeri (sözleşme imza parası %18 düşük)
+
+### 🎪 Büyük Maç Olayları (v5.1, 3D sinematik)
+- ≈ Her 10 maçta 1: **🔥 sahada kavga** (iki takım orta sahada birbirine girer, hakem kart dağıtır — kartlar ceza sistemine gerçekten işler) veya **🏃 sahaya atlayan taraftar** (güvenlik kovalar, yakalar, çıkarır)
+
 ### 🎯 Kariyer Seviyesi & 🎰 Kumarhane (v5.0)
 - **Her 5 maçta 1 seviye** (kupa maçları dahil) — seviye başına bütçe primi + yetenek puanı
-- Kademeli açılan özellikler: 🛒 Dükkan Sv.2 • 👕 Formalar Sv.3 • 📈 Yatırım Sv.5 • 💻 Teknoloji Sv.8 • 🎰 **Kumarhane Sv.40**
+- Kademeli açılan özellikler: 🕶️ Karanlık İşler Sv.2 • 🛒 Dükkan Sv.2 • 👕 Formalar Sv.3 • 📈 Yatırım Sv.5 • 💻 Teknoloji Sv.8 • 🎰 **Kumarhane Sv.40**
 - Kilitli sekmeler ilerleme çubuğuyla "kaç maç kaldı" bilgisi gösterir; Kariyer sekmesinde canlı seviye kartı
 - **Kumarhane**: Şans Makinesi 777, Avrupa Ruleti, Blackjack (3:2 ödeme) ve Çarkıfelek — kulüp bütçesinden kasa, istatistikler ve son eller
 

@@ -56,7 +56,7 @@ const InvestCard: React.FC<{ inv: Investment; budget: number; onBuy: (id:number,
   const owned = inv.owned || 0;
   const avg = (inv as any).avgCost ?? inv.price;
   const history: number[] = (inv as any).history ?? [inv.price];
-  const feeRates: Record<string, number> = { stock: 0.008, gold: 0.006, realestate: 0.012, crypto: 0.01, bond: 0.004 };
+  const feeRates: Record<string, number> = { stock: 0.008, gold: 0.006, realestate: 0.012, crypto: 0.01, bond: 0.004, fx: 0.005 };
   const fee = feeRates[inv.type] ?? 0.008;
   const unitCost = Math.round(inv.price * (1 + fee));
   const totalCost = unitCost * qty;
