@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { GameState, Investment } from '../../types/game';
 import { CREDIT_PACKAGES } from '../../data/constants';
+import { Sparkline as PortfolioSparkline } from '../ui/Sparkline';
 
 interface InvestTabProps {
   gameState: GameState;
@@ -245,6 +246,22 @@ export const InvestTab: React.FC<InvestTabProps> = ({ gameState, onBuyInvestment
                 <span className="text-slate-500">Toplam getiri</span><span className={`font-bold ${stats.totalReturn>=0?'text-emerald-400':'text-red-400'}`}>{stats.totalReturn>=0?'+':''}{stats.totalReturn.toFixed(2)}%</span>
                 <span className="text-slate-500">Haftalık P/L</span><span className={`font-bold ${stats.weekly>=0?'text-emerald-400':'text-red-400'}`}>{stats.weekly>=0?'+':''}${Math.round(stats.weekly).toLocaleString()}</span>
               </div>
+              {(() => {
+                const ph = gameState.portfolioHistory ?? [];
+                if (ph.length >= 2) {
+                  const chg = ((ph[ph.length - 1] - ph[0]) / Math.max(1, ph[0])) * 100;
+                  return (
+                    <div className="mt-2.5">
+                      <div className="flex justify-between text-[10px] tracking-widest font-bold mb-0.5">
+                        <span className="text-slate-500">PORTFÖY GRAFİĞİ</span>
+                        <span className={chg >= 0 ? 'text-emerald-400' : 'text-red-400'}>son {ph.length} maç {chg >= 0 ? '+' : ''}{chg.toFixed(1)}%</span>
+                      </div>
+                      <PortfolioSparkline data={ph} height={44} color={chg >= 0 ? '#34d399' : '#f87171'} />
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
         </div>

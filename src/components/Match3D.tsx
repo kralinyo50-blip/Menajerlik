@@ -135,13 +135,22 @@ export const Match3D: React.FC<Match3DProps> = ({
   /* ── Formalar: kullanıcı kulüp renginden, rakip deterministik ── */
   const kits = useMemo(() => {
     const design = venue.design;
-    const userKit = kitFrom(design.seatColor, design.accentColor, hashText(gameState.teamName), undefined);
+    // 🎨 Forma Tasarımcısı seçimi varsa o baskın gelir; yoksa stadyum koltuk renginden türetilir
+    const saved = gameState.kit;
+    const userKit = saved
+      ? (() => {
+          const k = kitFrom(saved.shirt, '#111827', hashText(gameState.teamName), undefined);
+          k.shorts = saved.shorts; // şortu kullanıcı seçer
+          k.socks = saved.shirt;
+          return k;
+        })()
+      : kitFrom(design.seatColor, design.accentColor, hashText(gameState.teamName), undefined);
     const oppKit = userIsHome
       ? opponentKit(opponent.name, gameState.season, userKit.shirt)
       : venue.kit;
     return userIsHome ? { home: userKit, away: oppKit } : { home: oppKit, away: userKit };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venueKey, gameState.teamName, userIsHome, opponent.name, gameState.season]);
+  }, [venueKey, gameState.teamName, userIsHome, opponent.name, gameState.season, gameState.kit?.shirt, gameState.kit?.shorts]);
 
   /* ── Kadrolar ── */
   const homeShape = useMemo<ShapeSlot[]>(

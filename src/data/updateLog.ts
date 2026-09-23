@@ -9,6 +9,17 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.2.0',
+    date: '23 Eyl 2026',
+    tag: 'İYİLEŞTİRME',
+    title: '🎨 Forma Tasarımcısı + 📈 Portföy Grafiği + 🏅 Sezon Ödülleri',
+    items: [
+      '🎨 FORMA TASARIMCISI (Taktik sekmesi): forma ve şort renğini seç, 6 hazır set (Kanarya, Kartal, Ateş, Orman, Mor Şimşek, Okyanus) — tasarımın anında 3D maçta sahaya yansır, kumaş numarası kontrastı otomatik ayarlanır.',
+      '📈 PORTFÖY GRAFİĞİ: Yatırım Merkezi\'nde son 24 maçlık portföy değeri sparkline\'ı — yükseliş yeşil, düşüş kırmızı.',
+      '🏅 SEZON ÖDÜLLERİ: sezon sonu raporuna Asist Kralı ve Sezonun Adamı (altın kart) eklendi — gol kralının yanında.',
+    ],
+  },
+  {
     version: '5.1.0',
     date: '23 Eyl 2026',
     tag: 'BÜYÜK',

@@ -68,6 +68,11 @@ Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalışt
 - **Uyarlanabilir Çözünürlük** — FPS düşünce render ölçeği kendiliğinden kısılır, toparlanınca geri açılır; 3D modeller, tribünler, efektler **asla kısılmaz** (yalnızca piksel sayısı)
 - Tüm 3D sahneler (maç, stadyum, antrenman, hayat) FPS sınırı + uyarlanabilir çözünürlük ile tek merkezden yönetilir; ayarlar tarayıcıda saklanır
 
+### 🎨 Forma Tasarımcısı & 📈 Portföy Grafiği (v5.2)
+- Taktik sekmesinde forma + şort rengini tasarla, 3D maçta anında sahaya yansısın
+- Yatırım Merkezi'nde 24 maçlık portföy değer grafiği
+- Sezon sonunda Gol Kralı, Asist Kralı ve Sezonun Adamı ödülleri
+
 ### 🕶️ Karanlık İşler (v5.1)
 - **Rüşvet sistemi**: rakip kaleciye para ver (şutlar daha sık gole gider) veya hakemi ikna et (rakip golleri VAR'la iptal edilebilir, sana kart çıkmaz)
 - **Yakalanma riski**: her rüşvetli maçta %5.5–%13 → yakalanınca para cezası + 3 puan silme + yönetim güveni -22; **3. yakalanışta kovulursun**

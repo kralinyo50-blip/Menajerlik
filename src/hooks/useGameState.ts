@@ -396,7 +396,8 @@ export const useGameState = () => {
       socialFeed: [],
       matchesPlayed: 0,
       casino: { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] },
-      corruption: { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 }
+      corruption: { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 },
+      portfolioHistory: [], kit: undefined
     };
 
     // Transfer pazarı: genişletildi — 30-40 oyuncu, her 3 maçta yenilenir
@@ -819,6 +820,7 @@ export const useGameState = () => {
     }
     if (!(loaded as any).corruption) {
       (loaded as any).corruption = { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
+    if (!(loaded as any).portfolioHistory) (loaded as any).portfolioHistory = [];
     }
     if ((loaded as any).lastMarketRefreshWeek === undefined) (loaded as any).lastMarketRefreshWeek = 1;
     if ((loaded as any).matchesSinceMarketRefresh === undefined) (loaded as any).matchesSinceMarketRefresh = 0;
@@ -1677,6 +1679,11 @@ export const useGameState = () => {
         if (totalDividend > 0) {
           newState.budget += totalDividend;
           newState.news = [`💵 Yatırım temettü/kupon/kira geliri: +$${totalDividend.toLocaleString()}`, ...newState.news.slice(0, 4)];
+
+        // 📈 Portföy haftalık kapanışı — sparkline geçmişi (son 24 hafta)
+        const ph = [...(newState.portfolioHistory || []),
+          newState.investments.reduce((tv: number, iv: any) => tv + (iv.price * (iv.units || 0)), 0)];
+        newState.portfolioHistory = ph.slice(-24);
         }
         if (event) {
           newState.news = [`📰 Piyasa: ${event.label}`, ...newState.news.slice(0, 4)];

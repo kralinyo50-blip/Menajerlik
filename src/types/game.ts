@@ -663,6 +663,12 @@ export type SkillId =
 
 export type SkillTree = Record<SkillId, number>;
 
+/** 🎨 Kullanıcı forması — 3D maçta sahaya yansır */
+export interface TeamKit {
+  shirt: string;
+  shorts: string;
+}
+
 export interface GameState {
   teamName: string;
   teamLogo: string;
@@ -787,6 +793,10 @@ export interface GameState {
   matchesPlayed?: number;
   // ── v5.1: Karanlık İşler (şike & rüşvet) ──
   corruption?: CorruptionState;
+  /** 🎨 Forma tasarımcısı: kullanıcı forması (yoksa stadyum koltuk renginden türetilir) */
+  kit?: TeamKit;
+  /** 📈 Portföy değeri haftalık kapanışları (sparkline, son 24) */
+  portfolioHistory?: number[];
   /** 🎰 Kumarhane (seviye 40'ta açılır) */
   casino?: CasinoState;
 }

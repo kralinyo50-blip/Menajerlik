@@ -69,6 +69,8 @@ interface SeasonSummary {
   objectiveMet: boolean;
   objective: string;
   topScorer?: { name: string; goals: number };
+  topAssist?: { name: string; assists: number };
+  mvp?: { name: string; note: string };
   departed: string[];
 }
 
@@ -786,7 +788,13 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
     const seasonPrize = champion ? 3000000 : userPosition <= 3 ? 1500000 : userPosition <= 5 ? 700000 : 300000;
 
-    const topScorer = [...gameState.team11, ...gameState.bench].sort((a, b) => b.goals - a.goals)[0];
+    const squad = [...gameState.team11, ...gameState.bench];
+    const topScorer = squad.sort((a, b) => b.goals - a.goals)[0];
+    // 🏅 Sezon ödülleri: asist kralı + sezonun adamı (gol×2 + asist + form)
+    const topAssist = [...squad].sort((a, b) => b.assists - a.assists)[0];
+    const mvp = [...squad]
+      .map(pl => ({ pl, score: pl.goals * 2 + pl.assists + (pl.form ?? 5) }))
+      .sort((a, b) => b.score - a.score)[0];
 
     // Yeni hedef
     const nextObjective = newLeagueLevel >= 4
@@ -820,7 +828,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
       prize: seasonPrize + budgetBonus,
       objectiveMet,
       objective: gameState.seasonObjective,
-      topScorer: topScorer ? { name: topScorer.name, goals: topScorer.goals } : undefined,
+      topScorer: topScorer && topScorer.goals > 0 ? { name: topScorer.name, goals: topScorer.goals } : undefined,
+      topAssist: topAssist && topAssist.assists > 0 ? { name: topAssist.name, assists: topAssist.assists } : undefined,
+      mvp: mvp ? { name: mvp.pl.name, note: `${mvp.pl.goals} gol, ${mvp.pl.assists} asist • OVR ${mvp.pl.ovr}` } : undefined,
       departed
     };
 
@@ -1164,9 +1174,23 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
               </div>
               {seasonSummary.topScorer && (
                 <div className="bg-slate-700/40 rounded-lg p-2 col-span-2 sm:col-span-1">
-                  <div className="text-slate-400">Gol Kralımız</div>
+                  <div className="text-slate-400">⚽ Gol Kralımız</div>
                   <div className="text-white font-bold truncate">{seasonSummary.topScorer.name}</div>
-                  <div className="text-[10px] text-slate-400">⚽ {seasonSummary.topScorer.goals}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.topScorer.goals} gol</div>
+                </div>
+              )}
+              {seasonSummary.topAssist && (
+                <div className="bg-slate-700/40 rounded-lg p-2 col-span-2 sm:col-span-1">
+                  <div className="text-slate-400">🎯 Asist Kralı</div>
+                  <div className="text-white font-bold truncate">{seasonSummary.topAssist.name}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.topAssist.assists} asist</div>
+                </div>
+              )}
+              {seasonSummary.mvp && (
+                <div className="bg-gradient-to-r from-amber-500/15 to-transparent border border-amber-500/30 rounded-lg p-2 col-span-2 sm:col-span-1">
+                  <div className="text-amber-400">🌟 Sezonun Adamı</div>
+                  <div className="text-white font-bold truncate">{seasonSummary.mvp.name}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.mvp.note}</div>
                 </div>
               )}
             </div>
@@ -1420,7 +1444,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
               />
             )}
             {activeTab === 'tactics' && (
-              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} />
+              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} onSetKit={(k) => updateGameState({ kit: k ?? undefined })} />
             )}
             {activeTab === 'training' && (
               <TrainingTab gameState={gameState} onTrainPlayer={trainPlayer} />
