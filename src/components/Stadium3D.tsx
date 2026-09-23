@@ -4,6 +4,7 @@ import { StadiumDesign } from '../types/game';
 import { buildStadiumGroup } from './stadium/scene';
 import { isBackgroundRenderPaused } from '../utils/renderGate';
 import { isSoftwareWebGL } from '../utils/webgl';
+import { FpsGovernor, effectivePixelRatio, loadGraphics, subscribeGraphics } from '../utils/graphics';
 
 /** Stadyum 3D izleyicinin dışarıdan kumandası (kamera ön ayarları) */
 export interface StadiumViewerApi {
@@ -115,6 +116,8 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
   /** Marka imzası — sponsor değişince tabelalar yeniden çizilir */
   const brandKey = buffetBrand ? `${buffetBrand.name}|${buffetBrand.color}` : '';
 
+  // 🎛️ Kurulum-zamanı grafik seçenekleri (anti-alias/gölge/tribün) — değişince sahne yeniden kurulur
+  const gfx0 = loadGraphics();
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -123,14 +126,14 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     try {
       // Yazılımsal WebGL'de antialias + yüksek piksel oranı sayfayı kilitler — kıs
       const soft = isSoftwareWebGL();
-      renderer = new THREE.WebGLRenderer({ antialias: !soft, alpha: false, powerPreference: 'high-performance' });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, soft ? 1 : 2));
+      renderer = new THREE.WebGLRenderer({ antialias: soft ? false : gfx0.antialias, alpha: false, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(effectivePixelRatio(gfx0.renderScale), soft ? 1 : 2));
     } catch {
       setFailed(true);
       return;
     }
     renderer.setSize(mount.clientWidth || 640, height, false);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = gfx0.shadows;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // Geceyi bembeyaz yapmaması için pozlamayı kıs — gece daha loş, gündüz canlı
     renderer.toneMappingExposure = nightRef.current ? 0.88 : 1.02;
@@ -234,6 +237,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       capacity, logo, sponsorText, teamName, night: nightRef.current, wet: wetRef.current,
       facilities: facilities as any,
       buffetBrand: buffetBrand ?? null,
+      crowdDensity: gfx0.crowdDensity,
     });
     scene.add(bundle.group);
     // Gökyüzü: prosedürel gradyan dokusu (yoksa düz renk)
@@ -328,11 +332,21 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
     const timer = new THREE.Timer();
     if (typeof document !== 'undefined') timer.connect(document);
     timer.reset();
+    // 🎛️ FPS sınırı + uyarlanabilir çözünürlük
+    let curBase = gfx0.renderScale;
+    const applyAdaptive = (sc: number) => renderer.setPixelRatio(Math.min(effectivePixelRatio(curBase * sc), 2));
+    let gov = new FpsGovernor(gfx0.fpsCap, gfx0.adaptiveResolution, applyAdaptive, 1);
+    const unsubscribeGfx = subscribeGraphics(g => {
+      curBase = g.renderScale;
+      gov = new FpsGovernor(g.fpsCap, g.adaptiveResolution, applyAdaptive, 1);
+      applyAdaptive(1);
+    });
     const animate = () => {
       raf = requestAnimationFrame(animate);
       timer.update();
       // 🏟️ Maç ekranı açıkken (veya sekme arkadayken) GPU'yu yorma — kareyi atla
       if (isBackgroundRenderPaused() || document.hidden) return;
+      if (!gov.tick(performance.now())) return;
       const t = timer.getElapsed();
       const dt = Math.min(0.05, timer.getDelta());
 
@@ -377,6 +391,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
 
     return () => {
       cancelAnimationFrame(raf);
+      unsubscribeGfx();
       timer.dispose();
       window.removeEventListener('resize', onResize);
       observer?.disconnect();
@@ -413,7 +428,7 @@ export const Stadium3D: React.FC<Stadium3DProps> = ({
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [design, capacity, logo, sponsorText, teamName, height, night, wet, facilityKey, highlightFacility, brandKey]);
+  }, [design, capacity, logo, sponsorText, teamName, height, night, wet, facilityKey, highlightFacility, brandKey, gfx0.antialias, gfx0.shadows, gfx0.crowdDensity]);
 
   if (failed) {
     return (

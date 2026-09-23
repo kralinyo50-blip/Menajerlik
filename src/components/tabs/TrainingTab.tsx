@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GameState, Player } from '../../types/game';
 import { ROLE_NAMES } from '../../data/constants';
+import { PortalModal } from '../PortalModal';
 
 interface TrainingTabProps {
   gameState: GameState;
@@ -120,6 +121,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({ gameState, onTrainPlay
 
         {/* Training Modal */}
         {selectedPlayer && (
+          <PortalModal>
           <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setSelectedPlayer(null)}>
             <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-start mb-6">
@@ -171,6 +173,7 @@ export const TrainingTab: React.FC<TrainingTabProps> = ({ gameState, onTrainPlay
               )}
             </div>
           </div>
+          </PortalModal>
         )}
 
         {/* Training Stats */}

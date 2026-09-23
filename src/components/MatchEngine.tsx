@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { GameState, Player, Team, MatchEvent, Weather, PlayerRating } from '../types/game';
-import { MATCH_EVENTS, WEATHER_INFO, ROLE_NAMES, HOME_ADVANTAGE, AWAY_PENALTY, FIRST_NAMES, LAST_NAMES, FORMATIONS, TACTICS_SLIDERS } from '../data/constants';
+import { MATCH_EVENTS, WEATHER_INFO, ROLE_NAMES, HOME_ADVANTAGE, AWAY_PENALTY, FIRST_NAMES, LAST_NAMES } from '../data/constants';
 import { DIFFICULTY_CONFIG } from '../data/achievements';
 import { facilityEffects } from '../data/facility';
 import { InGameMinigame, MinigameContext, MinigameResult } from './InGameMinigames';
@@ -13,6 +13,7 @@ import { managerMatchBonus } from '../utils/life';
 import { fixLineup } from '../utils/lineup';
 import { adaptationPct, effectiveOvr } from '../utils/adaptation';
 import { isSoftwareWebGL } from '../utils/webgl';
+import { hashText } from './match3d/venue';
 import { setBackgroundRenderPaused } from '../utils/renderGate';
 
 export interface MatchExtras {
@@ -56,9 +57,6 @@ const MiniStat: React.FC<{ label: string; value: string; hint?: string; wide?: b
     <div className="text-white font-black text-[11px] leading-tight mt-0.5">{value}</div>
   </div>
 );
-
-const randomOpponentName = () =>
-  `${FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)]} ${LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)]}`;
 
 // ── Formasyon profilleri — gerçek futbol mantığı ──
 interface FormationProfile {
@@ -144,7 +142,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [showSubModal, setShowSubModal] = useState(false);
   const [subOut, setSubOut] = useState<number | null>(null);
   const [scorers, setScorers] = useState<Map<number, { goals: number; assists: number }>>(new Map());
-  const [speed, setSpeed] = useState<1 | 2>(1);
+  const [speed, setSpeed] = useState<1 | 2 | 4>(1);
   const [possession, setPossession] = useState(50);
   const [shots, setShots] = useState({ home: 0, away: 0 });
   const [xg, setXg] = useState({ home: 0, away: 0 });
@@ -156,6 +154,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [matchMinigame, setMatchMinigame] = useState<MinigameContext | null>(null);
   const [pendingScorer, setPendingScorer] = useState<Player | null>(null);
   const [sentOff, setSentOff] = useState<number[]>([]);
+  const [oppReds, setOppReds] = useState(0); // rakip kırmızı kart sayısı (3D sahada da adam eksilir)
   const [cardCount, setCardCount] = useState<Map<number, number>>(new Map());
   const [talk, setTalk] = useState<Talk | null>(null);
   const [talkBonus, setTalkBonus] = useState({ attack: 0, defense: 0, morale: 0 });
@@ -168,6 +167,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const [subBoard, setSubBoard] = useState<{ outName: string; inName: string; outRole: string; inRole: string; key: number } | null>(null);
   const [cardPop, setCardPop] = useState<{ player: string; kind: 'yellow' | 'red' | 'second'; key: number } | null>(null);
   const [freeze, setFreeze] = useState<{ icon: string; reason: string } | null>(null);
+  const [sceneBanner, setSceneBanner] = useState<{ icon: string; title: string; sub: string; key: number } | null>(null);
+  const specialEventFiredRef = useRef(false); // maç başına en fazla 1 büyük olay (kavga/taraftar)
   const [slowMo, setSlowMo] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(true);
   const [view3d, setView3d] = useState(!gameState.life?.lowPerf && !isSoftwareWebGL());
@@ -184,6 +185,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const cardMapRef = useRef<Map<number, { yellow: number; red: number }>>(new Map());
   const injuryMapRef = useRef<Map<number, number>>(new Map());
   const sentOffRef = useRef<number[]>([]);
+  const oppRedsRef = useRef(0);   // rakip kırmızı kartlar — 3D sahada adam eksilir, güç düşer
+  const oppSubsRef = useRef<number[]>([]); // rakip değişiklik dakikaları
   const handlerRef = useRef<(m: number, extra: boolean) => void>(() => {});
   const slowMoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -403,19 +406,44 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     };
   }, [gameState, activeLineup, isHome, sentOff, talkBonus, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile]);
 
-  const userStrength = calculateStrength();
+  // ⚡ Her render'da yeniden hesaplamak yerine yalnızca bağımlılıklar değişince hesapla
+  // (zayıf CPU'larda her dakika tikinde kadro taraması yapmıyoruz)
+  const userStrength = useMemo(() => calculateStrength(), [calculateStrength]);
   const oppOvr = Math.floor(opponent.ovr * (diffCfg?.oppOvrMult || 1));
-  const oppStrength = {
-    attack: oppOvr * (isHome ? 1 : 1.03),
-    defense: oppOvr * (isHome ? 1 : 1.03),
-    midfield: oppOvr * (isHome ? 0.98 : 1.02),
+
+  // ── v5.1 RAKİP KADROSU — takım adı+sezondan deterministik üretilen isimler.
+  // Rakip golleri, kartları ve MOTM'u artık gerçek isimli oyunculara gider;
+  // "rastgele isim makinesi" hissi biter.
+  const oppSquad = useMemo(() => {
+    const base = hashText(`${opponent.name}|${gameState.season}`);
+    const roles: Player['role'][] = ['KL', 'STP', 'STP', 'SB', 'SB', 'OS', 'OS', 'OS', 'FW', 'FW', 'FW', 'OS', 'STP', 'SB'];
+    return roles.map((role, i) => ({
+      name: `${FIRST_NAMES[(base + i * 37) % FIRST_NAMES.length]} ${LAST_NAMES[(base + i * 53 + 7) % LAST_NAMES.length]}`,
+      role,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opponent.name, gameState.season]);
+  const oppPlayerName = useCallback((roles: Player['role'][]) => {
+    const pool = oppSquad.filter(p => roles.includes(p.role));
+    return (pool.length ? pool[Math.floor(Math.random() * pool.length)] : oppSquad[8]).name;
+  }, [oppSquad]);
+  // Rakip kırmızı kartları gücü gerçekten düşürür (her kırmızı ≈ -5%)
+  const oppStrength = useMemo(() => ({
+    attack: oppOvr * Math.max(0.7, 1 - oppReds * 0.05) * (isHome ? 1 : 1.03),
+    defense: oppOvr * Math.max(0.7, 1 - oppReds * 0.05) * (isHome ? 1 : 1.03),
+    midfield: oppOvr * Math.max(0.72, 1 - oppReds * 0.04) * (isHome ? 0.98 : 1.02),
     overall: oppOvr
-  };
+  }), [oppOvr, oppReds, isHome]);
   const userKeeper = activeLineup.find(p => p.role === 'KL' && !p.injured && !sentOff.includes(p.id));
   const userKeeperSaveBonus = userKeeper
     ? Math.max(-0.035, Math.min(0.06, (userKeeper.ovr - 72) * 0.002 + ((userKeeper.energy - 55) * 0.00035) + ((userKeeper.morale - 50) * 0.0002)))
     : -0.01;
-  const oppKeeperSaveBonus = Math.max(-0.035, Math.min(0.06, (oppOvr - 72) * 0.002));
+  // 🕶️ Rüşvet: rakip kaleci "yorgun" ve "dikkatsiz" — kurtarış bonusu erir, ayakları kayar
+  const keeperBribe = gameState.corruption?.keeperBribe ?? null;
+  const refBribe = gameState.corruption?.refBribe ?? null;
+  const bribeStrength = (b: { tier: 'small' | 'big' } | null) => (b ? (b.tier === 'small' ? 1 : 2) : 0);
+  const oppKeeperSaveBonus = Math.max(-0.035, Math.min(0.06, (oppOvr - 72) * 0.002))
+    - bribeStrength(keeperBribe) * 0.045;
 
   const addEvent = useCallback((event: MatchEvent) => {
     setEvents(prev => [...prev, event]);
@@ -484,7 +512,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
   // ── GERÇEKÇİ MAÇ SİMÜLASYONU — ZİNCİRLEME MODEL ──
   const simulateMinute = useCallback((currentMinute: number, isExtra: boolean) => {
-    const fatigueGoalMult = currentMinute > 80 ? 0.86 : currentMinute > 66 ? 0.93 : 1;
+    // 🐛 FIX/BERABERLİK BELASI: yorgunluk gol üretimini fazla kırıyordu (0-0/1-0 serisi).
+    // Artık son 20 dakika gol dostu — yorgun savunmalar hata yapar, maçlar ateşlenir.
+    const fatigueGoalMult = currentMinute > 80 ? 1.08 : currentMinute > 66 ? 1.02 : 1;
     const goalMult = (weatherInfo.goalMult || 1) * (isExtra ? 0.75 : 1) * fatigueGoalMult;
 
     // Yorgunluk ve zemin
@@ -518,10 +548,42 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       setPossession(prev => Math.max(28, Math.min(72, prev + drift)));
     }
 
-    // Top hakimiyeti değişimi
-    if (Math.random() < 0.22) {
+    // ── v5.1 RAKİP YAPAY ZEKÂSI — skor okuyup davranış değiştirir ──
+    // Yenilen rakip yüklenir, öndeki rakip kontrollü oynar, beraberlikte son 20 dk iki taraf da açılır.
+    const scoreDiffOpp = scoreRef.current.o - scoreRef.current.u; // rakip bakış açısıyla skor farkı
+    const minuteFactor = Math.min(1, currentMinute / 90);
+    let oppPush = 0;
+    if (scoreDiffOpp < 0) {
+      // Yenilen rakip: geride ne kadar fazlaysa ve maç ilerledikçe daha agresif
+      oppPush = Math.min(0.26, 0.06 + minuteFactor * 0.14 + Math.min(1, -scoreDiffOpp) * 0.05);
+      if (currentMinute > 80 && scoreDiffOpp === -1) oppPush = 0.3; // beraberlik/maç uzatma baskısı
+    } else if (scoreDiffOpp >= 2) {
+      oppPush = -0.14; // rahat öndeki rakip kontra bekler
+    } else if (currentMinute > 70 && scoreDiffOpp === 0) {
+      oppPush = 0.07; // beraberlikte son dönem iki taraf da kazanmak ister
+    }
+    // Kullanıcı da yenilirken yüklenir (maçlar ölü olmasın)
+    const userPush = scoreRef.current.u < scoreRef.current.o && currentMinute > 65
+      ? Math.min(0.2, 0.06 + minuteFactor * 0.1 + (currentMinute > 85 ? 0.06 : 0))
+      : 0;
+    if (userPush > 0 && currentMinute % 17 === 0) {
+      addEvent({ minute: currentMinute, type: 'info', team: 'home', description: `🔥 ${gameState.teamName} geride — yükleniyor! ${currentMinute}. dakikada herkes hücumda.` });
+    }
+
+    // ── v5.1 HIZLI ZİNCİR AKIŞI ──
+    // Her dakika pas zinciri büyür; top kaybı (turnover) dakika başına ~%16-24.
+    // Eski model zincirleri nadiren "final" evresine taşıdığı için maçlar şutsuz geçiyordu.
+    possessionChainRef.current.passes += 1;
+    const chainNow = possessionChainRef.current;
+    if (chainNow.passes > 2 && chainNow.phase === 'build') chainNow.phase = 'mid';
+    if (chainNow.passes > 5 && chainNow.phase === 'mid') chainNow.phase = 'final';
+
+    // Güçlü orta saha topu korur, zayıf daha sık kaptırır
+    const chainMidEdge = chainNow.team === 'home' ? midfieldWinChance - 0.5 : 0.5 - midfieldWinChance;
+    const turnoverChance = Math.max(0.1, 0.17 - chainMidEdge * 0.5 + (chainNow.phase === 'final' ? 0.03 : 0));
+    if (Math.random() < turnoverChance) {
       const newTeam = Math.random() < midfieldWinChance ? 'home' : 'away';
-      if (newTeam !== possessionChainRef.current.team) {
+      if (newTeam !== chainNow.team) {
         possessionChainRef.current = { team: newTeam, phase: 'build', passes: 0 };
         // Top kapma olayı
         if (Math.random() < 0.55) {
@@ -544,14 +606,6 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             });
           }
         }
-      } else {
-        possessionChainRef.current.passes += 1;
-        if (possessionChainRef.current.passes > 3 && possessionChainRef.current.phase === 'build') {
-          possessionChainRef.current.phase = 'mid';
-        }
-        if (possessionChainRef.current.passes > 7 && possessionChainRef.current.phase === 'mid') {
-          possessionChainRef.current.phase = 'final';
-        }
       }
     }
 
@@ -560,15 +614,12 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const chainTeam = chain.team;
     const isUserChain = chainTeam === 'home';
 
-    // Pas başarı şansı — yaratıcılık, tempo, pres
+    // Yaratıcılık, tempo, pres (pas riski hesabında kullanılır)
     const creativityFactor = (creativity - 50) / 50; // -1 to 1
     const tempoFactor = (tempoValue - 50) / 50;
-    const buildSuccessBase = isUserChain
-      ? 0.62 + (userStrength.midOvr - 70) * 0.008 + creativityFactor * 0.08 + tempoFactor * -0.05
-      : 0.58 + (oppStrength.midfield - 70) * 0.008;
 
-    // Düşük tempo daha güvenli pas, yüksek tempo daha riskli
-    const passRisk = 0.15 + Math.abs(tempoFactor) * 0.12 + (creativityFactor > 0 ? creativityFactor * 0.08 : 0);
+    // 🐛 FIX: pas riski eski halinde zincirleri çok öldürüyordu — şut üretimi düşük kalıyordu.
+    const passRisk = 0.09 + Math.abs(tempoFactor) * 0.09 + (creativityFactor > 0 ? creativityFactor * 0.06 : 0);
     const losesPossession = Math.random() < passRisk && chain.phase !== 'build';
 
     if (losesPossession) {
@@ -576,12 +627,18 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       return;
     }
 
-    // Final bölgesine ulaşıldı mı?
-    const finalChance = chain.phase === 'final' ? 0.32 : chain.phase === 'mid' ? 0.12 : 0.04;
+    // Final bölgesine ulaşıldı mı? — v5.1: zincirler artık çok daha sık hücuma dönüyor
+    const chainPhaseBonus = oppRedsRef.current * 0.03; // rakip 10 kişiye düştüyse alan açılır
+    const finalChance = (chain.phase === 'final' ? 0.55 : chain.phase === 'mid' ? 0.26 : 0.08) + chainPhaseBonus;
     // Ofansif taktikler ve genişlik final şansını artırır
     const widthFactor = (width - 50) / 50;
     const dlFactor = (defensiveLine - 50) / 50;
-    const finalBoost = (isUserChain ? (formationProfile.attackBias - 0.5) * 0.15 + widthFactor * 0.08 + dlFactor * 0.06 : 0);
+    // Rakip YZ baskısı: yenilen rakip son bölgeye daha sık gelir; öndeki rakip az gelir
+    const oppAiBoost = isUserChain ? 0 : oppPush;
+    const userPushBoost = isUserChain ? userPush : 0;
+    const finalBoost = (isUserChain
+      ? (formationProfile.attackBias - 0.5) * 0.15 + widthFactor * 0.08 + dlFactor * 0.06
+      : 0) + oppAiBoost + userPushBoost;
     const shouldCreateChance = Math.random() < (finalChance + finalBoost);
 
     if (!shouldCreateChance) {
@@ -597,26 +654,20 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
           const awayMoves = chain.phase === 'build'
             ? [`🔴 ${opponent.name} geriden kuruyor`, `🔄 ${opponent.name} pas trafiği kuruyor`]
             : [`🔴 ${opponent.name} top çeviriyor`, `↘️ ${opponent.name} kanattan geliyor`, `💨 ${opponent.name} hızlı hücuma çıkıyor`];
-          addEvent({ minute: currentMinute, type: 'away' as any, description: awayMoves[Math.floor(Math.random() * awayMoves.length)] } as any);
-          // Fix: use proper team
-          setEvents(prev => {
-            const last = prev[prev.length - 1];
-            if (last && last.minute === currentMinute) {
-              last.team = 'away';
-            }
-            return prev;
-          });
+          // 🐛 FIX: 'away' olay tipi + state mutasyonu yok — düzgün tip/team ile ekle
+          addEvent({ minute: currentMinute, type: 'info', team: 'away', description: awayMoves[Math.floor(Math.random() * awayMoves.length)] });
         }
       }
       return;
     }
 
     // ── 3. ŞANS TİPİ BELİRLEME ──
-    // Kanat vs merkez, ortalar vs ara paslar
+    // Kanat vs merkez, ortalar vs ara paslar — v5.1: uzaktan şut payı azaldı,
+    // ara paslar ve ceza sahası içi pozisyonlar arttı (daha fazla net pozisyon)
     const isWidePlay = Math.random() < (formationProfile.wingWeight * 0.5 + widthFactor * 0.25 + 0.15);
-    const isThroughBall = !isWidePlay && Math.random() < (0.25 + creativityFactor * 0.18);
-    const isCross = isWidePlay && Math.random() < 0.65;
-    const isLongShot = !isWidePlay && !isThroughBall && Math.random() < 0.18;
+    const isThroughBall = !isWidePlay && Math.random() < (0.32 + creativityFactor * 0.18);
+    const isCross = isWidePlay && Math.random() < 0.6;
+    const isLongShot = !isWidePlay && !isThroughBall && Math.random() < 0.1;
     const isSetPiece = Math.random() < 0.12; // korner/frikik sonrası
 
     let shotType: 'open' | 'header' | 'volley' | 'oneonone' | 'long' | 'freekick' | 'penalty' = 'open';
@@ -691,22 +742,27 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     const keeperSave = isUserChain ? oppKeeperSaveBonus : userKeeperSaveBonus;
 
     // xG'yi gol olasılığına çevir — xG zaten olasılık ama OVR farkı ve kaleci eklenir
-    let goalProb = xgVal * 0.85; // xG'nin %85'i baz
-    goalProb += ovrDiff * 0.003; // OVR farkı küçük etki
+    let goalProb = xgVal * 1.22; // v5.1: bitiricilik arttı — pozisyonlar artık daha sık gole dönüşüyor
+    goalProb += ovrDiff * 0.004; // OVR farkı etkisi
     goalProb += formBoost;
     goalProb -= defReduction;
     goalProb -= keeperSave;
+    // Rakip YZ: yüklenen rakip pozisyonlarını daha cesur bitirir, geri çekilen daha tembel
+    if (!isUserChain) goalProb *= 1 + oppPush * 1.6;
+    // 🕶️ Kaleci rüşveti: pozisyonlar daha sık gole dönüşür
+    if (isUserChain && keeperBribe) goalProb *= 1 + 0.14 * bribeStrength(keeperBribe);
     goalProb *= goalMult;
-    goalProb = Math.max(0.02, Math.min(0.88, goalProb));
+    goalProb = Math.max(0.02, Math.min(0.9, goalProb));
 
     const roll = Math.random();
 
     if (isUserChain) {
       // Kullanıcı atağı
-      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 2) {
+      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 1) {
         // Mini oyun tetikleme — sadece yüksek xG'lerde ve nadir
         if (mgCountRef.current < 2 && xgVal > 0.28 && Math.random() < 0.22 && !pausedRef.current) {
-          const isPen = shotType === 'penalty' || (Math.random() < 0.35 && xgVal > 0.5);
+          // 🐛 FIX: shotType hiç 'penalty' olamıyordu (ölü kod) — artık penaltı gerçekten atılabilir
+          const isPen = Math.random() < 0.3 && xgVal > 0.4;
           const takerId = isPen ? gameState.setPieceTakers?.penalty : gameState.setPieceTakers?.freekick;
           const taker = activeLineup.find(p => p.id === takerId && !p.injured && !sentOff.includes(p.id));
           const scorer = taker || getRandomPlayer(true, isCross ? ['FW', 'STP'] : ['FW', 'OS']);
@@ -774,7 +830,17 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
     } else {
       // Rakip atağı
-      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 2) {
+      if (roll < goalProb && currentMinute - lastGoalMinuteRef.current >= 1) {
+        // 🕶️ Hakem rüşveti: rakip golü "şüpheli ofsayt" ile iptal edilir
+        if (refBribe && Math.random() < 0.2 * bribeStrength(refBribe)) {
+          play(sfx.card);
+          pushSpiker(`🟨 VAR: GOL İPTAL! ${opponent.name} ofsaytta yakalandı... (tribünler yuhalıyor)`);
+          addEvent({
+            minute: currentMinute, type: 'var', team: 'away',
+            description: `🚫 GOL İPTAL! ${opponent.name} golü VAR'a takıldı — şüpheli ofsayt kararı. Şans mı, yoksa...?`
+          });
+          return;
+        }
         if (mgCountRef.current < 2 && xgVal > 0.25 && Math.random() < 0.28 && !pausedRef.current) {
           mgCountRef.current += 1;
           pausedRef.current = true;
@@ -790,13 +856,14 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         scoreRef.current.o += 1;
         setOppScore(scoreRef.current.o);
         play(sfx.conceded);
-        pushSpiker(`❌ ${opponent.name} cezayı kesti! xG ${xgVal.toFixed(2)} — Tribünler sustu...`);
-        setCelebration({ team: 'away', player: opponent.name, key: Date.now() });
+        const oppScorerName = oppPlayerName(isCross ? ['FW', 'STP'] : isThroughBall ? ['FW', 'OS'] : ['FW', 'OS', 'SB']);
+        pushSpiker(`❌ ${oppScorerName} (${opponent.name}) ağları havalandırdı! xG ${xgVal.toFixed(2)}`);
+        setCelebration({ team: 'away', player: oppScorerName, key: Date.now() });
         setTimeout(() => setCelebration(null), 2200);
         addEvent({
           minute: currentMinute, type: 'goal', team: 'away',
-          player: randomOpponentName(),
-          description: `❌ ${opponent.name} gol buldu! ${isCross ? 'Orta kafa golü' : isThroughBall ? 'Ara pası golü' : 'Organize atak'} (xG ${xgVal.toFixed(2)})`,
+          player: oppScorerName,
+          description: `❌ GOL — ${oppScorerName}! ${opponent.name}${isCross ? ' orta kafa golüyle' : isThroughBall ? ' ara pası golüyle' : ' organize atağıyla'} öne geçiyor/geçiyor (xG ${xgVal.toFixed(2)})`,
           xg: xgVal
         });
         momentumRef.current.away = Math.min(4, momentumRef.current.away + 1.2);
@@ -833,7 +900,46 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     }
 
     if (Math.random() < (0.012 + (pressingIntensity - 50) / 5000) && currentMinute > 10) {
+      // 🐛 FIX: kartlar eskiden yalnızca bizim oyunculara çıkıyordu — hakem artık tarafsız (rakip ~%45)
+      // 🕶️ Hakem rüşveti: bizden görmezden gelir, rakibi affetmez
+      const refBias = refBribe ? 0.22 * bribeStrength(refBribe) : 0;
+      const cardForOpponent = Math.random() < Math.min(0.8, 0.45 + refBias);
+
+      if (cardForOpponent) {
+        const oppName = oppPlayerName(['STP', 'SB', 'OS']);
+        const isOppRed = Math.random() < 0.09;
+        if (isOppRed) {
+          oppRedsRef.current += 1;
+          setOppReds(oppRedsRef.current);
+          play(sfx.card);
+          setCardPop({ player: oppName, kind: 'red', key: Date.now() });
+          setTimeout(() => setCardPop(null), 2600);
+          triggerSlowMo(3600);
+          pushSpiker(`🟥 ${oppName} (${opponent.name}) kırmızı kart! Rakip 10 kişi!`);
+          addEvent({
+            minute: currentMinute, type: 'card', team: 'away', player: oppName,
+            description: `🟥 ${oppName} (${opponent.name}) kırmızı kart gördü — rakip 10 kişi kaldı! Devrim fırsatı!`
+          });
+        } else {
+          play(sfx.card);
+          setCardPop({ player: oppName, kind: 'yellow', key: Date.now() });
+          setTimeout(() => setCardPop(null), 2600);
+          triggerSlowMo(2600);
+          pushSpiker(`🟨 ${oppName} (${opponent.name}) sarı kart gördü`);
+          addEvent({
+            minute: currentMinute, type: 'card', team: 'away', player: oppName,
+            description: `🟨 ${oppName} (${opponent.name}) sarı kart gördü — rakip savunmada gerilim var.`
+          });
+        }
+        return; // aynı dakikada iki kart çıkmasın
+      }
+
       const player = getRandomPlayer(false, ['STP', 'SB', 'OS']);
+      // Hakem rüşveti bizim kartlarımıza da göz yumar
+      if (refBribe && Math.random() < 0.5 * bribeStrength(refBribe)) {
+        addEvent({ minute: currentMinute, type: 'info', team: 'home', description: `😬 ${player.name} faul yaptı ama hakem cebine gitmedi — şanslısın!` });
+        return;
+      }
       const isRed = Math.random() < 0.09;
       const record = cardMapRef.current.get(player.id) || { yellow: 0, red: 0 };
 
@@ -914,6 +1020,80 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
       }
     }
 
+    // ── 🎪 BÜYÜK OLAYLAR — ~her 10 maçta 1: kavga veya sahaya atlayan taraftar ──
+    // 3D sahada gerçek sinematik: aktörler toplanır, güvenlik koşar, hakem kart görür.
+    if (!specialEventFiredRef.current && currentMinute >= 14 && currentMinute <= 84 && pausedRef.current === false && !matchMinigame) {
+      if (Math.random() < 0.0018) { // ~%12.6 maç başına (70 dakika pencere)
+        specialEventFiredRef.current = true;
+        const kind: 'brawl' | 'invader' = Math.random() < 0.55 ? 'brawl' : 'invader';
+        triggerSlowMo(4600);
+        if (kind === 'brawl') {
+          setSceneBanner({ icon: '🔥', title: 'SAHADA KAVGA!', sub: 'İki takım orta sahada birbirine girdi — hakem araya giriyor!', key: Date.now() });
+          setTimeout(() => setSceneBanner(null), 4600);
+          pushSpiker('🔥 SAHADA KAVGA ÇIKTI! Oyuncular birbirine girdi — soyunma sıraları boşaldı!');
+          addEvent({
+            minute: currentMinute, type: 'brawl', team: 'home',
+            description: `🔥 KAVGA! Oyun durdu — ${gameState.teamName} ve ${opponent.name} oyuncuları orta sahada birbirine girdi! Hakem kartları dağıtıyor.`
+          });
+          // Kavganın bedeli: rastgele sarı kart(lar) — kupa/ceza sistemine gerçekten işler
+          const cardVictim = Math.random() < 0.5;
+          if (cardVictim) {
+            const victim = getRandomPlayer(false, ['STP', 'SB', 'OS']);
+            const record = cardMapRef.current.get(victim.id) || { yellow: 0, red: 0 };
+            record.yellow += 1;
+            cardMapRef.current.set(victim.id, record);
+            setCardCount(prev => { const n = new Map(prev); n.set(victim.id, record.yellow); return n; });
+            setTimeout(() => {
+              // 2. sarı → kırmızı: kart gösterilirken cezaya işlesin (sekans ortasında ani kaybolma yok)
+              if (record.yellow >= 2) {
+                sentOffRef.current = [...sentOffRef.current, victim.id];
+                setSentOff(sentOffRef.current);
+                setActiveLineup(prev => prev.map(pp => (pp.id === victim.id ? { ...pp, redCard: true } : pp)));
+              }
+              setCardPop({ player: victim.name, kind: record.yellow >= 2 ? 'second' : 'yellow', key: Date.now() });
+              setTimeout(() => setCardPop(null), 2600);
+            }, 4200);
+          } else {
+            setTimeout(() => {
+              const oppName = oppPlayerName(['STP', 'SB', 'OS']);
+              setCardPop({ player: `${oppName} (${opponent.name})`, kind: 'yellow', key: Date.now() });
+              setTimeout(() => setCardPop(null), 2600);
+            }, 4200);
+          }
+        } else {
+          setSceneBanner({ icon: '🏃', title: 'TARAFTAR SAHAYA ATLADI!', sub: 'Güvenlik kovalıyor — tribünler ayakta gülerken oyun durdu!', key: Date.now() });
+          setTimeout(() => setSceneBanner(null), 4600);
+          pushSpiker('🏃 BİR TARAFTAR SAHAYA ATTI KENDİNİ! Güvenlik peşinde — tribün eğleniyor!');
+          addEvent({
+            minute: currentMinute, type: 'invader', team: 'home',
+            description: `🏃 Taraftar sahaya atladı! Güvenlik ekibi kovalıyor, tribünler ayakta — oyun kısa süreliğine durdu.`
+          });
+        }
+        return; // bu dakika başka olay üretilmesin
+      }
+    }
+
+    // ── v5.1 RAKİP DEĞİŞİKLİKLERİ — rakip da oyuncu değiştirir, chat'e düşer ──
+    const oppSubMinutes = [58, 64, 71, 78, 84];
+    if (oppSubMinutes.includes(currentMinute) && Math.random() < 0.75) {
+      const already = oppSubsRef.current.includes(currentMinute);
+      if (!already) {
+        oppSubsRef.current.push(currentMinute);
+        const outName = oppPlayerName(['OS', 'FW']);
+        const inName = oppSquad[11 + (oppSubsRef.current.length % 3)].name;
+        const chasing = scoreRef.current.o < scoreRef.current.u;
+        addEvent({
+          minute: currentMinute, type: 'substitution', team: 'away', player: inName,
+          description: chasing
+            ? `🔄 ${opponent.name} değişiklik: ${outName} ⇄ ${inName} — geride olduğu için hücuma yükleniyor!`
+            : `🔄 ${opponent.name} değişiklik: ${outName} ⇄ ${inName} — taze bacaklar oyunda.`
+        });
+      }
+    }
+    if (currentMinute === 75 && oppPush > 0.15) {
+      addEvent({ minute: currentMinute, type: 'info', team: 'away', description: `📣 ${opponent.name} teknik direktörü kenardan bağırıyor: "İleri! İleri!" — rakip tam yüklenme modunda.` });
+    }
+
     // Tempo yüksekse daha fazla olay, düşükse daha sakin
     const tempoEventChance = 0.18 + (tempoValue - 50) / 500;
     if (Math.random() < tempoEventChance && currentMinute % 7 === 0) {
@@ -933,7 +1113,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   }, [
     userStrength, oppStrength, userKeeperSaveBonus, oppKeeperSaveBonus, opponent.name, gameState.teamName, gameState.setPieceTakers,
     addEvent, getRandomPlayer, diffCfg, weatherInfo, weather, addUserGoal, activeLineup, activeBench,
-    substitutions, sentOff, play, triggerSlowMo, pushSpiker, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile
+    substitutions, sentOff, play, triggerSlowMo, pushSpiker, defensiveLine, width, creativity, pressingIntensity, tempoValue, formationProfile,
+    oppPlayerName, oppSquad
   ]);
 
   const buildRatings = useCallback((): { ratings: PlayerRating[]; motmPlayerId: number | null; motmName: string } => {
@@ -972,7 +1153,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
 
     if (oScore > uScore && Math.random() < 0.65) {
       motmPlayerId = null;
-      motmName = `${randomOpponentName()} (${opponent.name})`;
+      motmName = `${oppPlayerName(['FW', 'OS'])} (${opponent.name})`;
     }
     return { ratings: list, motmPlayerId, motmName };
   }, [gameState.team11, gameState.bench, gameState.teamChemistry, scorers, opponent.name]);
@@ -1068,11 +1249,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
   const startMatch = () => {
     setPhase('first');
     pausedRef.current = false;
+    specialEventFiredRef.current = false;
     playedRef.current = new Set(gameState.team11.map(p => p.id));
     possessionChainRef.current = { team: isHome ? 'home' : 'away', phase: 'build', passes: 0 };
     momentumRef.current = { home: isHome ? 0.5 : -0.3, away: isHome ? -0.3 : 0.5 };
     play(sfx.whistle);
     addEvent({ minute: 0, type: 'info', team: 'home', description: `🏟️ Hakem düdüğü çaldı, maç başladı! Formasyon: ${gameState.tactics.formation} • ${formationProfile.midfieldWeight > 0.6 ? 'Orta saha kalabalık' : 'Kanatlar açık'} • Pres %${pressingIntensity} • Tempo %${tempoValue}` });
+    // 🕶️ Rüşvet aktifse gizli ipucu
+    if (keeperBribe || refBribe) {
+      addEvent({ minute: 0, type: 'info', team: 'home', description: `🤫 Soyunma odasında fısıltılar: "${(keeperBribe ? 'Kaleci ' : '') + (keeperBribe && refBribe ? 've ' : '') + (refBribe ? 'adam beyazlı' : '')} bugün bizim..." Sessiz ol.` });
+    }
     const sAvg = activeLineup.reduce((a, p) => a + p.ovr, 0) / Math.max(1, activeLineup.length);
     const sChem = gameState.teamChemistry ?? 55;
     const adapting = activeLineup.filter(p => adaptationPct(p) < 0.5 && (p.ovr - sAvg) >= 3);
@@ -1276,7 +1462,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             ) : slowMo ? (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black flex items-center gap-1 animate-pulse">🐢 YAVAŞ ÇEKİM</span>
             ) : null}
-            {([1, 2] as const).map(s => (
+            {([1, 2, 4] as const).map(s => (
               <button key={s} onClick={() => setSpeed(s)} className={`px-2 py-0.5 rounded text-xs font-bold ${speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70'}`}>{s}x</button>
             ))}
             <button onClick={skipMatch} disabled={!matchRunning} className="px-2 py-0.5 rounded text-xs font-bold bg-slate-600/70 text-white/85 disabled:opacity-40">⏭️ Atla</button>
@@ -1364,7 +1550,7 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                 scoreOpp={score.o}
                 lineup={activeLineup}
                 userOnPitch={Math.max(7, 11 - sentOff.length - activeLineup.filter(p => p.injured || p.redCard).length)}
-                oppOnPitch={11}
+                oppOnPitch={Math.max(7, 11 - oppReds)}
                 events={events}
                 paused={freeze !== null}
                 slowMo={slowMo}
@@ -1419,6 +1605,9 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
                   : event.type === 'injury' ? 'text-orange-400'
                   : event.type === 'card' ? 'text-yellow-400'
                   : event.type === 'substitution' ? 'text-blue-400'
+                  : event.type === 'brawl' ? 'text-red-400 font-bold'
+                  : event.type === 'invader' ? 'text-fuchsia-300'
+                  : event.type === 'var' ? 'text-purple-300'
                   : 'text-slate-300'
                 }`}>
                   <span className="text-slate-500">[{event.minute}']</span> {event.description} {event.xg ? <span className="text-[9px] text-slate-500">xG {event.xg.toFixed(2)}</span> : null}
@@ -1555,6 +1744,16 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         </div>
       )}
 
+      {sceneBanner && (
+        <div key={sceneBanner.key} className="absolute inset-x-0 top-16 z-[56] flex justify-center pointer-events-none px-4">
+          <div className="bg-slate-950/92 border-2 border-amber-400/70 rounded-2xl px-6 py-4 shadow-[0_16px_44px_rgba(0,0,0,0.65)] text-center max-w-md" style={{ animation: 'sceneBannerIn 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
+            <div className="text-4xl mb-1" style={{ animation: 'sceneBannerShake 500ms ease 200ms 3' }}>{sceneBanner.icon}</div>
+            <div className="text-lg font-black text-amber-300 tracking-wide">{sceneBanner.title}</div>
+            <div className="text-[11px] text-slate-300 mt-1 leading-snug">{sceneBanner.sub}</div>
+          </div>
+        </div>
+      )}
+
       {cardPop && (
         <div key={cardPop.key} className="absolute inset-0 z-[53] flex items-center justify-center pointer-events-none" style={{ animation: 'cardFade 2600ms ease forwards' }}>
           <div className="relative bg-slate-900/94 border-2 rounded-2xl px-6 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.6)] text-center min-w-[280px] max-w-[90%]" style={{ borderColor: cardPop.kind === 'red' ? '#ef4444' : cardPop.kind === 'second' ? '#f59e0b' : '#eab308', animation: 'cardPop 420ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
@@ -1586,6 +1785,8 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
         @keyframes cardFade { 0%{opacity:0} 10%{opacity:1} 85%{opacity:1} 100%{opacity:0} }
         @keyframes cardPop { 0%{transform:scale(0.85) translateY(12px); opacity:0} 100%{transform:scale(1) translateY(0); opacity:1} }
         @keyframes cardFlip { 0%{transform:rotate(18deg) scale(0.8); opacity:0} 100%{transform:rotate(6deg) scale(1); opacity:1} }
+        @keyframes sceneBannerIn { 0%{transform:translateY(-22px) scale(0.85); opacity:0} 100%{transform:translateY(0) scale(1); opacity:1} }
+        @keyframes sceneBannerShake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-7deg)} 75%{transform:rotate(7deg)} }
       `}</style>
     </div>
   );

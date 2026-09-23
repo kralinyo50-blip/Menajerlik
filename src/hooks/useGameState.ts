@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import {
+import { CasinoState,
   GameState, Player, Team, Tactics, Staff, CupMatch, Difficulty, Weather, TransferOffer,
   LeagueScorer, MatchReport, TrainingFocus, PlayerRating, SkillId, LoanOutOffer, LifeActivityId,
   FacilityModuleId, FacilityReport, FacilityState
 } from '../types/game';
+import { careerLevelFromMatches, levelUpBonus, TAB_UNLOCK_LEVEL } from '../utils/unlocks';
 import {
   FIRST_NAMES, LAST_NAMES, BOT_NAMES_BY_LEVEL, FORMATIONS,
   INITIAL_INVESTMENTS, CREDIT_PACKAGES, UNHAPPY_MORALE
@@ -22,7 +23,7 @@ import {
 import { LIFE_ITEMS, ACTIVITY_MAP as LIFE_ACTIVITIES_LOOKUP } from '../data/life';
 import {
   stadiumCapacity, ticketPriceFor, demandFactor, weatherShield, gateMultiplier, stadiumLoveBonus, fanSpendingPerFan, starShopMultiplier,
-  facilityIncomePerFan, facilityHappinessBonus, getStadiumFacilities, buffetBreakdown
+  buffetBreakdown
 } from '../utils/stadium';
 import {
   BUFFET_MENU_MAP, BUFFET_PRICE_MAP, BUFFET_SPONSOR_MAP, buffetBreakFee, normalizeBuffetState
@@ -31,7 +32,7 @@ import type { BuffetPriceLevel } from '../types/game';
 import { StadiumDesign as StadiumDesignType } from '../types/game';
 import {
   CAPACITY_PACKAGES, COSMETICS, MAX_CAPACITY, TICKET_STRATEGIES, isUnlocked, PREMIUM_COLORS,
-  STADIUM_FACILITY_DEFS, STADIUM_FACILITY_MAP, facilityUpgradeCost as stadiumFacilityUpgradeCost, defaultFacilities
+  STADIUM_FACILITY_MAP, facilityUpgradeCost as stadiumFacilityUpgradeCost, defaultFacilities
 } from '../data/stadium';
 import {
   assignKeyPlayers, buildGenericMarketPlayers, buildMarketStars, generateLoanList,
@@ -145,7 +146,7 @@ function gaussian(): number {
 function ensureInvestments(investments: any[]): import('../types/game').Investment[] {
   if (!investments || investments.length === 0) return [...INITIAL_INVESTMENTS].map(i => ({ ...i, history: [...(i.history as number[])] })) as any;
   const byId = new Map(INITIAL_INVESTMENTS.map(i => [i.id, i] as const));
-  return investments.map((inv: any) => {
+  const mapped = investments.map((inv: any) => {
     const tpl = byId.get(inv.id);
     if (!tpl) return inv;
     const base = tpl as any;
@@ -170,6 +171,13 @@ function ensureInvestments(investments: any[]): import('../types/game').Investme
       marketBeta: inv.marketBeta ?? base.marketBeta,
     };
   });
+  // Eski kayıt yeni eklenen yatırım araçlarını bilmiyorsa kataloğa ekle
+  for (const tpl of INITIAL_INVESTMENTS as any[]) {
+    if (!investments.some((inv: any) => inv.id === tpl.id)) {
+      mapped.push({ ...tpl, history: [...tpl.history] } as any);
+    }
+  }
+  return mapped as import('../types/game').Investment[];
 }
 
 function investmentFeeRate(type: string): number {
@@ -385,7 +393,11 @@ export const useGameState = () => {
       pcBuild: {},
       pcInventory: [],
       life: defaultLife(),
-      socialFeed: []
+      socialFeed: [],
+      matchesPlayed: 0,
+      casino: { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] },
+      corruption: { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 },
+      portfolioHistory: [], kit: undefined
     };
 
     // Transfer pazarı: genişletildi — 30-40 oyuncu, her 3 maçta yenilenir
@@ -622,7 +634,9 @@ export const useGameState = () => {
       const player = inTeam || inBench;
       if (!player) return prev;
 
-      const signingBonus = Math.floor(renewalCost(player, years) * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0)));
+      // 👤 Oyuncu Menajeri kadrodadaysa imza parası %18 düşer (adam işini bilir)
+      const agentDiscount = prev.staff?.some(st => st.type === 'agent') ? 0.18 : 0;
+      const signingBonus = Math.floor(renewalCost(player, years) * (1 - skillBuyDiscount(prev.skills?.negotiation ?? 0) - agentDiscount));
       const newWage = renewalWage(player, years);
       if (prev.budget < signingBonus) return prev;
 
@@ -795,6 +809,19 @@ export const useGameState = () => {
     if ((loaded as any).weeklySocialEarnings === undefined) (loaded as any).weeklySocialEarnings = 0;
     if ((loaded as any).lastSocialPayoutWeek === undefined) (loaded as any).lastSocialPayoutWeek = 0;
     if ((loaded as any).clubStats && (loaded as any).clubStats.socialEarnings === undefined) (loaded as any).clubStats.socialEarnings = 0;
+    if ((loaded as any).matchesPlayed === undefined) {
+      // Eski kayıtlar: oynanan maç sayısını geçmişten tahmin et (sezon başına ~hafta ilerlemesi)
+      const seasons = (loaded as any).season || 1;
+      const leagueGames = Math.max(0, ((loaded as any).league?.find((t: any) => t.isUser)?.o) || 0);
+      (loaded as any).matchesPlayed = leagueGames + Math.max(0, seasons - 1) * 18;
+    }
+    if (!(loaded as any).casino) {
+      (loaded as any).casino = { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] };
+    }
+    if (!(loaded as any).corruption) {
+      (loaded as any).corruption = { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
+    if (!(loaded as any).portfolioHistory) (loaded as any).portfolioHistory = [];
+    }
     if ((loaded as any).lastMarketRefreshWeek === undefined) (loaded as any).lastMarketRefreshWeek = 1;
     if ((loaded as any).matchesSinceMarketRefresh === undefined) (loaded as any).matchesSinceMarketRefresh = 0;
     if (!(loaded as any).botTransfers) (loaded as any).botTransfers = [];
@@ -805,6 +832,120 @@ export const useGameState = () => {
     }
     setGameState(loaded);
     return true;
+  }, []);
+
+  /* ══════════════ 🕶️ KARANLIK İŞLER — yakalanma denetimi ══════════════ */
+  const resolveCorruptionAfterMatch = useCallback((isCup: boolean, result?: 'W' | 'D' | 'L') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const cor = prev.corruption ?? { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
+      if (!cor.keeperBribe && !cor.refBribe) return prev;
+
+      const hasFixer = prev.staff?.some(st => st.type === 'fixer') ?? false;
+      const hasLawyer = prev.staff?.some(st => st.type === 'lawyer') ?? false;
+      // 🎲 Yakalanma riski (kabaracı indirimi ×0.55): kaleci K %5.5 / B %10 — hakem K %8 / B %13
+      const baseRisk = (kind: 'keeper' | 'ref', tier: 'small' | 'big') =>
+        kind === 'keeper' ? (tier === 'small' ? 0.055 : 0.1) : (tier === 'small' ? 0.08 : 0.13);
+      const riskMult = hasFixer ? 0.55 : 1;
+
+      const caughtKeeper = cor.keeperBribe && Math.random() < baseRisk('keeper', cor.keeperBribe.tier) * riskMult;
+      const caughtRef = cor.refBribe && Math.random() < baseRisk('ref', cor.refBribe.tier) * riskMult;
+      const caught = caughtKeeper || caughtRef;
+      const dirtyWin = result === 'W' ? 1 : 0; // 🏆 kirli galibiyet istatistiği
+      const next: GameState = { ...prev, corruption: { ...cor, keeperBribe: null, refBribe: null, dirtyWins: (cor.dirtyWins || 0) + dirtyWin } };
+
+      if (!caught) {
+        // Rüşvet tükendi, temiz çıktın
+        return { ...next, news: ['🤫 Bu maçtaki "özel düzenlemeler" temiz atlatıldı — kimse bir şey görmedi.', ...prev.news.slice(0, 3)] };
+      }
+
+      // ── YAKALANDIN! ──
+      const timesCaught = cor.timesCaught + 1;
+      let fine = (caughtKeeper ? (cor.keeperBribe!.tier === 'small' ? 1800000 : 5200000) : 0) +
+        (caughtRef ? (cor.refBribe!.tier === 'small' ? 2200000 : 6000000) : 0);
+      if (hasLawyer) fine = Math.round(fine * 0.5); // ⚖️ Avukat cezayı yarıya indirir
+      fine += (timesCaught - 1) * 1500000; // sabıka arttıkça ceza şişer
+      fine = Math.min(fine, Math.max(0, prev.budget) + 8000000); // batırmasın ama acıtsın
+
+      const what = caughtKeeper && caughtRef ? 'hem kaleci hem hakem dosyası' : caughtKeeper ? 'rakip kaleci dosyası' : 'hakem dosyası';
+      const news: string[] = [
+        `📉 Puan silme: -3 • Yönetim güveni -22 • Taraftar morali -12${hasLawyer ? ' (avukat cezayı yarıya indirdi)' : ''}`,
+        `🚨 SKANDAL! Disiplin Kurulu ${what} ortaya çıkardı — ceza: $${fine.toLocaleString()}!`
+      ];
+
+      const updatedLeague = next.league.map(t => {
+        if (t.isUser && !isCup) {
+          const nt = { ...t };
+          nt.p = Math.max(0, nt.p - 3);
+          return nt;
+        }
+        return t;
+      });
+
+      const boardConfidence = Math.max(0, (prev.boardConfidence ?? 50) - 22);
+      const times = timesCaught;
+      const gameOver = times >= 3 || boardConfidence <= 0;
+
+      if (times >= 3) news.unshift('👔 YÖNETİM KURULU BEKLEMEDİ: 3. şike skandalı — sözleşmen feshedildi!');
+
+      return {
+        ...next,
+        league: updatedLeague,
+        budget: Math.max(0, prev.budget - fine),
+        boardConfidence,
+        fanHappiness: Math.max(0, (prev.fanHappiness || 60) - 12),
+        managerRep: Math.max(0, prev.managerRep - 8),
+        teamChemistry: Math.max(0, (prev.teamChemistry || 55) - 5),
+        corruption: { ...next.corruption!, timesCaught: times },
+        boardWarnings: gameOver ? prev.boardWarnings : (prev.boardWarnings || 0) + 1,
+        careerOver: gameOver || prev.careerOver,
+        careerOverReason: gameOver && !prev.careerOver ? `Şike skandalı: ${times}. kez yakalandın ve yönetim sözleşmeyi feshetti.` : prev.careerOverReason,
+        news: [...news, ...prev.news.slice(0, 2)]
+      };
+    });
+  }, []);
+
+  /* ══════════════ 🎰 KUMARHANE (seviye 40) ══════════════ */
+  const updateCasino = useCallback((
+    patch: (c: CasinoState, budget: number) => { casino: CasinoState; budget: number },
+    news?: string
+  ) => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const current: CasinoState = prev.casino ?? { balance: 0, wagered: 0, won: 0, plays: 0, biggestWin: 0, history: [] };
+      const result = patch(current, prev.budget);
+      return {
+        ...prev,
+        casino: result.casino,
+        budget: result.budget,
+        news: news ? [news, ...prev.news.slice(0, 4)] : prev.news,
+      };
+    });
+  }, []);
+
+  /** 🕶️ Rüşvet al — sıradaki maçta etkili */
+  const buyBribe = useCallback((kind: 'keeper' | 'ref', tier: 'small' | 'big') => {
+    const PRICE = { keeper: { small: 750000, big: 2500000 }, ref: { small: 1000000, big: 3000000 } } as const;
+    setGameState(prev => {
+      if (!prev) return null;
+      const cost = PRICE[kind][tier];
+      if (prev.budget < cost) return prev;
+      const cor = prev.corruption ?? { keeperBribe: null, refBribe: null, timesCaught: 0, totalSpent: 0, dirtyWins: 0 };
+      if ((kind === 'keeper' && cor.keeperBribe) || (kind === 'ref' && cor.refBribe)) return prev; // bu dosya zaten aktif
+      const label = kind === 'keeper'
+        ? (tier === 'small' ? 'Rakip kaleciyle "çay parası" anlaşması' : 'Rakip kalecinin gözüne "çim tozu" kaçtı — anlaşma tamam')
+        : (tier === 'small' ? 'Hakemle otobüs altında buluşma ayarlandı' : 'Hakemin devre arası tatili senin cebinden — anlaşma tamam');
+      return {
+        ...prev,
+        budget: prev.budget - cost,
+        corruption: {
+          ...cor,
+          [kind === 'keeper' ? 'keeperBribe' : 'refBribe']: { tier, matchesLeft: 1 },
+          totalSpent: cor.totalSpent + cost,
+        },
+        news: [`🕶️ ${label} — sıradaki maçta etkili. Sessiz ol… ($${cost.toLocaleString()})`, ...prev.news.slice(0, 4)]
+      };
+    });
   }, []);
 
   const resetCareer = useCallback(() => {
@@ -1203,6 +1344,24 @@ export const useGameState = () => {
 
       newState.league.sort((a, b) => b.p - a.p || (b.gf - b.ga) - (a.gf - a.ga));
 
+      /* — v5.0 Kariyer seviyesi: her 5 maçta 1 seviye, seviye başına bütçe primi — */
+      const prevLevel = careerLevelFromMatches(prev.matchesPlayed || 0);
+      newState.matchesPlayed = (prev.matchesPlayed || 0) + 1;
+      const newLevel = careerLevelFromMatches(newState.matchesPlayed);
+      if (newLevel > prevLevel) {
+        const bonus = levelUpBonus(newLevel);
+        newState.budget += bonus;
+        newState.skillPoints = (newState.skillPoints || 0) + newLevel - prevLevel;
+        const unlocked = (Object.entries(TAB_UNLOCK_LEVEL) as [string, number][])
+          .filter(([tab, at]) => (tab === 'shop' || tab === 'merch' || tab === 'dark' || tab === 'invest' || tab === 'tech' || tab === 'casino') && at > prevLevel && at <= newLevel)
+          .map(([, at]) => `Seviye ${at} özelliği`);
+        newState.news = [
+          `⬆️ Kariyer seviyesi ${newLevel}! +$${bonus.toLocaleString()} prim ve +${newLevel - prevLevel} yetenek puanı.`,
+          ...(unlocked.length ? [`🔓 ${unlocked.join(', ')} açıldı! Üst menüden ulaşabilirsin.`] : []),
+          ...newState.news.slice(0, 4)
+        ];
+      }
+
       /* — Gelir: bilet + yayın + prim — */
       const baseIncome = newState.stadiumLvl * 200000;
       const winBonus = userWon ? 450000 : userScore === oppScore ? 150000 : 50000;
@@ -1520,6 +1679,11 @@ export const useGameState = () => {
         if (totalDividend > 0) {
           newState.budget += totalDividend;
           newState.news = [`💵 Yatırım temettü/kupon/kira geliri: +$${totalDividend.toLocaleString()}`, ...newState.news.slice(0, 4)];
+
+        // 📈 Portföy haftalık kapanışı — sparkline geçmişi (son 24 hafta)
+        const ph = [...(newState.portfolioHistory || []),
+          newState.investments.reduce((tv: number, iv: any) => tv + (iv.price * (iv.units || 0)), 0)];
+        newState.portfolioHistory = ph.slice(-24);
         }
         if (event) {
           newState.news = [`📰 Piyasa: ${event.label}`, ...newState.news.slice(0, 4)];
@@ -1898,7 +2062,7 @@ export const useGameState = () => {
         newState.boardMessages = [msg, ...newState.boardMessages.slice(0, 5)];
         newState.news = [msg, ...newState.news.slice(0, 4)];
       }
-      if (newState.boardConfidence <= 0) {
+      if (newState.boardConfidence <= 0 && !newState.careerOver) { // 🕶️ şike skandalı sebebi varsa ezme
         newState.careerOver = true;
         newState.careerOverReason = 'Yönetim kurulu güvenini kaybetti ve sözleşmen feshedildi.';
       }
@@ -2143,12 +2307,16 @@ export const useGameState = () => {
   const hireStaff = useCallback((type: Staff['type'], cost: number) => {
     setGameState(prev => {
       if (!prev || prev.budget < cost) return prev;
+      if (prev.staff.some(st => st.type === type)) return prev; // aynı rolden bir kişi yeter
 
       const names: Record<Staff['type'], string> = {
         coach: 'Antrenör',
         scout: 'Scout',
         physio: 'Fizyoterapist',
-        analyst: 'Analist'
+        analyst: 'Analist',
+        agent: 'Oyuncu Menajeri',
+        fixer: 'Kabaracı',
+        lawyer: 'Avukat'
       };
 
       const newStaff: Staff = { id: Date.now(), type, name: names[type], level: 1, salary: Math.floor(cost * 0.1) };
@@ -3663,6 +3831,9 @@ export const useGameState = () => {
     applyMinigameReward,
     spendSkillPoint,
     claimDailyReward,
+    updateCasino,
+    resolveCorruptionAfterMatch,
+    buyBribe,
     dismissDailyReward,
     autoPickBestEleven,
     doLifeActivity,

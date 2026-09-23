@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useGameState } from './hooks/useGameState';
 import { SetupScreen } from './components/SetupScreen';
 import { Sidebar } from './components/Sidebar';
@@ -18,6 +18,12 @@ import { StadiumTab } from './components/tabs/StadiumTab';
 import { LifeTab } from './components/tabs/LifeTab';
 import { SocialTab } from './components/tabs/SocialTab';
 import { TechTab } from './components/tabs/TechTab';
+import { CasinoTab } from './components/tabs/CasinoTab';
+import { DarkTab } from './components/tabs/DarkTab';
+import { SettingsTab } from './components/tabs/SettingsTab';
+import { FpsOverlay } from './components/FpsOverlay';
+import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus, unlocksBetween } from './utils/unlocks';
+import { loadGraphics, subscribeGraphics } from './utils/graphics';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { MatchEngine, MatchExtras } from './components/MatchEngine';
 import { PreMatchScreen } from './components/PreMatchScreen';
@@ -49,7 +55,7 @@ import { sfx, setSoundEnabled, primeAudio } from './utils/sound';
 
 type TabId =
   | 'office' | 'social' | 'career' | 'life' | 'stadium' | 'squad' | 'transfer' | 'tactics' | 'training' | 'league'
-  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech';
+  | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech' | 'casino' | 'settings' | 'dark';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
 
@@ -63,8 +69,41 @@ interface SeasonSummary {
   objectiveMet: boolean;
   objective: string;
   topScorer?: { name: string; goals: number };
+  topAssist?: { name: string; assists: number };
+  mvp?: { name: string; note: string };
   departed: string[];
 }
+
+
+/* ── v5.0: Kilitli sekme perdesi — seviye atlayınca açılır ── */
+const LockedGate: React.FC<{ tab: TabId; requiredLevel: number; careerLevel: number; matchesPlayed: number }> = ({ tab, requiredLevel, careerLevel, matchesPlayed }) => {
+  // tab: hangi sekme kilitli (ileride sekmeye özel açıklamalar için)
+  void tab;
+  const prog = careerProgress(matchesPlayed);
+  const remaining = Math.max(0, (requiredLevel - 1) * 5 - matchesPlayed);
+  return (
+    <div className="flex flex-col items-center justify-center text-center py-16 px-4">
+      <div className="text-7xl mb-4 animate-pulse">🔒</div>
+      <h3 className="text-2xl font-black text-white">Bu bölüm henüz kilitli</h3>
+      <p className="text-slate-400 mt-2 max-w-md text-sm">
+        <b className="text-amber-300">Kariyer Seviye {requiredLevel}</b>'te açılıyor.
+        Her oynadığın <b>5 maç</b> seni bir seviye yukarı taşır — kupa maçları da sayılır.
+      </p>
+      <div className="mt-6 w-full max-w-md bg-slate-800/70 border border-slate-700 rounded-2xl p-5">
+        <div className="flex items-center justify-between text-xs font-bold mb-2">
+          <span className="text-emerald-300">Seviye {careerLevel}</span>
+          <span className="text-slate-400">{remaining > 0 ? `${remaining} maç kaldı` : 'Açıldı!'}</span>
+        </div>
+        <div className="h-3 bg-slate-700/60 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all" style={{ width: `${Math.min(100, (prog.levelProgress * 100))}%` }} />
+        </div>
+        <div className="mt-2 text-[11px] text-slate-500">Bu seviye ilerlemesi: {prog.levelProgress * 5 >= 1 ? `${Math.round(prog.levelProgress * 5)}/5 maç` : 'bir sonraki maç başlangıcı'}</div>
+      </div>
+      <div className="mt-6 text-xs text-slate-500">💡 Kenar panelden <b className="text-emerald-300">MAÇA ÇIK</b> ile seviye atlayabilirsin</div>
+    </div>
+  );
+};
+
 
 function OfflineGame({ onExit }: { onExit: () => void }) {
   const {
@@ -149,6 +188,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     recallLoan,
     claimDailyReward,
     dismissDailyReward,
+    updateCasino,
+    resolveCorruptionAfterMatch,
+    buyBribe,
     autoPickBestEleven,
     addSocialPost,
     likeSocialPost,
@@ -168,6 +210,24 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   const [pendingMatchAfterStory, setPendingMatchAfterStory] = useState(false);
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
   const [seasonHandled, setSeasonHandled] = useState<number | null>(null);
+  // 🎯 v5.0.1 Seviye atlama kutlaması — kariyer seviyesi artınca kutlama perdesi
+  const [levelUpInfo, setLevelUpInfo] = useState<{ level: number; bonus: number; unlocked: ReturnType<typeof unlocksBetween> } | null>(null);
+  const prevCareerLvlRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!gameState) return;
+    const lvl = careerLevelFromMatches(gameState.matchesPlayed || 0);
+    if (prevCareerLvlRef.current === null) { prevCareerLvlRef.current = lvl; return; }
+    if (lvl > prevCareerLvlRef.current) {
+      const unlocked = unlocksBetween(prevCareerLvlRef.current, lvl);
+      setLevelUpInfo({ level: lvl, bonus: levelUpBonus(lvl), unlocked });
+      sfx.levelUp();
+      prevCareerLvlRef.current = lvl;
+    }
+  }, [gameState?.matchesPlayed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🎛️ Düşük grafik profilinde menü arkaplanı süs animasyonlarını durdur (3D grafiklere dokunmadan)
+  const gfxTier = useSyncExternalStore(subscribeGraphics, () => loadGraphics().tier, () => 'high' as const);
+
   const tabsRef = useRef<HTMLDivElement>(null);
   const [tabsScrollFade, setTabsScrollFade] = useState({ left: false, right: false });
 
@@ -389,12 +449,23 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
           if (gameState.clubStats.leagueTitles > 0) unlockCup('double');
         }
 
+        // v5.0: Kupa maçları da kariyer seviyesine sayılır (her 5 maçta 1 seviye)
+        const cupMatchesPlayed = (gameState.matchesPlayed || 0) + 1;
+        const cupPrevLevel = careerLevelFromMatches(gameState.matchesPlayed || 0);
+        const cupNewLevel = careerLevelFromMatches(cupMatchesPlayed);
+        const cupLevelBonus = cupNewLevel > cupPrevLevel ? levelUpBonus(cupNewLevel) : 0;
+        if (cupNewLevel > cupPrevLevel) {
+          extraNews.push(`⬆️ Kariyer seviyesi ${cupNewLevel}! +$${cupLevelBonus.toLocaleString()} prim ve +1 yetenek puanı.`);
+        }
+
         updateGameState({
           cupMatches: updatedCupMatches,
           cupEliminated: !userWon,
-          budget: gameState.budget + (userWon ? prize : Math.floor(prize / 3)) + extraBudget,
+          budget: gameState.budget + (userWon ? prize : Math.floor(prize / 3)) + extraBudget + cupLevelBonus,
           achievements,
           minigameTokens: userWon ? (gameState.minigameTokens || 0) + 1 : gameState.minigameTokens,
+          matchesPlayed: cupMatchesPlayed,
+          skillPoints: (gameState.skillPoints || 0) + Math.max(0, cupNewLevel - cupPrevLevel),
           clubStats: userWon && currentCupRound === 3
             ? { ...gameState.clubStats, cupWins: gameState.clubStats.cupWins + 1 }
             : gameState.clubStats,
@@ -410,8 +481,15 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             ...gameState.news.slice(0, 4)
           ]
         });
+
+        // 🕶️ Kupa maçında da karanlık işler hesabı görülür (ödül state'e işlendikten SONRA —
+        // yoksa bayat budget kopyası para cezasını siliyordu). Puan silme kupa dosyasına işlenmez.
+        resolveCorruptionAfterMatch(true, userWon ? 'W' : isDraw ? 'D' : 'L');
       }
     } else if (opponent) {
+      // 🕶️ Karanlık işler hesabı görüldü (rüşvetler tükendi / yakalanma zarı atılır)
+      resolveCorruptionAfterMatch(false, userWon ? 'W' : isDraw ? 'D' : 'L');
+
       processMatchResult(userScore, oppScore, opponent, {
         isCup: false,
         isHome,
@@ -710,7 +788,13 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
     const seasonPrize = champion ? 3000000 : userPosition <= 3 ? 1500000 : userPosition <= 5 ? 700000 : 300000;
 
-    const topScorer = [...gameState.team11, ...gameState.bench].sort((a, b) => b.goals - a.goals)[0];
+    const squad = [...gameState.team11, ...gameState.bench];
+    const topScorer = squad.sort((a, b) => b.goals - a.goals)[0];
+    // 🏅 Sezon ödülleri: asist kralı + sezonun adamı (gol×2 + asist + form)
+    const topAssist = [...squad].sort((a, b) => b.assists - a.assists)[0];
+    const mvp = [...squad]
+      .map(pl => ({ pl, score: pl.goals * 2 + pl.assists + (pl.form ?? 5) }))
+      .sort((a, b) => b.score - a.score)[0];
 
     // Yeni hedef
     const nextObjective = newLeagueLevel >= 4
@@ -744,7 +828,9 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
       prize: seasonPrize + budgetBonus,
       objectiveMet,
       objective: gameState.seasonObjective,
-      topScorer: topScorer ? { name: topScorer.name, goals: topScorer.goals } : undefined,
+      topScorer: topScorer && topScorer.goals > 0 ? { name: topScorer.name, goals: topScorer.goals } : undefined,
+      topAssist: topAssist && topAssist.assists > 0 ? { name: topAssist.name, assists: topAssist.assists } : undefined,
+      mvp: mvp ? { name: mvp.pl.name, note: `${mvp.pl.goals} gol, ${mvp.pl.assists} asist • OVR ${mvp.pl.ovr}` } : undefined,
       departed
     };
 
@@ -919,6 +1005,15 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   const socialCount = (gameState.socialFeed || []).filter(p=>!p.isUser).length;
   const socialBadge = socialCount > 0 ? Math.min(9, Math.ceil(socialCount/4)) : 0;
 
+  /* ── v5.0 Kariyer seviyesi & kilitli sekmeler ── */
+  const matchesPlayed = gameState.matchesPlayed || 0;
+  const careerLvl = careerLevelFromMatches(matchesPlayed);
+  const lockedTabs = new Set<TabId>(
+    (Object.keys(TAB_UNLOCK_LEVEL) as UnlockableTab[]).filter(id => !isTabUnlocked(id, matchesPlayed))
+  );
+  // Kilitli bir sekmeye geçilirse içerik yerine kilit perdesi göster
+  const activeTabLocked = lockedTabs.has(activeTab);
+
   const tabs: TabDef[] = [
     { id: 'office', label: 'Ofis', icon: '🏢', badge: officeBadge },
     { id: 'social', label: 'Sosyal', icon: '💬', badge: socialBadge },
@@ -931,15 +1026,18 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     { id: 'training', label: 'Antrenman', icon: '🏋️' },
     { id: 'league', label: 'Lig', icon: '🏆' },
     { id: 'cup', label: 'Kupa', icon: '🏅' },
+    { id: 'dark', label: 'Karanlık İşler', icon: '🕶️' },
+    { id: 'casino', label: 'Kumarhane', icon: '🎰' },
     { id: 'shop', label: 'Dükkan', icon: '🛒' },
     { id: 'merch', label: 'Formalar', icon: '👕' },
     { id: 'invest', label: 'Yatırım', icon: '📈' },
     { id: 'history', label: 'Geçmiş', icon: '📊' },
-    { id: 'tech', label: 'Teknoloji', icon: '🛒' },
+    { id: 'tech', label: 'Teknoloji', icon: '💻' },
+    { id: 'settings', label: 'Ayarlar', icon: '🔧' },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden">
+    <div className={`min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden ${gfxTier === 'low' ? 'perf-lite' : ''}`}>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.07),transparent_60%),radial-gradient(ellipse_at_bottom_right,_rgba(6,182,212,0.06),transparent_60%),radial-gradient(ellipse_at_bottom_left,_rgba(139,92,246,0.05),transparent_60%),radial-gradient(ellipse_at_center,_rgba(251,191,36,0.03),transparent_70%)] pointer-events-none" />
       <div className="absolute inset-0 opacity-[0.025] pointer-events-none" style={{backgroundImage:"url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJhIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1Ii8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2EpIiBvcGFjaXR5PSIuMDUiLz48L3N2Zz4=')"}} />
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -1016,6 +1114,35 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         <PressConference press={gameState.pendingPress} onAnswer={answerPressQuestion} onDismiss={dismissPress} />
       )}
 
+      {/* 🎯 Seviye atlama kutlaması */}
+      {levelUpInfo && (
+        <div className="fixed inset-0 bg-black/85 z-[76] flex items-center justify-center p-4" onClick={() => setLevelUpInfo(null)}>
+          <div className="w-full max-w-md bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border-2 border-emerald-500/50 p-6 text-center shadow-[0_0_60px_rgba(16,185,129,0.35)]" style={{ animation: 'goalPop 500ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
+            <div className="text-6xl mb-2" style={{ animation: 'confetti 900ms ease 100ms both' }}>⬆️</div>
+            <div className="text-xs text-emerald-400 font-black tracking-[0.2em]">KARİYER SEVİYESİ</div>
+            <div className="text-5xl font-black text-white mt-1" style={{ animation: 'goalGlow 900ms ease 200ms 2 alternate' }}>{levelUpInfo.level}</div>
+            <div className="mt-2 text-sm text-slate-300">Seviye primi: <b className="text-amber-300">+${levelUpInfo.bonus.toLocaleString()}</b> • Yetenek puanı: <b className="text-violet-300">+1</b></div>
+            {levelUpInfo.unlocked.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="text-[10px] tracking-widest text-slate-400 font-bold">🔓 YENİ AÇILANLAR</div>
+                {levelUpInfo.unlocked.map(u => (
+                  <div key={u.tab} className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3 text-left">
+                    <span className="text-2xl">{u.icon}</span>
+                    <div>
+                      <div className="text-white font-black text-sm">{u.label}</div>
+                      <div className="text-[11px] text-slate-400">Üst menüden ulaşabilirsin</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => { setLevelUpInfo(null); sfx.coin(); }} className="mt-5 w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 text-white font-black rounded-xl shadow-lg shadow-emerald-500/25">
+              Devam ⚽
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sezon sonu gazetesi */}
       {seasonSummary && (
         <div className="fixed inset-0 bg-black/85 z-[75] flex items-center justify-center p-4">
@@ -1047,9 +1174,23 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
               </div>
               {seasonSummary.topScorer && (
                 <div className="bg-slate-700/40 rounded-lg p-2 col-span-2 sm:col-span-1">
-                  <div className="text-slate-400">Gol Kralımız</div>
+                  <div className="text-slate-400">⚽ Gol Kralımız</div>
                   <div className="text-white font-bold truncate">{seasonSummary.topScorer.name}</div>
-                  <div className="text-[10px] text-slate-400">⚽ {seasonSummary.topScorer.goals}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.topScorer.goals} gol</div>
+                </div>
+              )}
+              {seasonSummary.topAssist && (
+                <div className="bg-slate-700/40 rounded-lg p-2 col-span-2 sm:col-span-1">
+                  <div className="text-slate-400">🎯 Asist Kralı</div>
+                  <div className="text-white font-bold truncate">{seasonSummary.topAssist.name}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.topAssist.assists} asist</div>
+                </div>
+              )}
+              {seasonSummary.mvp && (
+                <div className="bg-gradient-to-r from-amber-500/15 to-transparent border border-amber-500/30 rounded-lg p-2 col-span-2 sm:col-span-1">
+                  <div className="text-amber-400">🌟 Sezonun Adamı</div>
+                  <div className="text-white font-bold truncate">{seasonSummary.mvp.name}</div>
+                  <div className="text-[10px] text-slate-400">{seasonSummary.mvp.note}</div>
                 </div>
               )}
             </div>
@@ -1139,7 +1280,14 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
                 <button
                   key={tab.id}
                   data-tab={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    if (lockedTabs.has(tab.id)) {
+                      const need = TAB_UNLOCK_LEVEL[tab.id];
+                      showToast(`🔒 ${tab.label}, Kariyer Seviye ${need}'te açılır (her 5 maçta 1 seviye). ${Math.max(0, need - careerLvl) * 5} maç kaldı!`);
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }}
                   onMouseMove={(e) => {
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     (e.currentTarget as HTMLElement).style.setProperty('--x', `${e.clientX - r.left}px`);
@@ -1151,8 +1299,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
                       : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
                   }`}
                 >
-                  <span className="text-base">{tab.icon}</span>
-                  <span className="tracking-wide">{tab.label}</span>
+                  <span className={lockedTabs.has(tab.id) ? 'opacity-40' : ''}>{tab.icon}</span>
+                  <span className="tracking-wide">{lockedTabs.has(tab.id) ? `${tab.label} 🔒` : tab.label}</span>
                   {!!tab.badge && tab.badge > 0 && (
                     <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600 animate-badge-pop':'bg-red-500 text-white'}`}>
                       {tab.badge > 9 ? '9+' : tab.badge}
@@ -1186,13 +1334,34 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             )}
           </div>
 
-          <div className="flex-1 bg-slate-800/45 backdrop-blur-xl rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
+          {/* 🐛 FIX: burada backdrop-blur YOK — backdrop-filter, 'fixed' modal pencereleri için
+            kapsayıcı blok oluşturup Antrenman/Kadro vb. pencereleri kaydırma içeriğinin
+            tepesine sabitliyordu ("en alttaki oyuncuya basınca modal en üstte açılıyordu").
+            Cam hissi, biraz artırılmış opaklıkla korunur. */}
+          <div className="flex-1 bg-slate-800/70 rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
             <div className="pointer-events-none absolute top-3 right-4 hidden lg:flex items-center gap-1.5 opacity-[0.35] hover:opacity-60 transition-opacity">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span className="kaan-watermark text-[10px] tracking-[0.18em]">MADE BY KAAN</span>
             </div>
             <div key={activeTab} className="tab-content">
-            {activeTab === 'social' && (
+            {activeTabLocked ? (
+              <LockedGate
+                tab={activeTab}
+                requiredLevel={TAB_UNLOCK_LEVEL[activeTab]}
+                careerLevel={careerLvl}
+                matchesPlayed={matchesPlayed}
+              />
+            ) : (<>
+              {activeTab === 'casino' && (
+                <CasinoTab gameState={gameState} onUpdateCasino={updateCasino} />
+              )}
+              {activeTab === 'settings' && (
+                <SettingsTab gameState={gameState} onToggleSound={toggleSound} />
+              )}
+              {activeTab === 'dark' && (
+                <DarkTab gameState={gameState} onBuyBribe={buyBribe} onHireStaff={hireStaff} />
+              )}
+              {activeTab === 'social' && (
               <SocialTab gameState={gameState} onCreatePost={addSocialPost} onLikePost={likeSocialPost} onAddComment={commentOnPost} />
             )}
             {activeTab === 'office' && (
@@ -1275,7 +1444,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
               />
             )}
             {activeTab === 'tactics' && (
-              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} />
+              <TacticsTab gameState={gameState} onUpdateTactics={updateTactics} onApplyFormation={applyFormation} onSetSlider={setTacticsSlider} onSetKit={(k) => updateGameState({ kit: k ?? undefined })} />
             )}
             {activeTab === 'training' && (
               <TrainingTab gameState={gameState} onTrainPlayer={trainPlayer} />
@@ -1289,6 +1458,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
             )}
             {activeTab === 'history' && <HistoryTab gameState={gameState} />}
             {activeTab === 'tech' && <TechTab gameState={gameState} onBuyDevice={buyDevice} onSetActiveDevice={setActiveDevice} onSellDevice={sellDevice} onBuyPCComponent={buyPCComponent} onSetPCPart={setPCPart} onSellPCComponent={sellPCComponent} onAssemblePC={assemblePC} />}
+            </>)}
             </div>
           </div>
         </div>
@@ -1305,6 +1475,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         </div>
       </div>
       <AiAssistant />
+      <FpsOverlay />
       <NewsTicker news={gameState.news} />
     </div>
   );

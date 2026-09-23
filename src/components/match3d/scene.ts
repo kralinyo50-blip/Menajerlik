@@ -43,6 +43,10 @@ export interface BuildMatchOpts {
   facilities?: Record<string, number>;
   /** 🍔 Büfe marka sponsoru — sahadaki büfe tabelaları bu markanın olur */
   buffetBrand?: { name: string; color: string; ink?: string; icon?: string } | null;
+  /** 🎛️ Tribün insan yoğunluğu 0.15-1 (grafik ayarları) */
+  crowdDensity?: number;
+  /** 🎛️ Hava partikülleri (yağmur/kar) açılsın mı */
+  particles?: boolean;
 }
 
 export interface Match3DEvent {
@@ -178,7 +182,8 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     night: opts.night,
     wet: ['rain', 'storm', 'snow'].includes(opts.weather),
     facilities: opts.facilities,
-    buffetBrand: opts.buffetBrand ?? null
+    buffetBrand: opts.buffetBrand ?? null,
+    crowdDensity: opts.crowdDensity
   });
   group.add(stadium.group);
 
@@ -403,6 +408,17 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
     benchActors.push(a);
   }
 
+  /* ── 🎪 Büyük olay kadrosu: sahaya atlayan taraftar + 2 güvenlik (varsayılan gizli) ── */
+  const fanKit: Kit = { shirt: '#f8fafc', shorts: '#2563eb', socks: '#f8fafc', shoes: '#dc2626', gk: '#f8fafc' };
+  const pitchInvader = addActor('staff', { t: 50, l: 50, n: 99 }, fanKit, 'TARAFTAR', { mode: 'off' as ActorMode });
+  pitchInvader.maxSpeed = 7.3; // tribüncüDEN hızlı koşar
+  const stewardKit: Kit = { shirt: '#f59e0b', shorts: '#1f2937', socks: '#f59e0b', shoes: '#111827', gk: '#f59e0b' };
+  const stewards = [0, 1].map(i => {
+    const a = addActor('staff', { t: 50, l: 50, n: 98 - i }, stewardKit, 'GUVENLIK', { mode: 'off' as ActorMode });
+    a.maxSpeed = 6.9;
+    return a;
+  });
+
   /* ── Teknik alan çizgisi, su şişeleri, taktik tahtası ── */
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 });
   const taBox = new THREE.Group();
@@ -577,7 +593,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   const snowy = opts.weather === 'snow';
   let particles: THREE.Points | null = null;
   let particleVel = 0;
-  if ((rainy || snowy) && !lowPerf) {
+  if ((rainy || snowy) && !lowPerf && opts.particles !== false) {
     const count = rainy ? 1400 : 800;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -626,7 +642,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   /** Gol senaryosunda kaleci topu tutmaz — gerçek goller yalnızca motordan gelir */
   let allowCatch = true;
 
-  type SeqKind = 'goal' | 'shot' | 'card' | 'foul' | 'injury' | 'sub' | 'kickoff' | 'halfTime' | 'fullTime' | 'penalty' | 'corner' | 'warmup';
+  type SeqKind = 'goal' | 'shot' | 'card' | 'foul' | 'injury' | 'sub' | 'kickoff' | 'halfTime' | 'fullTime' | 'penalty' | 'corner' | 'warmup' | 'brawl' | 'invader';
   interface Seq { kind: SeqKind; t: number; dur: number; team: Side; data: Record<string, unknown> }
   let seq: Seq | null = { kind: 'warmup', t: 0, dur: 1e9, team: 'home', data: {} };
   let lastEventKey = -1;
@@ -672,6 +688,7 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
   };
 
   const eventPriority = (ev: Match3DEvent): number => {
+    if (ev.type === 'brawl' || ev.type === 'invader') return 7; // büyük olaylar her şeyi ezer
     if (ev.type === 'goal' || ev.type === 'penalty') return 5;
     if (ev.type === 'injury' || ev.type === 'card') return 4;
     if (ev.type === 'save' || ev.type === 'chance') return 3;
@@ -812,6 +829,25 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
       }
       case 'corner': {
         startSeq('corner', team, 3.4, {});
+        break;
+      }
+      case 'brawl': {
+        // Orta sahada iki rakip yüzleşir, çevredeki oyuncular toplanır, hakem kart görür
+        const pickFighter = (side: Side) => {
+          const pool = onPitch(side).filter(a => !a.gk);
+          // orta sahaya en yakın oyuncu kavgayı başlatır
+          return pool.length ? pool.reduce((best, a) => (a.pos.length() < best.pos.length() ? a : best)) : home[6];
+        };
+        const a = pickFighter('home');
+        const b = pickFighter('away');
+        startSeq('brawl', 'home', 5.4, { a, b, hot: new THREE.Vector3((Math.random() - 0.5) * 14, 0, (Math.random() - 0.5) * 16) });
+        crowdHype = 1;
+        shake = 0.6;
+        break;
+      }
+      case 'invader': {
+        startSeq('invader', 'home', 6.2, { fan: pitchInvader, sec1: stewards[0], sec2: stewards[1], caught: false });
+        crowdHype = 1;
         break;
       }
       default:
@@ -1158,6 +1194,111 @@ export function buildMatchScene(opts: BuildMatchOpts): Match3DBundle {
           if (taker) kickTo(taker, new THREE.Vector3(attackX * (HL - 6), 0.4, (Math.random() - 0.5) * 10), 19, 0.75);
         }
         if (p > 0.95) { seq = null; passTimer = 0.6; }
+        break;
+      }
+      case 'brawl': {
+        const fa = (s.data.a as Actor) ?? home[6];
+        const fb = (s.data.b as Actor) ?? away[6];
+        const hot = (s.data.hot as THREE.Vector3) ?? new THREE.Vector3();
+        if (s.t < 0.05) {
+          setHolder(null);
+          ball.vel.set(0, 0, 0);
+          // Kavgacılar orta noktaya fırlar
+          fa.mode = 'play'; fa.target.copy(hot);
+          fb.mode = 'play'; fb.target.copy(hot).add(new THREE.Vector3(0.7, 0, 0.7));
+          // Çevredeki oyuncular kavganın etrafında halka kurar (28 kişilik karma!)
+          let ring = 0;
+          actors.forEach(o => {
+            if (o.staff || o.gk || o === fa || o === fb || o.mode === 'bench') return;
+            const d = Math.hypot(hot.x - o.pos.x, hot.z - o.pos.z);
+            if (d < 26) {
+              const ang = (ring / 9) * Math.PI * 2;
+              o.mode = 'play';
+              o.target.set(hot.x + Math.cos(ang) * (4.5 + (ring % 3) * 1.6), 0, hot.z + Math.sin(ang) * (4 + (ring % 2) * 1.8));
+              ring++;
+            }
+          });
+          referee.mode = 'play';
+          referee.target.copy(hot).add(new THREE.Vector3(-2.2, 0, 2.2));
+        }
+        // Yüzleşme: karşı karşıya dizilirler
+        if (s.t > 1.2) {
+          fa.mode = 'idle'; fa.target.copy(fa.pos);
+          fb.mode = 'idle'; fb.target.copy(fb.pos);
+          fa.facing = Math.atan2(fb.pos.x - fa.pos.x, fb.pos.z - fa.pos.z);
+          fb.facing = Math.atan2(fa.pos.x - fb.pos.x, fa.pos.z - fb.pos.z);
+        }
+        // İtişme: saldırganca yön değişimi (idle'da gövde salınımı)
+        if (s.t > 2.0 && s.t < 3.0) {
+          const j = Math.sin(s.t * 24);
+          fa.facing += j * 0.045;
+          fb.facing -= j * 0.045;
+        }
+        // Hakem araya girer, kart çıkartır
+        if (s.t > 3.1 && s.t < 3.15) {
+          referee.mode = 'card';
+          (cardMesh.material as THREE.MeshStandardMaterial).color.set('#eab308');
+          cardMesh.visible = true;
+        }
+        if (s.t > 4.4) cardMesh.visible = false;
+        if (p > 0.95) {
+          referee.mode = 'play';
+          cardMesh.visible = false;
+          actors.forEach(a => { if (!a.staff && a.mode !== 'bench' && a.mode !== 'off') a.mode = 'play'; });
+          const taker = nearest(onPitch(s.team), hot) ?? home[6];
+          setHolder(taker);
+          passTimer = 0.8;
+          seq = null;
+        }
+        break;
+      }
+      case 'invader': {
+        const fan = (s.data.fan as Actor) ?? pitchInvader;
+        const sec1 = (s.data.sec1 as Actor) ?? stewards[0];
+        const sec2 = (s.data.sec2 as Actor) ?? stewards[1];
+        const caught = Boolean(s.data.caught);
+        if (s.t < 0.05) {
+          setHolder(null);
+          ball.vel.set(0, 0, 0);
+          // Taraftar soldan kanat boyu koşuya çıkar, güvenlik onu kıskaca alır
+          fan.mode = 'play';
+          fan.pos.set(-(HL - 10), 0, -(HW + 1.2));
+          fan.target.set((HL - 16) * (0.5 + Math.random() * 0.4), 0, HW * (0.3 + Math.random() * 0.5));
+          sec1.mode = 'play'; sec1.pos.set(-(HL - 4), 0, -(HW + 2.2)); sec1.target.copy(fan.pos);
+          sec2.mode = 'play'; sec2.pos.set(0, 0, -(HW + 2.4)); sec2.target.copy(fan.pos);
+          // Herkes izler
+          actors.forEach(o => { if (!o.staff && o.mode === 'play') { o.mode = 'idle'; o.target.copy(o.pos); } });
+        }
+        if (!caught) {
+          // Güvenlikler taraftarın peşinde
+          sec1.target.copy(fan.pos).add(new THREE.Vector3(-1.1, 0, -0.8));
+          sec2.target.copy(fan.pos).add(new THREE.Vector3(1.1, 0, 0.8));
+          const d1 = sec1.pos.distanceTo(fan.pos);
+          const d2 = sec2.pos.distanceTo(fan.pos);
+          // Yakalandı ya da koşusu bitti → yere, sonra kulübeye doğru çıkartılır
+          if (d1 < 1.3 || d2 < 1.3 || s.t > 3.6) {
+            s.data.caught = true;
+            fan.mode = 'down';
+          }
+        } else if (s.t > 4.2) {
+          // İki güvenlik iki koltuktan tutup götürür
+          fan.mode = 'play';
+          fan.maxSpeed = 2.6; // artık kaçmıyor
+          fan.target.set(-(HL - 6), 0, -(HW + 5.5));
+          sec1.target.copy(fan.pos).add(new THREE.Vector3(-0.8, 0, -0.5));
+          sec2.target.copy(fan.pos).add(new THREE.Vector3(0.8, 0, 0.5));
+        }
+        if (p > 0.95) {
+          fan.mode = 'off';
+          sec1.mode = 'off';
+          sec2.mode = 'off';
+          fan.maxSpeed = 7.3;
+          actors.forEach(a => { if (!a.staff && a.mode !== 'bench' && a.mode !== 'off') a.mode = 'play'; });
+          const taker = nearest(onPitch(s.team), ball.pos) ?? home[6];
+          setHolder(taker);
+          passTimer = 0.8;
+          seq = null;
+        }
         break;
       }
       case 'halfTime':

@@ -1,5 +1,5 @@
 import { BuffetState, GameState, StadiumDesign, StadiumState, StadiumFacilities } from '../types/game';
-import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES, STADIUM_FACILITY_MAP, STADIUM_FACILITY_DEFS } from '../data/stadium';
+import { MAX_CAPACITY, ROOF_PROTECTION, TICKET_STRATEGIES, STADIUM_FACILITY_MAP } from '../data/stadium';
 import {
   BUFFET_PRICE_MAP, BUFFET_SPONSOR_MAP, buffetMenuHappiness, buffetMenuIncome, normalizeBuffetState,
 } from '../data/buffet';
@@ -111,7 +111,7 @@ export function facilityIncomePerFan(state: GameState): number {
   let income = 0;
   (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
     const lvl = facs[k] || 0;
-    const def = STADIUM_FACILITY_MAP[k as any];
+    const def = STADIUM_FACILITY_MAP[k];
     if (def && lvl > 0) {
       income += def.incomePerFan * lvl;
     }
@@ -187,7 +187,7 @@ export function facilityHappinessBonus(state: GameState): number {
   let happy = 0;
   (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
     const lvl = facs[k] || 0;
-    const def = STADIUM_FACILITY_MAP[k as any];
+    const def = STADIUM_FACILITY_MAP[k];
     if (def && lvl > 0) happy += def.happiness * lvl * 0.3;
   });
   // Büfe detayı: menü çeşitliliği + fiyat politikası + sponsor marka
@@ -200,7 +200,7 @@ export function facilityBoardBonus(state: GameState): number {
   let bonus = 0;
   (Object.keys(facs) as (keyof StadiumFacilities)[]).forEach(k => {
     const lvl = facs[k] || 0;
-    const def = STADIUM_FACILITY_MAP[k as any];
+    const def = STADIUM_FACILITY_MAP[k];
     if (def?.boardBonus && lvl > 0) bonus += def.boardBonus * lvl * 0.2;
   });
   return bonus;

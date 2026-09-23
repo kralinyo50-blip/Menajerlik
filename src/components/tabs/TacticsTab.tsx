@@ -1,15 +1,17 @@
 import React from 'react';
-import { GameState, Tactics } from '../../types/game';
+import { GameState, Tactics, TeamKit } from '../../types/game';
 import { TACTICS_SLIDERS } from '../../data/constants';
+import { KitEditor } from './KitEditor';
 
 interface TacticsTabProps {
   gameState: GameState;
   onUpdateTactics: (tactics: Partial<Tactics>) => void;
   onApplyFormation: (formation: string) => void;
   onSetSlider?: (id: string, value: number) => void;
+  onSetKit?: (kit: TeamKit | null) => void;
 }
 
-export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTactics, onApplyFormation, onSetSlider }) => {
+export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTactics, onApplyFormation, onSetSlider, onSetKit }) => {
   const formations = [
     { id: '4-3-3', name: '4-3-3', desc: 'Standart Saldırı', icon: '⚡' },
     { id: '4-4-2', name: '4-4-2', desc: 'Dengeli Oyun', icon: '⚖️' },
@@ -183,6 +185,11 @@ export const TacticsTab: React.FC<TacticsTabProps> = ({ gameState, onUpdateTacti
             })}
           </div>
         </div>
+
+        {/* 🎨 Forma Tasarımcısı */}
+        {onSetKit && (
+          <KitEditor kit={gameState.kit} onSetKit={onSetKit} />
+        )}
 
         {/* Tactical Tips */}
         <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50">

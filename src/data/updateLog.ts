@@ -9,6 +9,73 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.3.0',
+    date: '24 Eyl 2026',
+    tag: 'YENİ',
+    title: '🚀💎🔵 Kumarhaneye 3 Yeni Mini Oyun: Roket, Mayın Tarlası, Plinko',
+    items: [
+      '🚀 ROKET (Crash): çarpan 1.00×\'ten yükselirken eğri üzerinde roket uçar — patlamadan önce "ÇEKİL"e bas! Ne kadar beklersen o kadar kazanç, ama tek kıvılcım her şeyi alır. Strateji bağımsız %97 getiri.',
+      '💎 MAYIN TARLASI: 25 kutu, 3 mayın. Elma topladıkça çarpanın büyür (1.11× → 30×), istediğin an çekil. Mayına basarsan hepsi gider!',
+      '🔵 PLINKO: topu bırak, 12 sıra pimi geçsin, kovaya düşsün — uç kovalar 23× öder, orta kova 0.5×. Her düşüş kalp atışı.',
+      '🎰 Kumarhane artık 7 oyun: Slot, Rulet, Blackjack, Çarkıfelek + bu üçü. Hepsi Seviye 40\'ta, hepsi gerçekçi RTP ile denetlenmiş (tools/sim-casino-rtp).',
+    ],
+  },
+  {
+    version: '5.2.0',
+    date: '23 Eyl 2026',
+    tag: 'İYİLEŞTİRME',
+    title: '🎨 Forma Tasarımcısı + 📈 Portföy Grafiği + 🏅 Sezon Ödülleri',
+    items: [
+      '🎨 FORMA TASARIMCISI (Taktik sekmesi): forma ve şort renğini seç, 6 hazır set (Kanarya, Kartal, Ateş, Orman, Mor Şimşek, Okyanus) — tasarımın anında 3D maçta sahaya yansır, kumaş numarası kontrastı otomatik ayarlanır.',
+      '📈 PORTFÖY GRAFİĞİ: Yatırım Merkezi\'nde son 24 maçlık portföy değeri sparkline\'ı — yükseliş yeşil, düşüş kırmızı.',
+      '🏅 SEZON ÖDÜLLERİ: sezon sonu raporuna Asist Kralı ve Sezonun Adamı (altın kart) eklendi — gol kralının yanında.',
+    ],
+  },
+  {
+    version: '5.1.0',
+    date: '23 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🕶️ Karanlık İşler + 🎪 Sahada Kavga & Sahaya Atlayan Taraftar + 💼 Adamlar',
+    items: [
+      '🕶️ YENİ SEKME — Karanlık İşler (Sv.2\'de açılır): rakip kaleciye para ver (şutlar artık daha sık gole gider) veya hakemi "ikna et" (rakip golleri şüpheli VAR kararıyla iptal edilebilir, sana kart çıkmaz, rakibi affetmez).',
+      '🚨 YAKALANMA SİSTEMİ: her rüşvetli maçta yakalanma riski var (%5.5–%13). Yakalanırsan para cezası + ligden 3 puan silme + yönetim güveni -22. 3. yakalanışta yönetim sözleşmeni fesheder!',
+      '👤 ARKANDAKİ ADAMLAR (Personel): 🕶️ Kabaracı (yakalanma riski -45%), ⚖️ Avukat (cezaları yarıya indirir), 💼 Oyuncu Menajeri (sözleşme imza parası %18 düşür). Karanlık İşler sekmesinden veya Stadyum → Personel\'den alınırlar.',
+      '🎪 BÜYÜK OLAYLAR (≈ her 10 maçta 1, 3D\'de canlı sinematik): 🔥 SAHADA KAVGA — iki takım orta sahada birbirine girer, etrafında halka kurulur, hakem koşup kart dağıtır (kartlar gerçekten cezalara işler); 🏃 SAHAYA ATLAYAN TARAFTAR — tribüncü kanat boyu koşar, iki güvenlik görevlisi kovalar, yakalar ve çıkarır!',
+      '📈 YATIRIM +5 ARAÇ: 💵 Dolar/TL Vadeli, 🛢️ Enerji Fonu (Brent), 🎮 E-Spor Giriş Sermayesi, 🎨 Sanat Eseri Fonu, 🏦 Euro Tahvil Sepeti — her biri farklı volatilite/beta/temettü profiliyle. Eski kayıtlara otomatik eklenir.',
+    ],
+  },
+  {
+    version: '5.0.1',
+    date: '23 Eyl 2026',
+    tag: 'İYİLEŞTİRME',
+    title: '🎯 Seviye Kutlaması + 🎰 Dengeli Kumarhane + ⚡ Zayıf PC İnce Ayarı',
+    items: [
+      '🎉 Seviye atlayınca artık kutlama ekranı geliyor: prim, yetenek puanı ve açılan özellikler tek ekranda gösterilir.',
+      '🎰 Kumarhane matematiği dengeleendi: slot ödemeleri %31\'lik haksız RTP\'den ≈%90\'a çekildi (7️⃣7️⃣7️⃣ = 250× JACKPOT, çiftler bahis geri). Rulet/çark RTP\'leri doğrulandı — npm run sim:casino ile herkes test edebilir.',
+      '⚡ Maç motoru her dakika tikinde kadro gücünü yeniden hesaplamıyor artık (useMemo) — zayıf CPU\'larda tick maliyeti düştü.',
+      '⚡ Düşük grafik profilinde menü arkaplanı süs animasyonları durduruluyor (3D grafiklere dokunmadan).',
+      '⚡ GPU benchmark\'ı kare başına 4096 matris çarpması yapmıyor — tahsis yok, daha doğru skor.',
+    ],
+  },
+  {
+    version: '5.0.0',
+    date: '23 Eyl 2026',
+    tag: 'BÜYÜK',
+    title: '🔧 Ayarlar + 🎯 Kariyer Seviyesi + 🎰 Kumarhane + ⚡ Maç Motoru 2.0',
+    items: [
+      '🔧 AYARLAR sekmesi eklendi: "PC\'imi Tara" donanımını algılar (GPU adı, çekirdek, RAM) ve 1 saniyelik GPU testiyle en uygun kalite profilini otomatik kurar. Düşük/Orta/Yüksek/Ultra profilleri + çözünürlük ölçeği, gölge, anti-alias, tribün yoğunluğu, partikül, FPS sınırı ayarları.',
+      '⚡ Uyarlanabilir Çözünürlük: FPS düşünce oyun render ölçeğini kendiliğinden kısar, toparlanınca geri açar. 3D modeller, tribünler ve efektler tam gücünde kalır — eski Intel i3\'lerde bile akıcı maç.',
+      '🎯 KARİYER SEVİYESİ: her 5 maçta 1 seviye (kupa dahil). Dükkan Sv.2, Formalar Sv.3, Yatırım Sv.5, Teknoloji Sv.8\'de açılır. Seviye başına bütçe primi + yetenek puanı.',
+      '🎰 KUMARHANE Seviye 40\'ta açılır: Şans Makinesi 777, Avrupa Ruleti, Blackjack ve Çarkıfelek. Kulüp bütçesinden kasa aç, kâseyi katla… ya da sezon primini masada bırak.',
+      '⚽ MAÇ MOTORU 2.0: rakip artık gerçekten oynuyor — yenilen rakip yüklenir, öndeki rakip kontra bekler, oyuncu değiştirir, kart görür (10 kişiye düşebilir). Pas zincirleri hızlandı, net pozisyonlar arttı; maçlar artık 0-0 kurusu değil gollü, aksiyonlu geçiyor.',
+      '👥 Rakip takımın kendi oyuncuları var: goller, kartlar ve maçın adamı artık isimli rakip futbolculara gidiyor.',
+      '🐛 DÜZELTME: Antrenman\'da listedeki en alttaki oyuncuya basınca pencere ekranın tepesine düşüyordu (panel blur\'unun fixed konumlandırmayı bozması). Modallar artık hep ekran ortasında açılır.',
+      '🐛 DÜZELTME: Antrenman Kompleksi\'nde "Ön İzle"ye basınca sayfa en üste fırlıyordu — artık yalnızca sahne tamamen görünmezse en kısa yoldan kaydırılır.',
+      '⏩ Maç hızına 4x eklendi.',
+      '🐛 DÜZELTME: Penaltı mini-oyunu hiç tetiklenemiyordu (ölü kod) — artık net pozisyonlarda penaltı kullanabilirsin.',
+    ],
+  },
+  {
     version: '4.12.0',
     date: '19 Eyl 2026',
     tag: 'YENİ',

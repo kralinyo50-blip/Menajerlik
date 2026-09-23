@@ -45,6 +45,20 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
       }
     });
 
+  // 🕶️ Karanlık İşler: sıradaki maç için aktif düzenleme + birleşik yakalanma riski
+  const corActive = gameState.corruption?.keeperBribe || gameState.corruption?.refBribe;
+  const corRiskPct = (() => {
+    const kb = gameState.corruption?.keeperBribe, rb = gameState.corruption?.refBribe;
+    if (!kb && !rb) return 0;
+    const base = (k: 'keeper' | 'ref', t: 'small' | 'big') =>
+      k === 'keeper' ? (t === 'small' ? 0.055 : 0.1) : (t === 'small' ? 0.08 : 0.13);
+    const mult = gameState.staff?.some(st => st.type === 'fixer') ? 0.55 : 1;
+    let pNone = 1;
+    if (kb) pNone *= 1 - base('keeper', kb.tier) * mult;
+    if (rb) pNone *= 1 - base('ref', rb.tier) * mult;
+    return Math.round((1 - pNone) * 1000) / 10;
+  })();
+
   const userOvr = Math.floor(
     gameState.team11.filter(p => !p.injured && !(p.suspension ?? 0))
       .reduce((a, p) => a + p.ovr, 0) / Math.max(1, gameState.team11.filter(p => !p.injured).length)
@@ -129,6 +143,24 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
               )}
             </div>
           </div>
+
+          {/* 🕶️ Aktif "düzenleme" rozeti */}
+          {corActive && (
+            <div className="mb-4 rounded-xl border border-red-500/40 bg-gradient-to-r from-red-950/50 to-slate-900/60 p-3 flex items-start gap-3">
+              <span className="text-2xl leading-none">🤫</span>
+              <div className="text-[11px] leading-relaxed">
+                <div className="text-red-300 font-black text-xs mb-0.5 tracking-wide">DÜZENLEME AKTİF — bu maçta devrede</div>
+                <div className="text-slate-300">
+                  {gameState.corruption?.keeperBribe && <>🧤 Rakip kaleci <b>({gameState.corruption.keeperBribe.tier === 'small' ? 'küçük teşvik' : 'büyük anlaşma'})</b></>}
+                  {gameState.corruption?.keeperBribe && gameState.corruption?.refBribe && ' • '}
+                  {gameState.corruption?.refBribe && <>🟨 Hakem <b>({gameState.corruption.refBribe.tier === 'small' ? 'küçük teşvik' : 'büyük anlaşma'})</b></>}
+                  {' — birleşik yakalanma riski: '}
+                  <b className={corRiskPct >= 15 ? 'text-red-400' : corRiskPct >= 10 ? 'text-amber-300' : 'text-emerald-300'}>%{String(corRiskPct.toFixed(1)).replace('.', ',')}</b>
+                  {gameState.staff?.some(st => st.type === 'fixer') && <span className="text-emerald-300"> (🕶️ kabaracı indirimi uygulandı)</span>}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Scout report */}
           <div className="bg-slate-800/60 rounded-xl p-3 mb-4 border border-slate-700/50">
