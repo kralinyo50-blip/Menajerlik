@@ -2,17 +2,105 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Manager Pro 2026 - Ultimate Futbol Menajerlik Simülasyonu. Mini oyunlar, başarımlar, canlı maç motoru." />
+    <meta name="theme-color" content="#020617" />
+    <meta name="color-scheme" content="dark" />
     <title>Manager Pro 2026 — Ultimate Edition</title>
     <!-- Satır içi favicon (data URI): /favicon.ico 404'ü ve ek isteği tamamen kaldırır -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Ctext x='16' y='24' font-size='20' text-anchor='middle'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
+    <!-- Fontlar: preconnect + tek istek (CSS @import kaldırıldı, çift yükleme yok) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+      /* İlk boya: gövde rengi ve splash — 2 MB'lık tek dosya paketi çözülene kadar
+         siyah/boş ekran yerine anında oyun temalı bir açılış gösterilir. */
+      html { background: #020617; color-scheme: dark; }
+      body { margin: 0; background: #020617; color: #e2e8f0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      #mp-splash {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+        background:
+          radial-gradient(900px 500px at 50% -10%, rgba(16,185,129,0.16), transparent 65%),
+          radial-gradient(700px 420px at 85% 110%, rgba(6,182,212,0.14), transparent 65%),
+          radial-gradient(600px 400px at 10% 100%, rgba(139,92,246,0.10), transparent 65%),
+          #020617;
+        transition: opacity .5s ease, visibility .5s ease;
+      }
+      #mp-splash.mp-splash-out { opacity: 0; visibility: hidden; pointer-events: none; }
+      /* Sahne çizgileri: saf CSS, ek istek yok */
+      #mp-splash::before {
+        content: ''; position: absolute; inset: 0; opacity: .35; pointer-events: none;
+        background:
+          linear-gradient(transparent 49.4%, rgba(226,232,240,0.10) 49.4%, rgba(226,232,240,0.10) 50.6%, transparent 50.6%),
+          radial-gradient(circle at 50% 50%, transparent 118px, rgba(226,232,240,0.10) 118px, rgba(226,232,240,0.10) 120px, transparent 120px);
+      }
+      .mp-ball {
+        font-size: 62px; line-height: 1; filter: drop-shadow(0 12px 26px rgba(16,185,129,0.45));
+        animation: mp-bounce 1.25s cubic-bezier(.5,0,.5,1) infinite, mp-spin 3.2s linear infinite;
+      }
+      @keyframes mp-bounce { 0%,100% { transform: translateY(-14px) } 50% { transform: translateY(12px) } }
+      @keyframes mp-spin { to { rotate: 360deg } }
+      .mp-title {
+        font-family: Orbitron, Inter, sans-serif; font-weight: 900; letter-spacing: .22em;
+        font-size: clamp(16px, 3.4vw, 26px); text-align: center; padding: 0 16px;
+        background: linear-gradient(90deg, #34d399, #22d3ee 55%, #a78bfa);
+        -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      }
+      .mp-sub { font-size: 12px; letter-spacing: .3em; color: #64748b; text-transform: uppercase; }
+      .mp-bar { width: min(280px, 62vw); height: 5px; border-radius: 999px; background: rgba(148,163,184,0.18); overflow: hidden; }
+      .mp-bar > i {
+        display: block; height: 100%; width: 40%; border-radius: 999px; transform: translateX(-110%);
+        background: linear-gradient(90deg, #10b981, #06b6d4);
+        animation: mp-slide 1.15s cubic-bezier(.65,0,.35,1) infinite;
+      }
+      @keyframes mp-slide { 0% { transform: translateX(-110%) } 100% { transform: translateX(260%) } }
+      .mp-hint { font-size: 11px; color: #475569; }
+      .mp-hint b { color: #94a3b8; }
+      @media (prefers-reduced-motion: reduce) {
+        .mp-ball, .mp-bar > i { animation: none; }
+        .mp-ball { transform: none; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Açılış perdesi: React ilk kareyi çizdiğinde window.mpSplash.done() ile kapanır. -->
+    <div id="mp-splash" role="status" aria-live="polite">
+      <div class="mp-ball" aria-hidden="true">⚽</div>
+      <div class="mp-title">MANAGER PRO 2026</div>
+      <div class="mp-sub">Ultimate Edition</div>
+      <div class="mp-bar" aria-hidden="true"><i></i></div>
+      <div class="mp-hint" id="mp-splash-hint">Oyun hazırlanıyor… <b>⏎</b> ile de devam edebilirsin</div>
+    </div>
+    <noscript>
+      <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#020617;color:#e2e8f0;font-family:Inter,sans-serif;padding:24px;text-align:center">
+        Manager Pro 2026'yı oynamak için tarayıcında JavaScript'i açmalısın.
+      </div>
+    </noscript>
+
+    <script>
+      /* Açılış perdesi denetimi — React hazır olunca (veya 8 sn sonra) yumuşakça kaybolur. */
+      (function () {
+        var el = document.getElementById('mp-splash');
+        if (!el) return;
+        var hidden = false;
+        function hide() {
+          if (hidden) return;
+          hidden = true;
+          el.classList.add('mp-splash-out');
+          window.setTimeout(function () { el && el.parentNode && el.parentNode.removeChild(el); }, 600);
+        }
+        window.mpSplash = { done: hide };
+        window.setTimeout(function () {
+          var hint = document.getElementById('mp-splash-hint');
+          if (hint && !hidden) hint.innerHTML = 'Biraz uzun sürüyor… Dosyayı yerel bir klasörden açtığından emin ol.';
+        }, 8000);
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

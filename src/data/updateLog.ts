@@ -9,6 +9,24 @@ export interface UpdateEntry {
 /** Sol panel "Gelen Güncellemeler" listesi — en yeni üstte */
 export const UPDATE_LOG: UpdateEntry[] = [
   {
+    version: '5.4.0',
+    date: '13 Eki 2026',
+    tag: 'İYİLEŞTİRME',
+    title: '⚡ v5.4 — Tüm Oyun Baştan Aşağı Hızlandı ve Cilalandı (görünüm + akıcılık)',
+    items: [
+      '⚽ YENİ AÇILIŞ PERDESİ: 2 MB\'lık tek dosya çözülene kadar boş/siyah ekran yerine top animasyonlu, saha çizgili bir açılış görünür — oyun ilk saniyeden "hazır" hissettirir.',
+      '⌨️ KLAVYE KISAYOLLARI: ? ile yardım penceresi, Alt+←/→ ile sekmeler arası geçiş, M ile maça çık, S ile kaydet; maçta 1/2/4 hız, Boşluk duraklat, D değişiklik. (Metin yazarken otomatik devre dışı.)',
+      '🔔 BİLDİRİMLER YENİLENDİ: sağ üstte yığılabilen, ikonlu, süre çubuğu olan bildirimler; üstelik artık bildirim çıkmak oyunu yeniden çizmiyor (eskiden tüm ekran yeniden hesaplanıyordu).',
+      '🚀 MENÜ AKICILIĞI: sekme şeridini kaydırmak ve bildirim göstermek artık oyun gövdesini yeniden çizmiyor; sahnelerde 36rem\'lik blur katmanları gradyanla değiştirildi; bulanıklık (backdrop-blur) maliyeti yarıya indirildi. Zayıf PC\'lerde menü bile belirgin şekilde akıcı.',
+      '🎨 GÖRSEL DİL: tüm oyunda tek tip kart/başlık/çip/buton stilleri, hizalı rakamlar (para ve skor sütunları zıplamaz), sekmelerde daha net seçili durum, yumuşak açılış animasyonları ve modal geçişleri.',
+      '⚽ MAÇ EKRANI: skor tabelası artık Orbitron yazı tipiyle ve GOL ANINDA döner animasyonla güncelleniyor; hız kontrolleri tek parça haline geldi, ⏸️ Duraklat düğmesi eklendi.',
+      '💾 KENAR PANEL: kasa ve maaş tutarları değiştiğinde sayarak güncelleniyor (zıplamıyor); panel gereksiz çizimlerden arındırıldı.',
+      '🏟️ MOD SEÇİMİ: devam eden kariyerin (takım/sezon/hafta) kartın üzerinde görünür; saha çizgili yeni arka plan, özellik şeridi ve daha net "offline / online" ayrımı.',
+      '🔤 FONT & İLK BOYAMA: fontlar iki kez indiriliyordu (HTML + CSS) — artık tek istek; ilk boyama belirgin şekilde daha hızlı.',
+      '♿ ERİŞİLEBİLİRLİK: işletim sisteminde "hareketi azalt" açıksa süs animasyonları durur; odak halkaları ve sekme rolleri (tablist) eklendi.',
+    ],
+  },
+  {
     version: '5.3.0',
     date: '24 Eyl 2026',
     tag: 'YENİ',
@@ -390,4 +408,4 @@ export const UPDATE_LOG: UpdateEntry[] = [
   },
 ];
 
-export const CURRENT_VERSION = '4.12.0';
+export const CURRENT_VERSION = '5.4.0';

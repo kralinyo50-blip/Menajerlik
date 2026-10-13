@@ -22,6 +22,10 @@ import { CasinoTab } from './components/tabs/CasinoTab';
 import { DarkTab } from './components/tabs/DarkTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { FpsOverlay } from './components/FpsOverlay';
+import { TabBar } from './components/TabBar';
+import { ToastHost } from './components/ToastHost';
+import { ShortcutOverlay } from './components/ShortcutOverlay';
+import { notify } from './utils/notify';
 import { TAB_UNLOCK_LEVEL, UnlockableTab, careerLevelFromMatches, careerProgress, isTabUnlocked, levelUpBonus, unlocksBetween } from './utils/unlocks';
 import { loadGraphics, subscribeGraphics } from './utils/graphics';
 import { DailyRewardModal } from './components/DailyRewardModal';
@@ -58,6 +62,12 @@ type TabId =
   | 'cup' | 'shop' | 'merch' | 'invest' | 'history' | 'tech' | 'casino' | 'settings' | 'dark';
 
 interface TabDef { id: TabId; label: string; icon: string; badge?: number }
+
+/** Sekme sırası — Alt+←/→ kısayolları ve otomatik geçişler bu sırayı kullanır */
+const TAB_ORDER: TabId[] = [
+  'office', 'social', 'career', 'life', 'stadium', 'squad', 'transfer', 'tactics', 'training',
+  'league', 'cup', 'dark', 'casino', 'shop', 'merch', 'invest', 'history', 'tech', 'settings',
+];
 
 interface SeasonSummary {
   season: number;
@@ -205,11 +215,26 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
   const [postMatchEvent, setPostMatchEvent] = useState<PostMatchEventData | null>(null);
   const [showTeamActivity, setShowTeamActivity] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [storyMinigame, setStoryMinigame] = useState<MinigameContext | null>(null);
   const [pendingMatchAfterStory, setPendingMatchAfterStory] = useState(false);
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
   const [seasonHandled, setSeasonHandled] = useState<number | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  /* 🧠 v5.4: Sekme başına kaydırma hafızası — uzun bir listeden başka sekmeye
+     geçip geri döndüğünde kaldığın yeri bulursun (eskiden konum rastgele
+     taşınıyordu, çoğu zaman içerik ortasından başlıyordu). */
+  const panelScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollMemory = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const el = panelScrollRef.current;
+    if (!el) return;
+    const target = scrollMemory.current[activeTab] ?? 0;
+    const raf = requestAnimationFrame(() => { el.scrollTo({ top: target, behavior: 'auto' }); });
+    return () => {
+      cancelAnimationFrame(raf);
+      scrollMemory.current[activeTab] = el.scrollTop;
+    };
+  }, [activeTab]);
   // 🎯 v5.0.1 Seviye atlama kutlaması — kariyer seviyesi artınca kutlama perdesi
   const [levelUpInfo, setLevelUpInfo] = useState<{ level: number; bonus: number; unlocked: ReturnType<typeof unlocksBetween> } | null>(null);
   const prevCareerLvlRef = useRef<number | null>(null);
@@ -227,9 +252,6 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
   // 🎛️ Düşük grafik profilinde menü arkaplanı süs animasyonlarını durdur (3D grafiklere dokunmadan)
   const gfxTier = useSyncExternalStore(subscribeGraphics, () => loadGraphics().tier, () => 'high' as const);
-
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [tabsScrollFade, setTabsScrollFade] = useState({ left: false, right: false });
 
   // Leaving this mode (including browser Back) must not lose the offline club.
   const latestCareer = useRef(gameState);
@@ -266,45 +288,16 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     if (reward) setTimeout(() => sfx.levelUp(), 300);
   }, [gameState?.lastPlayedDate, gameState?.teamName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sekme değişince aktif sekmeyi ortaya kaydır + fade hesapla
-  const updateTabsFade = useCallback(() => {
-    const el = tabsRef.current;
-    if (!el) return;
-    const { scrollLeft, scrollWidth, clientWidth } = el;
-    const next = {
-      left: scrollLeft > 8,
-      right: scrollLeft + clientWidth < scrollWidth - 8
-    };
-    // ⚠️ Değer değişmediyse state'i güncelleme: bu fonksiyon 800 ms'de bir çalışıyor,
-    // her çağrıda yeni nesne yazmak tüm oyunu (maç sahnesi dahil) gereksiz yeniden
-    // çiziyor ve maç sırasında mikro takılmalar yaratıyordu.
-    setTabsScrollFade(prev => (prev.left === next.left && prev.right === next.right ? prev : next));
-  }, []);
-  useEffect(() => {
-    const el = tabsRef.current;
-    if (!el) return;
-    // aktif sekmeyi görünür yap
-    const activeBtn = el.querySelector(`[data-tab=\"${activeTab}\"]`) as HTMLElement | null;
-    if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    updateTabsFade();
-  }, [activeTab, updateTabsFade]);
-  useEffect(() => {
-    const el = tabsRef.current;
-    if (!el) return;
-    const onScroll = () => updateTabsFade();
-    const onResize = () => updateTabsFade();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onResize);
-    // ilk ölçüm
-    requestAnimationFrame(updateTabsFade);
-    const id = setInterval(updateTabsFade, 800);
-    return () => { el.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); clearInterval(id); };
-  }, [updateTabsFade]);
+  /* 🧭 Sekme şeridinin kaydırma durumu artık <TabBar /> içinde — v5.4:
+     eskiden burada tutuluyordu ve şeridi her kaydırdığınızda tüm oyun
+     (aktif sekme + 3D sahneler) yeniden çiziliyordu. */
 
   // Hafta ilerledikçe menajer XP'si (maç içi XP zaten ekleniyor)
+  /* 🔔 Bildirimler artık oyun state'ini değiştirmiyor (v5.4):
+     eskiden her bildirim tüm ağacı — aktif sekme ve 3D sahneler dahil —
+     yeniden çiziyordu. Şimdi React dışı küçük bir depoya yazılıyor. */
   const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3200);
+    notify(msg);
   }, []);
 
   const handleStart = useCallback((teamName: string, teamLogo: string, difficulty: Difficulty) => {
@@ -373,9 +366,68 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         : gameState.fixture[gameState.week - 1])
     : undefined;
 
+  /** Üst bilgi çubuğunda gösterilen "sıradaki rakip" (görsel amaçlı, salt okunur) */
+  const nextOpponent = currentOpponent;
+
   const currentFixture: FixtureEntry | undefined = gameState
     ? (isCupMatch ? undefined : gameState.fixture[gameState.week - 1])
     : undefined;
+
+  /* ══════════ ⌨️ Klavye kısayolları (v5.4) ══════════
+     Metin alanlarında devre dışı kalır; oyunu fare olmadan da oynatır. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      if (e.key === 'F1' || (e.key === '?' && !typing)) {
+        e.preventDefault();
+        setShowShortcuts(v => !v);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowShortcuts(false);
+        setSidebarOpen(false);
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey) return;
+
+      if (e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        e.preventDefault();
+        const idx = TAB_ORDER.indexOf(activeTab);
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        for (let step = 1; step <= TAB_ORDER.length; step++) {
+          const next = TAB_ORDER[(idx + dir * step + TAB_ORDER.length * 2) % TAB_ORDER.length];
+          if (isTabUnlocked(next as UnlockableTab, gameState?.matchesPlayed || 0)) {
+            setActiveTab(next);
+            sfx.click();
+            break;
+          }
+        }
+        return;
+      }
+      if (e.altKey) return;
+
+      const busy = isMatchActive || showPreMatch || !!postMatchEvent || !!seasonSummary || !!storyMinigame || !!gameState?.careerOver;
+      if ((e.key === 'm' || e.key === 'M') && !busy) {
+        e.preventDefault();
+        handlePlayMatch();
+      } else if ((e.key === 's' || e.key === 'S') && !busy) {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTab, isMatchActive, showPreMatch, postMatchEvent, seasonSummary, storyMinigame, gameState?.careerOver, gameState?.matchesPlayed, handlePlayMatch, handleSave, setActiveTab]);
+
+  /* Sekme başlığı: masaüstünde sekme adından kulübünü/haftayı görebil */
+  useEffect(() => {
+    if (!gameState) return;
+    const prev = document.title;
+    document.title = `${gameState.teamLogo} ${gameState.teamName} • Sezon ${gameState.season || 1} • Hafta ${gameState.week}/18 — Manager Pro 2026`;
+    return () => { document.title = prev; };
+  }, [gameState?.teamName, gameState?.season, gameState?.week, gameState?.teamLogo]);
 
   /* ══════════ MAÇ SONU ══════════ */
   const handleMatchEnd = useCallback((
@@ -1040,23 +1092,29 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
     <div className={`min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 relative overflow-hidden ${gfxTier === 'low' ? 'perf-lite' : ''}`}>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.07),transparent_60%),radial-gradient(ellipse_at_bottom_right,_rgba(6,182,212,0.06),transparent_60%),radial-gradient(ellipse_at_bottom_left,_rgba(139,92,246,0.05),transparent_60%),radial-gradient(ellipse_at_center,_rgba(251,191,36,0.03),transparent_70%)] pointer-events-none" />
       <div className="absolute inset-0 opacity-[0.025] pointer-events-none" style={{backgroundImage:"url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJhIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1Ii8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2EpIiBvcGFjaXR5PSIuMDUiLz48L3N2Zz4=')"}} />
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-28 -right-28 w-[36rem] h-[36rem] bg-emerald-500/[0.06] rounded-full blur-3xl animate-aurora" />
-        <div className="absolute -bottom-32 -left-20 w-[32rem] h-[32rem] bg-cyan-500/[0.05] rounded-full blur-3xl animate-aurora" style={{animationDelay:'3s'}} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-[48rem] h-[48rem] bg-violet-500/[0.03] rounded-full blur-3xl" />
+      {/* ⚡ v5.4: Süs katmanı artık blur filtresi kullanmıyor.
+          Eskiden üç adet 36rem'lik daire `blur-3xl` (64px) ile çiziliyor ve ikisi
+          sonsuz animasyonluydu; zayıf GPU'larda menüde bile sürekli yeniden
+          boyama yapıyordu. Gradyan dağılımı görsel olarak aynı, maliyeti ~0. */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-90">
+        <div
+          className="absolute -top-40 -right-40 w-[42rem] h-[42rem] animate-aurora"
+          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.10), rgba(16,185,129,0.035) 45%, transparent 70%)' }}
+        />
+        <div
+          className="absolute -bottom-44 -left-32 w-[38rem] h-[38rem] animate-aurora"
+          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.09), rgba(6,182,212,0.03) 45%, transparent 70%)', animationDelay: '3s' }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[52rem] h-[52rem]"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.05), transparent 68%)' }}
+        />
       </div>
       {showTutorial && (
         <Tutorial
           onComplete={() => { completeTutorial(); setShowTutorial(false); showToast('Tutorial tamamlandı! Bol şans ⚽'); }}
           onSkip={() => { completeTutorial(); setShowTutorial(false); }}
         />
-      )}
-
-      {toast && (
-        <div className="fixed top-4 right-4 z-[70] bg-slate-900/95 backdrop-blur-xl border border-emerald-500/30 text-white px-5 py-3 rounded-xl shadow-xl shadow-black/30 font-medium animate-slide-in flex items-center gap-3 max-w-sm">
-          <span className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-sm flex-shrink-0">✓</span>
-          <span className="text-sm">{toast}</span>
-        </div>
       )}
 
       {/* Kariyer bitti */}
@@ -1116,8 +1174,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
       {/* 🎯 Seviye atlama kutlaması */}
       {levelUpInfo && (
-        <div className="fixed inset-0 bg-black/85 z-[76] flex items-center justify-center p-4" onClick={() => setLevelUpInfo(null)}>
-          <div className="w-full max-w-md bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border-2 border-emerald-500/50 p-6 text-center shadow-[0_0_60px_rgba(16,185,129,0.35)]" style={{ animation: 'goalPop 500ms cubic-bezier(0.34,1.56,0.64,1) both' }}>
+        <div className="mp-overlay fixed inset-0 bg-black/85 z-[76] flex items-center justify-center p-4" onClick={() => setLevelUpInfo(null)}>
+          <div className="mp-modal w-full max-w-md bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border-2 border-emerald-500/50 p-6 text-center shadow-[0_0_60px_rgba(16,185,129,0.35)]">
             <div className="text-6xl mb-2" style={{ animation: 'confetti 900ms ease 100ms both' }}>⬆️</div>
             <div className="text-xs text-emerald-400 font-black tracking-[0.2em]">KARİYER SEVİYESİ</div>
             <div className="text-5xl font-black text-white mt-1" style={{ animation: 'goalGlow 900ms ease 200ms 2 alternate' }}>{levelUpInfo.level}</div>
@@ -1145,8 +1203,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
 
       {/* Sezon sonu gazetesi */}
       {seasonSummary && (
-        <div className="fixed inset-0 bg-black/85 z-[75] flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border border-amber-500/40 p-6">
+        <div className="mp-overlay fixed inset-0 bg-black/85 z-[75] flex items-center justify-center p-4">
+          <div className="mp-modal w-full max-w-lg bg-gradient-to-b from-slate-800 to-slate-900 rounded-3xl border border-amber-500/40 p-6 mp-scroll-area max-h-[92vh] overflow-y-auto custom-scroll">
             <div className="text-center mb-4">
               <div className="text-xs text-amber-400 font-bold tracking-widest">SEZON {seasonSummary.season} RAPORU</div>
               <div className="text-3xl font-black text-white mt-1">
@@ -1231,7 +1289,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
       {/* Mobil menü - premium glass */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 bg-slate-800/90 backdrop-blur-xl p-3 rounded-xl border border-slate-700 shadow-xl hover:bg-slate-700/90 active:scale-95 transition-all"
+        className="lg:hidden fixed top-3 left-3 z-50 bg-slate-800/90 p-3 rounded-xl border border-slate-700 shadow-xl hover:bg-slate-700/90 active:scale-95 transition-all"
         aria-label="Menüyü aç/kapat"
       >
         <span className="text-xl w-6 h-6 flex items-center justify-center">{sidebarOpen ? '✕' : '☰'}</span>
@@ -1245,7 +1303,7 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           flex-shrink-0
         `}>
-          <div className="w-72 xl:w-80 h-full p-3 lg:p-4 bg-slate-900/95 lg:bg-transparent overflow-y-auto custom-scroll">
+          <div className="w-[19rem] xl:w-80 h-full p-3 lg:p-4 bg-slate-900/95 lg:bg-transparent overflow-y-auto custom-scroll mp-scroll-area">
             <Sidebar
               gameState={gameState}
               onPlayMatch={handlePlayMatch}
@@ -1264,81 +1322,43 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
         </div>
 
         <div className="flex-1 flex flex-col p-2 lg:p-4 pl-0 min-w-0 overflow-hidden">
-          <div className="flex justify-between items-center gap-3 mb-3 pl-14 lg:pl-0">
-            <span className="text-xs font-bold tracking-widest text-amber-300">OFFLINE KARİYER</span>
-            <button onClick={exitOffline} className="text-sm text-slate-300 hover:text-white rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2">← Mod seçimi</button>
-          </div>
-          {/* Üst sekmeler - kaydırma barı görünür + aktif sekmeye otomatik kaydırma + fade */}
-          <div className="relative mb-3 lg:mb-4 flex-shrink-0">
-            <div
-              ref={tabsRef}
-              onScroll={updateTabsFade}
-              className="flex gap-1.5 overflow-x-auto pb-2 custom-scroll bg-slate-800/60 backdrop-blur-xl p-1.5 rounded-2xl border border-slate-700/60 shadow-xl shadow-black/20 scroll-smooth snap-x snap-mandatory scroll-px-2"
-              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(16,185,129,0.9) rgba(15,23,42,0.6)' }}
-            >
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  data-tab={tab.id}
-                  onClick={() => {
-                    if (lockedTabs.has(tab.id)) {
-                      const need = TAB_UNLOCK_LEVEL[tab.id];
-                      showToast(`🔒 ${tab.label}, Kariyer Seviye ${need}'te açılır (her 5 maçta 1 seviye). ${Math.max(0, need - careerLvl) * 5} maç kaldı!`);
-                      return;
-                    }
-                    setActiveTab(tab.id);
-                  }}
-                  onMouseMove={(e) => {
-                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    (e.currentTarget as HTMLElement).style.setProperty('--x', `${e.clientX - r.left}px`);
-                    (e.currentTarget as HTMLElement).style.setProperty('--y', `${e.clientY - r.top}px`);
-                  }}
-                  className={`tab-btn snap-start shrink-0 relative px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-bold whitespace-nowrap transition-all duration-300 flex items-center gap-1.5 lg:gap-2 btn-press ${
-                    activeTab === tab.id
-                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-                  }`}
-                >
-                  <span className={lockedTabs.has(tab.id) ? 'opacity-40' : ''}>{tab.icon}</span>
-                  <span className="tracking-wide">{lockedTabs.has(tab.id) ? `${tab.label} 🔒` : tab.label}</span>
-                  {!!tab.badge && tab.badge > 0 && (
-                    <span className={`absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md ${activeTab===tab.id?'bg-white text-emerald-600 animate-badge-pop':'bg-red-500 text-white'}`}>
-                      {tab.badge > 9 ? '9+' : tab.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-3 pl-14 lg:pl-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[11px] font-black tracking-[0.18em] text-amber-300/90">OFFLINE KARİYER</span>
+              <span className="hidden sm:inline mp-chip">
+                🗓️ Sezon {gameState.season || 1} • Hafta {Math.min(gameState.week, 18)}/18
+              </span>
+              {nextOpponent && (
+                <span className="hidden md:inline mp-chip mp-chip-info" title="Sıradaki rakip">
+                  ⚔️ {nextOpponent.logo} {nextOpponent.name}
+                </span>
+              )}
             </div>
-            {/* sol/sağ fade - kaydırılabilir olduğunu gösterir */}
-            <div className={`pointer-events-none absolute inset-y-1.5 left-1.5 w-8 rounded-l-2xl transition-opacity ${tabsScrollFade.left ? 'opacity-100' : 'opacity-0'} tabs-fade-left`} />
-            <div className={`pointer-events-none absolute inset-y-1.5 right-1.5 w-8 rounded-r-2xl transition-opacity ${tabsScrollFade.right ? 'opacity-100' : 'opacity-0'} tabs-fade-right`} />
-            {tabsScrollFade.left && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => tabsRef.current?.scrollBy({ left: -240, behavior: 'smooth' })}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-emerald-500/40 text-emerald-300 text-base leading-none shadow-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center"
-                aria-label="Sekmeleri sola kaydır"
-              >‹</button>
-            )}
-            {tabsScrollFade.right && (
-              <button
-                onClick={() => tabsRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-slate-900/95 border border-emerald-500/40 text-emerald-300 text-base leading-none shadow-lg hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center"
-                aria-label="Sekmeleri sağa kaydır"
-              >›</button>
-            )}
-            {/* küçük ipucu */}
-            {tabsScrollFade.right && (
-              <div className="pointer-events-none hidden sm:flex absolute -bottom-1 right-3 text-[10px] text-slate-500 items-center gap-1">
-                <span>kaydır →</span><span className="animate-pulse">›</span>
-              </div>
-            )}
+                onClick={() => setShowShortcuts(true)}
+                className="text-xs text-slate-400 hover:text-white rounded-xl border border-slate-700/80 bg-slate-800/70 px-2.5 py-2 transition-colors"
+                title="Klavye kısayolları (?)"
+              >
+                ⌨️ <span className="hidden sm:inline">Kısayollar</span>
+              </button>
+              <button onClick={exitOffline} className="text-xs text-slate-300 hover:text-white rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2 transition-colors">← Mod seçimi</button>
+            </div>
           </div>
+          {/* 🧭 Üst sekmeler — v5.4: kendi kaydırma durumunu yöneten <TabBar />
+              (şerit kaydırmak artık oyun gövdesini yeniden çizmiyor) */}
+          <TabBar
+            tabs={tabs}
+            activeTab={activeTab}
+            matchesPlayed={matchesPlayed}
+            onSelect={setActiveTab}
+          />
 
           {/* 🐛 FIX: burada backdrop-blur YOK — backdrop-filter, 'fixed' modal pencereleri için
             kapsayıcı blok oluşturup Antrenman/Kadro vb. pencereleri kaydırma içeriğinin
             tepesine sabitliyordu ("en alttaki oyuncuya basınca modal en üstte açılıyordu").
             Cam hissi, biraz artırılmış opaklıkla korunur. */}
-          <div className="flex-1 bg-slate-800/70 rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll relative min-h-0 panel-inner-glow">
+          <div ref={panelScrollRef} className="flex-1 bg-slate-800/70 rounded-2xl lg:rounded-[24px] p-3 lg:p-6 border border-slate-700/50 shadow-2xl shadow-black/30 overflow-y-auto custom-scroll mp-scroll-area relative min-h-0 panel-inner-glow">
             <div className="pointer-events-none absolute top-3 right-4 hidden lg:flex items-center gap-1.5 opacity-[0.35] hover:opacity-60 transition-opacity">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               <span className="kaan-watermark text-[10px] tracking-[0.18em]">MADE BY KAAN</span>
@@ -1476,6 +1496,8 @@ function OfflineGame({ onExit }: { onExit: () => void }) {
       </div>
       <AiAssistant />
       <FpsOverlay />
+      <ToastHost />
+      <ShortcutOverlay open={showShortcuts} onClose={() => setShowShortcuts(false)} />
       <NewsTicker news={gameState.news} />
     </div>
   );

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { loadGraphics, subscribeGraphics } from "./utils/graphics";
 
 /* ── Geliştirme konsolunu temizle (yalnızca dev) ─────────────────────────────
    React'in geliştirme sürümü her açılışta şu bilgiyi basıyor:
@@ -26,8 +27,30 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
   }
 }
 
-createRoot(document.getElementById("root")!).render(
+/* ══════════ 🎛️ Grafik profili → belge düzeyinde sınıf ══════════════════════
+   "perf-lite" artık <html> üzerinde: yalnızca oyun gövdesi değil, modallar ve
+   mod seçim ekranı da hafif moddan faydalanır. Ayarlar değişince anında uygulanır. */
+function applyPerfClass(s: { tier: string }) {
+  if (typeof document === "undefined") return;
+  const lite = s.tier === "low";
+  document.documentElement.classList.toggle("perf-lite", lite);
+  document.documentElement.dataset.gfxTier = s.tier;
+}
+applyPerfClass(loadGraphics());
+subscribeGraphics(applyPerfClass);
+
+const container = document.getElementById("root")!;
+createRoot(container).render(
   <StrictMode>
     <App />
   </StrictMode>
 );
+
+/* ══════════ ⚽ Açılış perdesi ══════════════════════════════════════════════
+   Paket 2 MB'lık tek dosya olduğu için tarayıcı JS'i çözene kadar ekran boş
+   kalıyordu. index.html'deki perde ilk kare boyandıktan sonra (çift rAF)
+   yumuşakça kapanır. */
+const splashApi = (window as unknown as { mpSplash?: { done?: () => void } }).mpSplash;
+if (splashApi?.done) {
+  requestAnimationFrame(() => requestAnimationFrame(() => splashApi.done?.()));
+}
