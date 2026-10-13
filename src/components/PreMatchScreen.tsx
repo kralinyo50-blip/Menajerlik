@@ -72,6 +72,9 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
   const form = gameState.matchHistory.slice(-5).reverse();
   const [showStadium, setShowStadium] = useState(false);
 
+  /* 🎯 Kazanma hissi: güç farkını iki taraflı çubukta göster (0-100) */
+  const userBarPct = Math.max(8, Math.min(92, Math.round(50 + diff * 2.2)));
+
   const prediction = diff >= 6 ? { text: '🔥 Büyük favori biziz', color: 'text-emerald-400' }
     : diff >= 2 ? { text: '👍 Favori biziz', color: 'text-emerald-300' }
     : diff <= -6 ? { text: '😰 Çok zor maç', color: 'text-red-400' }
@@ -83,17 +86,23 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
   const captain = [...gameState.team11, ...gameState.bench].find(p => p.id === gameState.captainId);
 
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-3 overflow-y-auto">
-      <div className="w-full max-w-2xl bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl border border-emerald-500/30 my-auto">
+    <div className="mp-overlay fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-3 overflow-y-auto">
+      <div className="mp-modal w-full max-w-2xl bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl border border-emerald-500/30 my-auto shadow-2xl shadow-black/50">
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-700 to-cyan-700 px-4 py-3 rounded-t-2xl flex items-center justify-between">
-          <div>
-            <div className="text-white font-black text-lg">
+        <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 to-cyan-700 px-4 py-3.5 rounded-t-2xl flex items-center justify-between">
+          <div className="pointer-events-none absolute inset-0 opacity-25"
+            style={{ background: 'linear-gradient(transparent 49%, rgba(255,255,255,0.5) 49%, rgba(255,255,255,0.5) 51%, transparent 51%)' }} />
+          <div className="relative">
+            <div className="text-white font-black text-lg tracking-tight">
               {isCup ? '🏅 KUPA MAÇI' : `⚽ HAFTA ${gameState.week} MAÇI`}
             </div>
-            <div className="text-emerald-100 text-xs">Takım otelde, son taktik konuşması öncesi</div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="mp-chip !bg-black/25 !border-white/20 !text-white/90">🏟️ {isHome ? 'İç saha' : 'Deplasman'}</span>
+              <span className="mp-chip !bg-black/25 !border-white/20 !text-white/90">{weatherInfo.icon} {weatherInfo.label}</span>
+              <span className="text-emerald-100/90 text-[11px]">Son taktik konuşması öncesi</span>
+            </div>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-2xl leading-none">×</button>
+          <button onClick={onClose} className="relative text-white/80 hover:text-white text-2xl leading-none px-2">×</button>
         </div>
 
         {/* Matchup */}
@@ -104,12 +113,20 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
               <div className="text-white font-bold text-sm mt-1 max-w-[120px] truncate">{gameState.teamName}</div>
               <div className="text-emerald-400 text-xs">OVR {userOvr} • {userPosition}. sıra</div>
             </div>
-            <div className="text-center">
-              <div className="text-xs text-slate-400">VS</div>
-              <div className={`text-xs font-bold mt-1 ${isHome ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {isHome ? '🏟️ İç Saha' : '🚌 Deplasman'}
+            <div className="text-center px-2">
+              <div className="text-[10px] tracking-[0.25em] text-slate-500 font-black">VS</div>
+              <div className={`text-xs font-black mt-1 ${prediction.color}`}>{prediction.text}</div>
+              <div className="mt-2 w-24 sm:w-32">
+                {/* İki taraflı güç çubuğu: kimin ne kadar önde olduğu tek bakışta */}
+                <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden flex">
+                  <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700" style={{ width: `${userBarPct}%` }} />
+                  <div className="h-full bg-gradient-to-r from-red-500 to-red-400 transition-all duration-700" style={{ width: `${100 - userBarPct}%` }} />
+                </div>
+                <div className="mt-1 flex justify-between text-[9px] font-bold">
+                  <span className="text-emerald-300">biz {userOvr}</span>
+                  <span className="text-red-300">{oppOvr} rakip</span>
+                </div>
               </div>
-              <div className={`text-xs font-bold mt-1 ${prediction.color}`}>{prediction.text}</div>
             </div>
             <div className="text-center">
               <div className="text-4xl">{opponent.logo}</div>
@@ -245,9 +262,12 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
               {warnings.length === 0 ? (
                 <div className="text-[11px] text-emerald-300">✅ Kadro tam, sorun yok.</div>
               ) : (
-                <ul className="space-y-1">
+                <ul className="space-y-1.5">
                   {warnings.map((w, i) => (
-                    <li key={i} className="text-[11px] text-amber-300">{w}</li>
+                    <li key={i} className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1 text-[11px] text-amber-200">
+                      <span className="shrink-0">⚠️</span>
+                      <span>{w}</span>
+                    </li>
                   ))}
                 </ul>
               )}
@@ -292,19 +312,20 @@ export const PreMatchScreen: React.FC<PreMatchScreenProps> = ({
           <div className="flex flex-wrap gap-2 justify-center">
             <button
               onClick={() => { sfx.whistle(); onStart(); }}
-              className="px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-black rounded-xl shadow-lg shadow-emerald-500/30 transition-all animate-cta-ring"
+              className="group px-9 py-4 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-base rounded-2xl shadow-lg shadow-emerald-500/35 hover:shadow-emerald-500/50 hover:scale-[1.02] active:scale-[0.98] transition-all animate-cta-ring"
             >
               ⚽ MAÇI BAŞLAT
+              <span className="block text-[10px] font-bold text-emerald-950/70 mt-0.5">Hakem düdüğü senin elinde</span>
             </button>
             <button
               onClick={onOpenTactics}
-              className="px-5 py-3.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-xl transition-all"
+              className="mp-btn"
             >
               📋 Taktik Değiştir
             </button>
             <button
               onClick={onClose}
-              className="px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl transition-all"
+              className="mp-btn !bg-slate-800/80 !text-slate-300"
             >
               ✖ Vazgeç
             </button>
