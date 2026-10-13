@@ -225,6 +225,46 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
     }, delay);
   }, []);
 
+  /* ══════════ ⌨️ Maç içi kısayollar (v5.4) ══════════
+     1/2/4 = hız, Boşluk = duraklat/devam, D = oyuncu değişikliği.
+     Metin alanlarında ve maç bitince devre dışı. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (phaseRef.current === 'done' || phaseRef.current === 'pre') return;
+      if (matchMinigameRef.current) return;
+
+      if (e.key === '1' || e.key === '2' || e.key === '4') {
+        setSpeed(Number(e.key) as 1 | 2 | 4);
+        return;
+      }
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        if (freezeRef.current) resumeSim(0);
+        else pauseSim('⏸️', 'Boşluk ile duraklatıldı');
+        return;
+      }
+      if (e.key === 'd' || e.key === 'D') {
+        if (subsCountRef.current >= 5) return;
+        e.preventDefault();
+        setShowSubModal(true);
+        pauseSim('⏸️', 'Değişiklik yapılıyor');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pauseSim, resumeSim]);
+
+  /** Kısayol dinleyicisi için anlık değerler (her render'da tazelenir) */
+  const freezeRef = useRef<{ icon: string; reason: string } | null>(null);
+  const subsCountRef = useRef(0);
+  const matchMinigameRef = useRef<unknown>(null);
+  freezeRef.current = freeze;
+  subsCountRef.current = substitutions.length;
+  matchMinigameRef.current = matchMinigame;
+
+
   const triggerSlowMo = useCallback((ms = 2800) => {
     setSlowMo(true);
     if (slowMoTimer.current) clearTimeout(slowMoTimer.current);
@@ -1462,10 +1502,27 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
             ) : slowMo ? (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black flex items-center gap-1 animate-pulse">🐢 YAVAŞ ÇEKİM</span>
             ) : null}
-            {([1, 2, 4] as const).map(s => (
-              <button key={s} onClick={() => setSpeed(s)} className={`px-2 py-0.5 rounded text-xs font-bold ${speed === s ? 'bg-white text-emerald-700' : 'bg-emerald-800/50 text-white/70'}`}>{s}x</button>
-            ))}
-            <button onClick={skipMatch} disabled={!matchRunning} className="px-2 py-0.5 rounded text-xs font-bold bg-slate-600/70 text-white/85 disabled:opacity-40">⏭️ Atla</button>
+            <div className="flex items-center gap-0.5 rounded-lg bg-emerald-950/50 p-0.5 border border-emerald-700/40" title="Kısayol: 1 / 2 / 4">
+              {([1, 2, 4] as const).map(sp => (
+                <button
+                  key={sp}
+                  onClick={() => setSpeed(sp)}
+                  aria-pressed={speed === sp}
+                  className={`w-7 py-0.5 rounded-md text-xs font-black tabular-nums transition-all ${speed === sp ? 'bg-white text-emerald-700 shadow' : 'text-white/65 hover:text-white hover:bg-emerald-800/60'}`}
+                >
+                  {sp}x
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => (freeze ? resumeSim(0) : pauseSim('⏸️', 'Boşluk ile duraklatıldı'))}
+              disabled={!matchRunning}
+              title="Duraklat / devam (Boşluk)"
+              className={`px-2 py-0.5 rounded text-xs font-bold disabled:opacity-40 ${freeze ? 'bg-sky-400 text-slate-900' : 'bg-slate-600/70 text-white/85 hover:bg-slate-500/70'}`}
+            >
+              {freeze ? '▶️ Devam' : '⏸️ Durdur'}
+            </button>
+            <button onClick={skipMatch} disabled={!matchRunning} title="Maçı anında bitir" className="px-2 py-0.5 rounded text-xs font-bold bg-slate-600/70 text-white/85 hover:bg-slate-500/70 disabled:opacity-40">⏭️ Atla</button>
           </div>
         </div>
 
@@ -1493,13 +1550,13 @@ export const MatchEngine: React.FC<MatchEngineProps> = ({
               </div>
             </div>
             <div className="px-2 lg:px-6">
-              <div className="text-3xl lg:text-5xl font-black text-white flex items-center gap-2 lg:gap-4">
-                <span className={score.u > score.o ? 'text-emerald-400' : ''}>{score.u}</span>
-                <span className="text-slate-500">-</span>
-                <span className={score.o > score.u ? 'text-red-400' : ''}>{score.o}</span>
+              <div className="mp-scoreboard flex items-center gap-2 lg:gap-4 text-4xl lg:text-6xl font-black text-white">
+                <span key={`u${score.u}`} className={`mp-score-flip inline-block tabular-nums ${score.u > score.o ? 'text-emerald-400' : ''}`}>{score.u}</span>
+                <span className="text-slate-500/80">:</span>
+                <span key={`o${score.o}`} className={`mp-score-flip inline-block tabular-nums ${score.o > score.u ? 'text-red-400' : ''}`}>{score.o}</span>
               </div>
               <div className="text-center mt-1">
-                <div className="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none">{String(minute).padStart(2, '0')}'</div>
+                <div className="text-xl lg:text-2xl font-black text-amber-400 font-mono leading-none tabular-nums">{String(minute).padStart(2, '0')}'</div>
                 <div className="text-[10px] text-slate-500">{phase === 'pre' ? 'Başlamadı' : phase === 'half' ? 'Devre arası' : phase === 'done' ? 'Bitti' : extraTime ? 'Uzatma' : 'Devam ediyor'}</div>
                 {talk && <div className="text-[10px] text-amber-300 mt-0.5">💬 {talk === 'praise' ? 'Övgü' : talk === 'hairdryer' ? 'Fırça' : 'Sakin taktik'}</div>}
               </div>

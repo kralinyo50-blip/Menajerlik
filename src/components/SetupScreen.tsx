@@ -154,11 +154,16 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ onStart, onLoad, onBac
       <button type="button" onClick={onBack} disabled={isAnimating} className="fixed top-4 right-4 z-30 rounded-xl border border-slate-600 bg-slate-900/95 px-4 py-2 text-sm text-white disabled:opacity-50">← Mod seçimi</button>
       {/* Animated background — premium */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/40" />
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-32 -right-32 w-[30rem] h-[30rem] bg-emerald-500/18 rounded-full blur-3xl animate-aurora" />
-        <div className="absolute -bottom-40 -left-20 w-[32rem] h-[32rem] bg-cyan-500/12 rounded-full blur-3xl animate-aurora" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/3 left-1/2 w-[28rem] h-[28rem] bg-amber-500/10 rounded-full blur-3xl animate-aurora" style={{ animationDelay: '4s' }} />
-        <div className="absolute top-1/2 left-1/3 w-72 h-72 bg-violet-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }} />
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-90">
+        {/* ⚡ v5.4: blur-3xl yerine radyal gradyan — aynı görünüm, çok daha ucuz */}
+        <div className="absolute -top-32 -right-32 w-[30rem] h-[30rem] animate-aurora"
+          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.16), rgba(16,185,129,0.05) 45%, transparent 70%)' }} />
+        <div className="absolute -bottom-40 -left-20 w-[32rem] h-[32rem] animate-aurora"
+          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.13), rgba(6,182,212,0.04) 45%, transparent 70%)', animationDelay: '2s' }} />
+        <div className="absolute top-1/3 left-1/2 w-[28rem] h-[28rem] animate-aurora"
+          style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.11), transparent 68%)', animationDelay: '4s' }} />
+        <div className="absolute top-1/2 left-1/3 w-72 h-72"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.12), transparent 70%)' }} />
         {/* Pitch lines decoration */}
         <div className="absolute inset-0 opacity-[0.04]" style={{
           backgroundImage: 'linear-gradient(rgba(16,185,129,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,.8) 1px, transparent 1px)',

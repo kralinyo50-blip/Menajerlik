@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { GameState, Sponsor } from '../types/game';
+import { AnimatedNumber } from './AnimatedNumber';
 import { SPONSOR_OFFERS, WEATHER_INFO, ROLE_NAMES } from '../data/constants';
 import { describeSlots, clearSlot, SlotInfo } from '../utils/save';
 import { managerLevelTitle, xpForLevel } from '../utils/progression';
@@ -17,7 +18,7 @@ interface SidebarProps {
   onToggleSound: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+const SidebarInner: React.FC<SidebarProps> = ({
   gameState, onPlayMatch, onSave, onSignSponsor,
   onSaveToSlot, onLoadFromSlot, onExportSave, onImportSave, onToggleSound
 }) => {
@@ -29,12 +30,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const refreshSlots = () => setSlots(describeSlots());
 
   const avg = (arr: number[]) => (arr.length > 0 ? Math.floor(arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
-  const avgOvr = avg(gameState.team11.map(p => p.ovr));
-  const avgEnergy = avg(gameState.team11.map(p => p.energy));
-  const avgMorale = avg(gameState.team11.map(p => p.morale));
+  /* 📊 Ağır hesaplar yalnızca kadro değiştiğinde yeniden yapılır (memo) */
+  const { avgOvr, avgEnergy, avgMorale, weeklyWages, unavailableCount } = useMemo(() => {
+    const squad = [...gameState.team11, ...gameState.bench];
+    return {
+      avgOvr: avg(gameState.team11.map(pl => pl.ovr)),
+      avgEnergy: avg(gameState.team11.map(pl => pl.energy)),
+      avgMorale: avg(gameState.team11.map(pl => pl.morale)),
+      weeklyWages: squad.reduce((acc, pl) => acc + pl.wage, 0),
+      unavailableCount: gameState.team11.filter(pl => pl.injured || (pl.suspension ?? 0) > 0).length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState.team11, gameState.bench]);
 
   const nextMatch = gameState.fixture[gameState.week - 1];
-  const weeklyWages = [...gameState.team11, ...gameState.bench].reduce((acc, p) => acc + p.wage, 0);
   const weather = WEATHER_INFO[gameState.weather] || WEATHER_INFO.cloudy;
 
 
@@ -49,8 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (morale >= 50) return '😐';
     return '😟';
   };
-
-  const unavailableCount = gameState.team11.filter(p => p.injured || (p.suspension ?? 0) > 0).length;
 
   return (
     <>
@@ -72,11 +79,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Budget — premium */}
-        <div className="bg-gradient-to-br from-amber-500/22 via-yellow-500/16 to-orange-500/22 rounded-2xl p-3.5 mb-3 border border-amber-500/30 shadow-lg backdrop-blur shimmer premium-border">
+        <div className="bg-gradient-to-br from-amber-500/22 via-yellow-500/16 to-orange-500/22 rounded-2xl p-3.5 mb-3 border border-amber-500/30 shadow-lg premium-border">
           <div className="text-[10px] tracking-widest font-black text-amber-300/90 mb-1">KULÜP KASASI</div>
-          <div className="text-xl xl:text-2xl font-black text-amber-400">${gameState.budget.toLocaleString()}</div>
-          <div className="text-[10px] text-amber-300/70 mt-1">
-            Maaş (5 haftada bir): ${(weeklyWages * 5).toLocaleString()}
+          <div className="text-xl xl:text-2xl font-black text-amber-400 tabular-nums">
+            $<AnimatedNumber value={gameState.budget} />
+          </div>
+          <div className="text-[10px] text-amber-300/70 mt-1 tabular-nums">
+            Maaş (5 haftada bir): $<AnimatedNumber value={weeklyWages * 5} />
           </div>
           {gameState.week % 5 >= 3 && (
             <div className="text-[10px] text-red-400 mt-1">
@@ -291,10 +300,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             disabled={gameState.week > 18}
             className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:from-slate-600 disabled:to-slate-700 text-white font-black rounded-2xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:shadow-none tracking-wide"
           >
-            ⚽ MAÇA ÇIK
-            {gameState.week <= 18 && (
+            <span className="flex items-center gap-1.5">⚽ MAÇA ÇIK <span className="kbd !text-emerald-900 !bg-emerald-200/90 !border-emerald-100/40">M</span></span>
+            {gameState.week <= 18 ? (
               <span className="block text-[10px] font-medium text-emerald-100/80 mt-0.5">
                 Maç öncesi taktik odası açılır
+              </span>
+            ) : (
+              <span className="block text-[10px] font-medium text-emerald-100/80 mt-0.5">
+                Sezon bitti — sezonu kapatmak için tıkla
               </span>
             )}
           </button>
@@ -328,8 +341,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sponsor Modal */}
       {showSponsorModal && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700">
+        <div className="mp-overlay fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="mp-modal mp-card w-full max-w-lg p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-amber-400">Sponsorluk Anlaşmaları</h3>
               <button onClick={() => setShowSponsorModal(false)} className="text-slate-400 hover:text-white text-2xl">×</button>
@@ -354,8 +367,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Save / Load Modal */}
       {showSaveModal && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700">
+        <div className="mp-overlay fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="mp-modal mp-card w-full max-w-lg p-6">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-xl font-bold text-blue-400">💾 Kayıt Yönetimi</h3>
               <button onClick={() => setShowSaveModal(false)} className="text-slate-400 hover:text-white text-2xl">×</button>
@@ -438,3 +451,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+
+/* 🚀 v5.4: Sidebar artık memo'lu. Toast/kısayol gibi oyunu ilgilendirmeyen
+   durum değişimlerinde kenar panel boşuna yeniden çizilmez. */
+export const Sidebar = React.memo(SidebarInner);

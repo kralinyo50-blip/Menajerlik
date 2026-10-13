@@ -1,4 +1,4 @@
-# Manager Pro 2026 — Ultimate Edition (v4.0 Menajerin Hayatı)
+# Manager Pro 2026 — Ultimate Edition (v5.4 Görsel & Performans)
 
 Futbol menajerlik simülasyonu. Kadro, transfer, taktik, kupa, tesisler, mağazalar, yatırımlar ve mini-oyunlar — artık **kariyer sistemi, hava durumu, kart/ceza, sözleşmeler ve penaltı atışları** ile.
 
@@ -59,6 +59,46 @@ Online lig tek kişilik kariyerden ayrıdır; kariyer haftası ve bütçe ortakl
 Aynı evde değilseniz: bir kişi **`paylas.bat`** dosyasına çift tıklasın (Mac/Linux: `./paylas.sh`, veya `npm run share`). Ekrana çıkan internet linkini (örn. `https://....trycloudflare.com`) arkadaşlarına göndersin; **herkes o linki açıp** Online Oyna desin. Hesap açmak, port yönlendirmek, IP bulmak gerekmez. Paylaşım penceresi açık kalmalı; link her başlatışta değişir.
 
 Paylaşım betiği görevleri `npm.cmd` yerine doğrudan Node/Vite ile çalıştırır; Windows'ta çıkabilen `[HATA] spawn EINVAL` sorunu böylece oluşmaz. Yine de görürsen bir kez `npm install` çalıştırıp tekrar dene (ayrıntı: [docs/ONLINE_LIG.md](docs/ONLINE_LIG.md)).
+
+## ⚡ v5.4 — Görünüm, Akıcılık ve Oyun Keyfi (yeni özellik eklenmedi, mevcutlar cilalandı)
+
+Bu sürümde amaç yeni mekanik eklemek değil; **var olan oyunu 10 kat daha iyi hissettirmek** oldu.
+
+### İlk izlenim
+- **⚽ Açılış perdesi** — 2 MB'lık tek dosya çözülene kadar boş ekran yerine top animasyonlu, saha çizgili açılış ekranı görünür; oyun "anında açılmış" hissi verir.
+- **🔤 Tek font isteği** — fontlar hem HTML hem CSS üzerinden çift yükleniyordu; artık tek istek (ilk boyama daha hızlı).
+- **🏟️ Yeni mod seçimi ekranı** — devam eden kariyerin (takım / sezon / hafta) kartın üzerinde görünür, saha çizgili arka plan, özellik şeridi.
+
+### Akıcılık (ölçülebilir kazanımlar)
+- **Sekme şeridi ve bildirimler oyunu yeniden çizmiyor** — eskiden şeridi kaydırmak veya bir bildirim göstermek aktif sekmeyi (ve 3D sahne ağacını) baştan çiziyordu. Artık her ikisi de kendi küçük bileşeninde yaşıyor.
+- **Blur katmanları kaldırıldı** — menüdeki 36rem'lik 3 adet `blur-3xl` daire + haber şeridindeki `backdrop-blur` sürekli yeniden boyama yapıyordu; gradyanla değiştirildi (aynı görünüm, ~0 maliyet).
+- **Backdrop-blur maliyeti yarıya indi** — 24-40 px bulanıklıklar koyu arayüzde fark edilmiyor ama GPU'da 2-3 kat pahalı; 3-16 px aralığına çekildi. Düşük profilde tamamen kapanır.
+- **Kenar panel memo'landı**, ağır hesaplar `useMemo`'ya alındı; gereksiz sekme çizimi yok edildi.
+- **Hareketi azalt desteği** — işletim sistemi ayarına saygı: süs animasyonları durur.
+
+### Görsel dil
+- Tüm oyunda tek tip **kart / bölüm başlığı / çip / buton / klavye tuşu** stilleri (`mp-card`, `mp-chip`, `mp-btn`, `kbd`).
+- **Hizalı rakamlar (tabular-nums)** — para ve skor sütunları artık zıplamıyor.
+- **Skor tabelası** Orbitron yazı tipi + gol anında döner animasyon; hız kontrolü tek parça, ⏸️/▶️ duraklat düğmesi.
+- **Yumuşak girişler** — sekmeler, kartlar ve modaller art arda (stagger) belirir; bildirimler ikonlu, süre çubuklu ve üst üste yığılabilir.
+- **Kasa sayacı** — bütçe ve maaş değiştiğinde sayı sayarak güncellenir.
+
+### Oyun keyfi
+- **⌨️ Klavye kısayolları** (`?` ile yardım penceresi):
+
+| Tuş | İşlev |
+|-----|-------|
+| `?` / `F1` | Kısayol yardımı |
+| `Esc` | Açık pencereyi kapat |
+| `M` | Maça çık (taktik odası) |
+| `S` | Hızlı kaydet |
+| `Alt`+`←` / `→` | Sekmeler arası geçiş (kilitliler atlanır) |
+| `←` / `→` | Sekme şeridinde gezin (odak şeritteyken) |
+| `1` / `2` / `4` | Maç hızı |
+| `Boşluk` | Maçı duraklat / devam |
+| `D` | Oyuncu değişikliği |
+
+- Sekme başlığında (`document.title`) takım, sezon ve hafta görünür.
 
 ## Özellikler
 

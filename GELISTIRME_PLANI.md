@@ -7,6 +7,16 @@ Bu doküman; mevcut oyunun **tespitini (audit)**, kapatılan eksikleri ve sırad
 geliştirme adımlarını tek yerde toplar. Amaç: oyunu "simülasyon"dan **gerçek bir
 menajerlik kariyerine** taşımak.
 
+> **v5.4 (13 Eki 2026) — Görünüm, akıcılık ve oyun keyfi turu.** Yeni mekanik
+> eklenmedi; mevcut özellikler hızlandı ve cilalandı. Özet:
+> - Açılış perdesi (boş ekran yerine temalı yükleme), font çift yüklemesinin kaldırılması, `theme-color`.
+> - Üst sekme şeridi ve bildirimler artık **oyun gövdesini yeniden çizmiyor** (eski 800 ms'lik ölçüm intervali silindi).
+> - `blur-3xl` süs katmanları gradyanla değiştirildi; `backdrop-blur` maliyeti 3-16 px'e sınırlandı; düşük profilde tamamen kapalı.
+> - Tasarım jetonları + `mp-card / mp-chip / mp-btn / mp-tab / kbd` dili, hizalı rakamlar, `prefers-reduced-motion` desteği.
+> - Klavye kısayolları (`?`, `Esc`, `M`, `S`, `Alt`+ok, maçta `1/2/4`, `Boşluk`, `D`) ve kısayol rehberi.
+> - Maç ekranı: Orbitron skor tabelası + gol animasyonu, segmentli hız kontrolü, duraklat düğmesi.
+> - Sekme başına kaydırma hafızası, kasa/maaş sayaç animasyonu, yenilenen mod seçimi ve maç öncesi taktik odası.
+
 ---
 
 ## 1. Yapılan Tespit (Audit) — En Kritik Sorunlar
